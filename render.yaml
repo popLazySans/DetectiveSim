@@ -1,0 +1,19 @@
+# Deploy บน Render.com (ฟรี รองรับ WebSocket): New + → Blueprint → เลือก repo นี้ → Apply
+# จากนั้นใส่ ANTHROPIC_API_KEY ใน Dashboard → Environment (ถ้าไม่ใส่ เกมจะรันโหมด mock)
+services:
+  - type: web
+    name: despair-board
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-opus-5-5
+      - key: NODE_VERSION
+        value: 22
