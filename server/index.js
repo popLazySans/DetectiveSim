@@ -109,11 +109,13 @@ io.on('connection', (socket) => {
   socket.on('lobby:setBots', handle(({ count }) => game().setBots(me(), count)));
   socket.on('game:start', handle(async () => { await game().start(me()); }));
   socket.on('chat:send', handle(({ text }) => game().sendChat(me(), text)));
-  socket.on('day:confirmSleep', handle(() => game().confirmSleep(me())));
-  socket.on('day:cancelSleep', handle(() => game().cancelSleep(me())));
-  socket.on('host:forceSleep', handle(() => game().forceSleep(me())));
-  socket.on('night:chooseTarget', handle(async ({ targetId }) => { await game().chooseTarget(me(), targetId); }));
-  socket.on('vote:cast', handle(({ targetId }) => game().castVote(me(), targetId)));
+  // วงจรวัน: เลือกห้อง → เลือกแอ็กชัน → อ่านบันทึก/พร้อมไปต่อ
+  socket.on('day:move', handle(({ zoneId }) => game().chooseMove(me(), String(zoneId || ''))));
+  socket.on('day:act', handle(({ type, itemId, targetId, victimId, toZoneId }) => game().chooseAction(me(), { type, itemId, targetId, victimId, toZoneId })));
+  socket.on('day:ready', handle(() => game().markReady(me())));
+  socket.on('host:forceStep', handle(() => game().forceStep(me())));
+  // การตัดสิน
+  socket.on('vote:cast', handle(({ targetId }) => game().castVote(me(), String(targetId || ''))));
   socket.on('vote:confirm', handle(() => game().confirmVote(me())));
   socket.on('host:forceVote', handle(() => game().forceVote(me())));
   socket.on('host:nextRound', handle(async () => { await game().nextRound(me()); }));

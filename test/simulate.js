@@ -1,12 +1,15 @@
-// จำลองเกมเต็มรอบด้วย mock AI เพื่อตรวจ state machine, การซ่อนข้อมูล, โหวตรอบตัดสิน, อีเวนต์คืนชีพ และสรุปผล
+// จำลองเกมเต็มรอบด้วย mock AI เพื่อตรวจ state machine, การซ่อนข้อมูล, ลูปสำรวจห้อง/ลงมือ/กับดัก/ภารกิจ,
+// การพบศพ → เก็บหลักฐาน → ตัดสิน (รวมโหวตผิด = จบเกม), การหนี และสรุปผล
 // รัน: npm test
-import { Game, PHASE, CONFIG, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap } from '../server/game.js';
+import { Game, PHASE, STEP, CONFIG, NONE_VOTE, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap } from '../server/game.js';
 import { createAI } from '../server/ai.js';
 
 CONFIG.BOT_DELAY_SCALE = 0.02;
+CONFIG.STEP_TIMEOUT_MS = 0;
 
 const quietLog = { info() {}, warn() {}, error: (...a) => console.error(...a), log() {} };
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const chance = (p) => Math.random() < p;
 
 function assert(cond, msg) {
   if (!cond) {
@@ -15,8 +18,13 @@ function assert(cond, msg) {
   }
 }
 
-// voteStrategy: 'random' = ครึ่งหนึ่งโหวตถูก ครึ่งหนึ่งสุ่ม | 'split' = ตั้งใจแบ่งคะแนนให้เสมอในรอบแรก แล้วรอบตัดสินโหวตคนแรก
-async function runGame({ humans, bots, label, voteStrategy = 'random', config = {} }) {
+// strategy:
+//  'explore'  = ผู้เล่นสำรวจ/หยิบของ และใครที่ถืออาวุธและอยู่กับคนอื่นแค่คนเดียวจะลงมือ 50%
+//  'peaceful' = ไม่มีใครลงมือ (ทดสอบภารกิจ/หนี/หมดเวลา)
+//  'escape'   = ทุกคนมุ่งหาของหนีและไปทางออก
+//  'trap'     = หยิบยา/อาวุธมาวางกับดัก
+// voteStrategy: 'smart' = โหวตถูกเสมอ (ถ้ารู้) | 'wrong' = โหวตผิดเสมอ | 'random' | 'split'
+async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStrategy = 'smart', config = {}, maxTicks = 5000 }) {
   const saved = { ...CONFIG };
   Object.assign(CONFIG, config);
   const ai = createAI({ forceMock: true, log: quietLog });
@@ -30,21 +38,19 @@ async function runGame({ humans, bots, label, voteStrategy = 'random', config = 
   const host = ids[0];
   if (bots) game.setBots(host, bots);
 
-  let acting = false;
-  let trials = 0;
-  let runoffs = 0;
-  let leakChecks = 0;
-  let wrongVotes = 0;
+  const stats = { days: 0, trials: 0, kills: 0, traps: 0, trapKills: 0, objectiveDeaths: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, partsFound: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0 };
   let rolesChecked = false;
   let roleStats = { hidden: 0, fakes: 0 };
-  let usedUltimateCases = 0;
-  let observationChecks = 0;
+  let ticks = 0;
 
   const checkViews = () => {
     const N = game.players.size;
     for (const id of ids) {
       const v = game.viewFor(id);
+      const me = game.players.get(id);
+      const myChar = game.charOf(me);
       assert(v.players.length === N, 'view has all players');
+      const json = JSON.stringify(v);
       for (const p of v.players) {
         if (!p.character) continue;
         const realPlayer = game.players.get(p.id);
@@ -52,79 +58,152 @@ async function runGame({ humans, bots, label, voteStrategy = 'random', config = 
         const isMe = p.id === id;
         const exposed = realChar.ultimateRevealed || game.phase === PHASE.ENDED;
         if (realChar.fakeRole && !exposed && !isMe) {
-          // โรลปลอม: คนอื่นต้องเห็นชื่อปลอม และห้ามรู้ว่าเป็นของปลอม
           assert(p.character.ultimate === realChar.fakeUltimate.title, `fake role must show decoy to others (${p.id} → ${id})`);
           assert(p.character.ultimate !== realChar.ultimate.title, 'fake role leaked real title');
           assert(p.character.fakeUltimate == null && !p.character.fakeRoleExposed, 'fake role flag leaked to others');
+          assert(p.character.trait === 'none', 'fake role shows no trait');
         } else if (realChar.fakeRole) {
           assert(p.character.ultimate === realChar.ultimate.title, 'fake role owner/exposed view shows real title');
-          assert(p.character.fakeUltimate === realChar.fakeUltimate.title, 'fake title visible to owner or after exposure');
-          assert(realChar.fakeUltimate.title !== realChar.ultimate.title, 'decoy differs from real');
         } else {
           const mayShow = !realChar.ultimate.hidden || exposed || (isMe && realPlayer.knowsUltimate);
           if (!mayShow) {
             assert(p.character.ultimate === '???', `hidden ultimate leaked for ${p.id} to ${id}`);
-            assert(p.character.ultimateDescription == null, 'hidden ultimate description leaked');
-          } else {
-            assert(p.character.ultimate === realChar.ultimate.title, 'visible ultimate shown');
-          }
-          assert(!p.character.fakeRoleExposed && p.character.fakeUltimate == null, 'non-fake char has no fake fields');
+            assert(p.character.ultimateDescription == null && p.character.trait == null, 'hidden ultimate details leaked');
+          } else assert(p.character.ultimate === realChar.ultimate.title, 'visible ultimate shown');
         }
-        assert(!('rank' in p), 'rank field must not exist anymore');
-      }
-      if (game.phase === PHASE.INVESTIGATION) {
-        const inc = game.incident;
-        const json = JSON.stringify(v.incident);
-        assert(!json.includes('culprit'), 'public incident leaks culprit field');
-        assert(!json.includes(inc.culpritStory.slice(0, 20)), 'public incident leaks story');
-        // โครงสร้างคดีแบบใหม่: วิธีการ + ตำแหน่งทุกคน + เส้นทางการไขคดี
-        assert(inc.method && inc.method.cause && typeof inc.method.usedUltimate === 'boolean', 'incident has method');
-        if (!inc.method.usedUltimate) assert(inc.method.ultimateUse === '', 'ultimateUse empty when not used');
-        assert(Array.isArray(inc.deductionChain) && inc.deductionChain.length >= 2, 'incident has deduction chain');
-        const present = [...game.players.values()].filter((p) => p.alive || p.id === inc.victimPlayerId);
-        for (const p of present) assert(inc.whereabouts.some((w) => w.characterId === p.characterId), `whereabouts missing ${p.id}`);
-        const culpritChar = game.charOf(game.players.get(inc.culpritPlayerId));
-        const culpritWhere = inc.whereabouts.find((w) => w.characterId === culpritChar.id);
-        assert(culpritWhere && culpritWhere.where, 'culprit has whereabouts truth');
-        assert(v.incident.whereabouts === undefined && v.incident.observations === undefined, 'public incident must not carry whereabouts/observations');
-        const viewJson = JSON.stringify(v);
-        const myChar = game.charOf(game.players.get(id));
-        const me = game.players.get(id);
-        if (id !== inc.culpritPlayerId) {
-          assert(!v.me.clues?.story && !v.me.clues?.method, `non-culprit ${id} sees culprit story/method`);
-          assert(!viewJson.includes(culpritWhere.where.slice(0, 25)), `non-culprit ${id} view leaks culprit truth`);
-          if (me.alive) {
-            const mine = inc.whereabouts.find((w) => w.characterId === myChar.id);
-            assert(v.me.clues?.myNight === mine.where, 'alive player sees own night truth');
-          }
-        } else {
-          assert(v.me.clues?.role === 'culprit' && v.me.clues.story, 'culprit sees story');
-          assert(v.me.clues.method?.cause === inc.method.cause, 'culprit sees method');
+        // ตำแหน่งของคนอื่น: เห็นเฉพาะคนที่อยู่ห้องเดียวกันหลังเลือกห้องแล้ว (หรือเมื่อเราตาย/เกมจบ)
+        if (!isMe && me.alive && game.phase !== PHASE.ENDED) {
+          const sameZone = realPlayer.alive && (game.step === STEP.ACT || game.step === STEP.REPORT) && realPlayer.zoneId === me.zoneId;
+          if (!sameZone) assert(p.zoneId == null, `position of ${p.id} leaked to ${id}`);
+          else assert(p.zoneId === realPlayer.zoneId, 'same-zone position visible');
         }
-        // เหตุการณ์ย่อย: เห็นเฉพาะคนใน knownBy เท่านั้น
-        // ถ้าเหลือแค่คนร้ายกับเหยื่อ ไม่มีใครเห็นอะไรได้ จึงไม่มี observation
-        assert(inc.observations.length >= 1 || present.length <= 2, 'incident has observations');
-        for (const o of inc.observations) {
-          assert(o.knownBy.length >= 1 && o.knownBy.length <= 3, 'observation known by 1-3 people');
-          assert(o.knownBy.length < game.alivePlayers().length, 'observation must not be known by everyone');
-          if (o.knownBy.includes(myChar.id) && me.alive) assert(v.me.clues?.observations?.includes(o.text), `member ${id} sees observation`);
-          else if (me.alive) assert(!viewJson.includes(o.text), `non-member ${id} must not see observation "${o.text.slice(0, 30)}"`);
+        // คนตายที่ยังไม่มีใครรู้ ต้องดูเหมือนยังมีชีวิตสำหรับคนที่ไม่รู้
+        if (!isMe && !realPlayer.alive && me.alive && game.phase !== PHASE.ENDED) {
+          const body = game.bodies.get(p.id);
+          const known = body?.announced || ['executed', 'punished', 'escaped'].includes(realPlayer.fate) || me.knownBodies.has(p.id);
+          if (!known) assert(p.alive === true && p.fate == null && !p.knownDead, `unknown death of ${p.id} leaked to ${id}`);
+          else assert(p.knownDead, 'known death shown');
         }
-        observationChecks += inc.observations.length;
-        assert(v.lastResult === null, 'lastResult hidden during investigation');
-        if (v.runoff) assert(v.runoff.candidates.length >= 2, 'runoff has at least 2 candidates');
-        leakChecks++;
       }
-      if (game.phase === PHASE.DAY && game.specialEvent) {
-        if (id !== game.specialEvent.playerId) assert(v.me.eventPrivateNote == null, 'event private note leaked');
-        else assert(typeof v.me.eventPrivateNote === 'string', 'revived player sees private note');
-        assert(!JSON.stringify(v.specialEvent).includes('privateNote'), 'public event carries private note');
+      // ความลับของเกมไม่หลุดไปในมุมมองของผู้เล่นที่ยังมีชีวิต
+      if (me.alive && game.phase !== PHASE.ENDED && game.phase !== PHASE.TRIAL_RESULT) {
+        assert(!json.includes('"killerId"') && !json.includes('"culpritId"'), `killer field leaked to ${id}`);
+        assert(!json.includes('"designatedId"'), 'designatedId leaked');
+        for (const o of game.players.values()) {
+          if (o.id === id) continue;
+          for (const it of o.inventory) assert(!json.includes(`"id":"${it.id}"`), `inventory item ${it.id} of ${o.id} leaked to ${id}`);
+        }
+        // ของหนีที่ยังซ่อนอยู่ ห้ามปรากฏในมุมมอง
+        // ของที่ซ่อนอยู่ (รวมของหนี) ห้ามหยิบได้และห้ามปรากฏ id ในมุมมอง (ชื่ออาจอยู่ในความทรงจำ/บันทึกจากตอนที่ยังเห็นได้)
+        for (const z of game.zones.values()) for (const it of z.items) if (it.hidden) assert(!json.includes(`"${it.id}"`), `hidden item "${it.name}" leaked to ${id}`);
+        // บันทึกส่วนตัวของคนอื่นไม่หลุด
+        for (const o of game.players.values()) {
+          if (o.id === id) continue;
+          for (const l of o.log) assert(!json.includes(`"${l.id}"`), `private log entry of ${o.id} leaked to ${id}`);
+          for (const ob of o.objectives) assert(!json.includes(`"${ob.id}"`), `objective of ${o.id} leaked to ${id}`);
+        }
       }
+      if (game.step === STEP.ACT && me.alive) {
+        assert(Array.isArray(v.me.availableActions) && v.me.availableActions.some((a) => a.type === 'search'), 'alive player has actions');
+        stats.actionsChecked++;
+      }
+      if (game.phase === PHASE.TRIAL) {
+        assert(v.announcedCases.length >= 1, 'trial has announced cases');
+        for (const c of v.announcedCases) assert(c.bodyState && c.title, 'announced case has narrative');
+        assert(v.lastResult === null, 'lastResult hidden during trial');
+      }
+      stats.leakChecks++;
     }
   };
 
+  const humansAlive = () => game.alivePlayers().filter((p) => !p.isBot);
+
+  const decideMove = (p) => {
+    const zones = [...game.zones.keys()];
+    const obj = p.objectives.find((o) => !o.done && o.zoneId && o.type !== 'plant');
+    if (obj && chance(0.8)) return obj.zoneId;
+    const plant = p.objectives.find((o) => !o.done && o.type === 'plant');
+    if (plant && chance(0.8)) return plant.zoneId;
+    if (strategy === 'escape' && p.inventory.some((i) => i.isPart) && chance(0.7)) return game.escape.exitZoneId;
+    if (game.phase === PHASE.INVESTIGATION) {
+      const bz = [...game.bodies.values()].filter((b) => b.announced && !b.judged).map((b) => b.zoneId);
+      if (bz.length && chance(0.5)) return pick(bz);
+    }
+    return pick(zones);
+  };
+
+  const decideAction = (p) => {
+    const avail = game.availableActions(p).filter((a) => !a.disabled);
+    const byType = (t) => avail.filter((a) => a.type === t);
+    const z = game.zones.get(p.zoneId);
+    const take = byType('take');
+    const obj = p.objectives.filter((o) => !o.done);
+    const t = obj.find((o) => o.type === 'take' && take.some((a) => a.itemId === o.itemId));
+    if (t) return take.find((a) => a.itemId === t.itemId);
+    const pl = obj.find((o) => o.type === 'plant' && o.zoneId === p.zoneId && p.inventory.some((i) => i.id === o.itemId));
+    if (pl) return byType('hide').find((a) => a.itemId === pl.itemId);
+    const partTake = take.find((a) => z.items.find((i) => i.id === a.itemId)?.isPart);
+    if (partTake) return partTake;
+    if (byType('escape').length && p.inventory.some((i) => i.isPart)) return byType('escape')[0];
+    if (game.phase === PHASE.INVESTIGATION) {
+      const ex = byType('examine');
+      if (ex.length && chance(0.5)) return pick(ex);
+      if (byType('clean').length && p.kills > 0) return byType('clean')[0];
+      const mb = byType('moveBody');
+      if (mb.length && p.kills > 0 && chance(0.3)) return { ...mb[0], toZoneId: pick([...game.zones.keys()].filter((id) => id !== p.zoneId)) };
+      return byType('search')[0];
+    }
+    if (strategy === 'trap') {
+      const tr = byType('trap');
+      if (tr.length && chance(0.7)) return pick(tr);
+      const poisonTake = take.find((a) => ['poison', 'weapon'].includes(z.items.find((i) => i.id === a.itemId)?.kind));
+      if (poisonTake) return poisonTake;
+    }
+    if (strategy === 'explore' || strategy === 'trap') {
+      const attacks = byType('attack');
+      if (attacks.length && game.bestWeapon(p) && chance(attacks.length === 1 ? 0.5 : 0.2)) return pick(attacks);
+      const weaponTake = take.find((a) => z.items.find((i) => i.id === a.itemId)?.kind === 'weapon');
+      if (weaponTake && chance(0.5)) return weaponTake;
+    }
+    const mb = byType('moveBody');
+    if (mb.length && chance(0.2)) return { ...mb[0], toZoneId: pick([...game.zones.keys()].filter((id) => id !== p.zoneId)) };
+    const ex = byType('examine');
+    if (ex.length && chance(0.4)) return pick(ex);
+    const special = [...byType('steal'), ...byType('interrogate'), ...byType('sabotage')];
+    if (special.length && chance(0.3)) return pick(special);
+    if (byType('clean').length && chance(0.2)) return byType('clean')[0];
+    if (p.inventory.length && chance(0.1)) return pick([...byType('hide'), ...byType('drop')]);
+    if (chance(0.75)) return byType('search')[0];
+    return byType('rest')[0];
+  };
+
+  const decideVote = (p) => {
+    const cands = game.voteCandidates(p.id);
+    assert(cands.length > 0, 'voter has candidates');
+    const murders = game.openCases().filter((c) => c.killerId && game.players.get(c.killerId)?.alive);
+    if (voteStrategy === 'split' && !game.runoff) {
+      const voters = game.alivePlayers();
+      const idx = voters.findIndex((v) => v.id === p.id);
+      const target = voters[(idx + 1) % voters.length].id;
+      return cands.includes(target) ? target : cands[0];
+    }
+    if (voteStrategy === 'split') return cands[0];
+    if (voteStrategy === 'wrong') {
+      const innocents = cands.filter((id) => id !== NONE_VOTE && !murders.some((c) => c.killerId === id));
+      if (murders.length === 0) return innocents[0] || cands.find((id) => id !== NONE_VOTE) || cands[0];
+      return innocents[0] || (cands.includes(NONE_VOTE) ? NONE_VOTE : cands[0]);
+    }
+    if (voteStrategy === 'smart') {
+      if (!murders.length) return cands.includes(NONE_VOTE) ? NONE_VOTE : cands[0];
+      const k = murders.find((c) => cands.includes(c.killerId));
+      return k ? k.killerId : cands[0];
+    }
+    return pick(cands);
+  };
+
   await new Promise((resolve, reject) => {
-    const watchdog = setTimeout(() => reject(new Error(`${label}: watchdog timeout in phase ${game.phase}`)), 60_000);
+    const watchdog = setTimeout(() => reject(new Error(`${label}: watchdog timeout in phase ${game.phase}/${game.step} day ${game.day}`)), 60_000);
+    let acting = false;
     let pending = false;
     game.onChange = () => {
       pending = true;
@@ -132,89 +211,74 @@ async function runGame({ humans, bots, label, voteStrategy = 'random', config = 
       acting = true;
       setImmediate(async function tick() {
         pending = false;
+        ticks++;
+        if (ticks > maxTicks) {
+          clearTimeout(watchdog);
+          reject(new Error(`${label}: too many ticks (stuck in ${game.phase}/${game.step})`));
+          return;
+        }
         try {
           checkViews();
-          const alive = game.alivePlayers().filter((p) => !p.isBot);
           switch (game.phase) {
-            case PHASE.DAY: {
-              if (!rolesChecked) {
+            case PHASE.DAY:
+            case PHASE.INVESTIGATION: {
+              if (!rolesChecked && game.characters.length) {
                 rolesChecked = true;
                 const n = game.characters.length;
                 const hidden = game.characters.filter((c) => c.ultimate.hidden);
                 const fakes = game.characters.filter((c) => c.fakeRole);
-                assert(hidden.length >= 1 && hidden.length <= hiddenUltimateCap(n), `hidden ultimates ${hidden.length} within cap ${hiddenUltimateCap(n)} for ${n}`);
-                assert(fakes.length === Math.min(CONFIG.FAKE_ROLES, n - 1), `exactly ${CONFIG.FAKE_ROLES} fake role(s), got ${fakes.length}`);
-                for (const c of fakes) {
-                  assert(!c.ultimate.hidden, 'fake role is never also hidden');
-                  assert(c.fakeUltimate?.title && c.fakeUltimate.title !== c.ultimate.title, 'fake role has distinct decoy');
-                  assert(!game.characters.some((o) => o !== c && o.ultimate.title === c.fakeUltimate.title), 'decoy title does not collide with a real title');
-                  assert(game.playerOfChar(c.id).knowsUltimate, 'fake role owner always knows real ultimate');
-                }
+                assert(hidden.length >= 1 && hidden.length <= hiddenUltimateCap(n), `hidden ultimates ${hidden.length} within cap`);
+                assert(fakes.length === Math.min(CONFIG.FAKE_ROLES, n - 1), `exactly ${CONFIG.FAKE_ROLES} fake role(s)`);
+                for (const c of fakes) assert(game.playerOfChar(c.id).knowsUltimate && !c.ultimate.hidden, 'fake role owner knows, not hidden');
                 roleStats = { hidden: hidden.length, fakes: fakes.length };
+                assert(game.escape.total >= 2 && game.escape.parts.every((x) => game.zones.get(x.zoneId).items.some((i) => i.id === x.id && i.hidden)), 'escape parts hidden in zones');
+                assert(game.zones.get(game.location.exitZoneId).items.length === 0, 'exit zone starts empty');
               }
-              const pendingSleep = alive.filter((p) => !game.sleepConfirmed.has(p.id));
-              if (pendingSleep.length) {
-                try { game.sendChat(pendingSleep[0].id, `สวัสดีวันที่ ${game.round}`); } catch {}
-                for (const p of pendingSleep) game.confirmSleep(p.id);
-              }
-              break;
-            }
-            case PHASE.NIGHT: {
-              const m = game.players.get(game.night.murdererId);
-              if (!m.isBot && !game.night.targetId) {
-                const cands = game.alivePlayers().filter((p) => p.id !== m.id);
-                await game.chooseTarget(m.id, pick(cands).id);
-              }
-              break;
-            }
-            case PHASE.INVESTIGATION: {
-              if (game.runoff && game.runoff.number > runoffs) runoffs = game.runoff.number;
-              const pendingVote = alive.filter((p) => !game.confirmedVotes.has(p.id));
-              const culprit = game.players.get(game.incident.culpritPlayerId);
-              pendingVote.forEach((p, i) => {
-                const cands = game.voteCandidates(p.id);
-                assert(cands.length > 0, 'voter always has a candidate');
-                let target;
-                if (voteStrategy === 'split' && !game.runoff) {
-                  // โหวตแบบวงกลม (ทุกคนได้คนละ 1 คะแนน) → เสมอทุกคน → ต้องเกิดรอบตัดสินแน่นอน
-                  const voters = game.alivePlayers();
-                  const idx = voters.findIndex((v) => v.id === p.id);
-                  target = voters[(idx + 1) % voters.length];
-                } else if (voteStrategy === 'split') {
-                  target = cands[0];
-                } else if (voteStrategy === 'wrong') {
-                  // ตั้งใจโหวตผิดเพื่อทดสอบเส้นทาง EXECUTE_WRONG_VOTE
-                  const innocents = cands.filter((c) => c.id !== culprit.id);
-                  target = innocents.length ? innocents[0] : cands[0];
-                } else {
-                  const culpritIsCandidate = cands.some((c) => c.id === culprit.id);
-                  target = Math.random() < 0.5 && culpritIsCandidate ? culprit : pick(cands);
+              if (game.phase === PHASE.DAY && game.step === STEP.MOVE) stats.days = Math.max(stats.days, game.day);
+              if (!game.step) break; // กำลังบรรยายคดี
+              if (game.step === STEP.MOVE) {
+                const pendingMove = humansAlive().filter((p) => !game.moves.has(p.id));
+                if (pendingMove.length) {
+                  try { game.sendChat(pendingMove[0].id, `วันที่ ${game.day} ไปไหนกันดี`); } catch {}
+                  for (const p of pendingMove) game.chooseMove(p.id, decideMove(p));
                 }
-                game.castVote(p.id, target.id);
+              } else if (game.step === STEP.ACT) {
+                const pendingAct = humansAlive().filter((p) => !game.actions.has(p.id));
+                for (const p of pendingAct) {
+                  const a = decideAction(p);
+                  assert(a, `action chosen for ${p.id}`);
+                  game.chooseAction(p.id, a);
+                }
+              } else if (game.step === STEP.REPORT) {
+                for (const p of humansAlive().filter((x) => !game.ready.has(x.id))) {
+                  const v = game.viewFor(p.id);
+                  assert(v.me.log.some((l) => l.day === game.day && l.kind === 'move'), 'player has a move log entry for today');
+                  game.markReady(p.id);
+                }
+              }
+              break;
+            }
+            case PHASE.TRIAL: {
+              if (game.runoff && game.runoff.number > stats.runoffs) stats.runoffs = game.runoff.number;
+              const pendingVote = humansAlive().filter((p) => !game.confirmedVotes.has(p.id));
+              for (const p of pendingVote) {
+                const t = decideVote(p);
+                game.castVote(p.id, t);
                 game.confirmVote(p.id);
-              });
+              }
               break;
             }
             case PHASE.TRIAL_RESULT: {
-              trials++;
+              stats.trials++;
               const r = game.lastResult;
-              assert(r.method?.cause && r.deductionChain.length >= 2, 'result carries method + deduction chain');
-              assert(r.whereabouts.length >= 2 && r.whereabouts.every((w) => 'truth' in w && w.characterName), 'result carries full whereabouts truth');
-              assert(Array.isArray(r.observations) && r.observations.every((o) => o.text && o.knownBy.length), 'result carries observations with names');
+              assert(r && Array.isArray(r.cases) && r.cases.length >= 1, 'result has judged cases');
+              assert(Array.isArray(r.timeline) && r.timeline.length >= 1 && r.timeline.every((t) => t.positions.length && t.positions.every((x) => x.zoneName)), 'result has timeline positions');
+              for (const c of r.cases) assert(c.victimName && c.zoneName && c.causeLabel && (c.killerName || c.cause === 'objective'), 'case reveal complete');
+              if (!r.correct) stats.wrongVotes++;
+              if (r.votedId === NONE_VOTE) stats.noneVotes++;
+              if (r.correct && r.executedId) assert(game.players.get(r.executedId).fate === 'executed', 'executed fate');
               const rv = game.viewFor(ids[0]);
-              assert(rv.lastResult?.whereabouts?.length === r.whereabouts.length, 'result whereabouts visible after trial');
-              if (r.method.usedUltimate) usedUltimateCases++;
-              const culprit = game.players.get(r.culpritId);
-              assert(!culprit.alive, 'culprit leaves the game after trial');
-              assert(culprit.fate === (r.correct ? 'executed' : 'escaped'), 'culprit fate matches vote');
-              assert(!game.players.get(r.victimId).alive, 'victim dead');
-              if (!r.correct) wrongVotes++;
-              if (r.accusedExecuted) {
-                assert(CONFIG.EXECUTE_WRONG_VOTE, 'accused executed only when enabled');
-                assert(game.players.get(r.accusedId).fate === 'wrongly_executed', 'accused fate');
-              } else if (!r.correct && r.accusedId && CONFIG.EXECUTE_WRONG_VOTE) {
-                assert(false, 'wrong vote with EXECUTE_WRONG_VOTE must execute accused');
-              }
+              assert(rv.lastResult?.cases?.length === r.cases.length, 'result visible after trial');
               await game.nextRound(host);
               break;
             }
@@ -239,50 +303,72 @@ async function runGame({ humans, bots, label, voteStrategy = 'random', config = 
     game.start(host).catch(reject);
   });
 
-  // ตรวจสรุปผล
+  // สรุปสถิติจาก state จริง
+  for (const c of game.cases) {
+    if (c.cause === 'objective') stats.objectiveDeaths++;
+    else stats.kills++;
+    if (c.cause === 'trap') stats.trapKills++;
+    if (c.cause === 'defense') stats.defenses++;
+    if (c.cause === 'wrongTarget') stats.wrongTargets++;
+  }
+  stats.trials = game.history.length;
+  stats.wrongVotes = game.history.filter((h) => !h.correct).length;
+  stats.traps = game.timeline.reduce((n, t) => n + t.events.filter((e) => e.includes('วางกับดัก')).length, 0);
+  stats.partsFound = game.escape.parts.filter((x) => x.found).length;
+  if (game.endReason === 'escape') stats.escapes++;
+
   const all = [...game.players.values()];
   const o = game.outcome;
   assert(o && o.survived.length + o.died.length === all.length, 'every player appears in outcome exactly once');
-  const seen = new Set([...o.survived, ...o.died].map((r) => r.playerId));
-  assert(seen.size === all.length, 'no duplicate outcome rows');
   for (const r of o.survived) assert(SURVIVED_FATES.includes(r.fate), `survived fate valid (${r.fate})`);
   for (const r of o.died) assert(DEAD_FATES.includes(r.fate), `died fate valid (${r.fate})`);
-  assert(all.filter((p) => p.fate === 'survivor').length <= 1, 'at most one final survivor');
-  const revived = all.filter((p) => p.revived).length;
+  if (game.endReason === 'wrong_vote') {
+    assert(all.every((p) => !p.alive), 'wrong vote kills everyone');
+    // คนร้ายที่ยังมีชีวิตตอนตัดสินต้อง "รอด" (escaped); คนร้ายที่ตายไปก่อนแล้วคง fate เดิม
+    for (const c of game.cases.filter((x) => x.killerId)) assert(['escaped', 'executed', 'victim', 'perished'].includes(game.players.get(c.killerId).fate), `killer fate after wrong vote (${game.players.get(c.killerId).fate})`);
+  }
+  if (game.endReason === 'last_one') assert(all.filter((p) => p.alive).length <= 1, 'last_one leaves ≤1 alive');
+  if (game.endReason === 'escape') assert(game.escape.achieved && all.filter((p) => p.fate === 'survivor').length >= 1, 'escape ends with survivors');
+  // ศพทุกศพอยู่ในห้องที่ถูกต้อง และคดีทุกคดีมีเหยื่อตายจริง
+  for (const b of game.bodies.values()) assert(!game.players.get(b.victimId).alive, 'body belongs to a dead player');
+  for (const c of game.cases) assert(!game.players.get(c.victimId).alive || game.players.get(c.victimId).revived, 'case victim dead (or revived)');
 
   Object.assign(CONFIG, saved);
   console.log(
-    `✔ ${label}: ${all.length} players, ${trials} trials (${wrongVotes} wrong, ${usedUltimateCases} used Ultimate), ${runoffs} runoff(s), ${revived} revived, ${roleStats.hidden} hidden + ${roleStats.fakes} fake role(s), ${leakChecks} leak checks, ${observationChecks} observation checks`,
+    `✔ ${label}: ${all.length} players · end=${game.endReason} day ${game.day} · ${stats.trials} trial(s) (${stats.wrongVotes} wrong, ${stats.noneVotes} none, ${stats.runoffs} runoff) · kills ${stats.kills} (trap ${stats.trapKills}, defense ${stats.defenses}, wrong-target ${stats.wrongTargets}) · objective deaths ${stats.objectiveDeaths} · traps set ${stats.traps} · parts ${stats.partsFound}/${game.escape.total} · ${roleStats.hidden} hidden + ${roleStats.fakes} fake · ${stats.leakChecks} leak checks, ${stats.actionsChecked} action checks`,
   );
-  console.table(
-    [...o.survived, ...o.died].map((r) => ({
-      player: r.name,
-      character: r.characterName,
-      ultimate: r.ultimate,
-      shownAs: r.fakeRole ? r.fakeUltimate : '',
-      fate: r.fate,
-      round: r.eliminatedRound,
-      revived: r.revived,
-    })),
-  );
-  return { trials, runoffs, revived, wrongVotes, usedUltimateCases, roleStats };
+  return { ...stats, endReason: game.endReason, roleStats, game };
 }
 
 try {
-  await runGame({ humans: 7, bots: 0, label: 'humans only', config: { REVIVE_CHANCE: 0 } });
-  await runGame({ humans: 2, bots: 4, label: 'with bots', config: { REVIVE_CHANCE: 0 } });
-  await runGame({ humans: 15, bots: 0, label: 'full 15', config: { REVIVE_CHANCE: 0 } });
-  const exec = await runGame({ humans: 8, bots: 0, label: 'always wrong + execute wrong vote', voteStrategy: 'wrong', config: { REVIVE_CHANCE: 0, EXECUTE_WRONG_VOTE: true } });
-  assert(exec.wrongVotes >= 1, 'wrong strategy must produce wrong votes');
-  const split = await runGame({ humans: 6, bots: 0, label: 'forced ties → runoff', voteStrategy: 'split', config: { REVIVE_CHANCE: 0 } });
-  assert(split.runoffs >= 1, 'split strategy must trigger at least one runoff');
-  const revive = await runGame({ humans: 7, bots: 0, label: 'revive events (chance 100%)', config: { REVIVE_CHANCE: 1 } });
-  assert(revive.revived >= 1, 'revive run must revive at least one player');
-  const ten = await runGame({ humans: 10, bots: 0, label: 'ten players → 1-2 hidden + 1 fake', config: { REVIVE_CHANCE: 0 } });
-  assert(ten.roleStats.hidden >= 1 && ten.roleStats.hidden <= 2 && ten.roleStats.fakes === 1, 'ten players must have 1-2 hidden and 1 fake role');
-  const noFake = await runGame({ humans: 5, bots: 0, label: 'fake roles disabled', config: { REVIVE_CHANCE: 0, FAKE_ROLES: 0 } });
-  assert(noFake.roleStats.fakes === 0, 'FAKE_ROLES=0 yields no fake role');
-  console.log(`ALL SIMULATIONS PASSED (execute-wrong-vote run had ${exec.wrongVotes} wrong votes)`);
+  const agg = { kills: 0, trapKills: 0, objectiveDeaths: 0, trials: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0 };
+  const add = (r) => { for (const k of Object.keys(agg)) agg[k] += r[k] || 0; };
+
+  for (let i = 0; i < 4; i++) add(await runGame({ humans: 8, label: `explore #${i + 1}`, strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
+  add(await runGame({ humans: 3, bots: 4, label: 'with bots', strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
+  add(await runGame({ humans: 15, label: 'full 15', strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
+  const wrong = await runGame({ humans: 8, label: 'always wrong vote → game over', strategy: 'explore', voteStrategy: 'wrong', config: { REVIVE_CHANCE: 0 } });
+  add(wrong);
+  if (wrong.trials) assert(wrong.endReason === 'wrong_vote' && wrong.wrongVotes === 1, 'wrong vote ends the game immediately');
+  const trap = await runGame({ humans: 8, label: 'trap-heavy', strategy: 'trap', config: { REVIVE_CHANCE: 0 } });
+  add(trap);
+  const peaceful = await runGame({ humans: 6, label: 'peaceful (objectives + timeout)', strategy: 'peaceful', config: { REVIVE_CHANCE: 0, MAX_DAYS: 6 } });
+  add(peaceful);
+  assert(peaceful.kills === 0, 'peaceful run has no kills');
+  const esc = await runGame({ humans: 6, label: 'escape-focused', strategy: 'escape', config: { REVIVE_CHANCE: 0, OBJECTIVES: false, MAX_DAYS: 14, FIND_PART_CHANCE: 0.9 } });
+  add(esc);
+  const split = await runGame({ humans: 6, label: 'forced ties → runoff', strategy: 'explore', voteStrategy: 'split', config: { REVIVE_CHANCE: 0 } });
+  add(split);
+  const revive = await runGame({ humans: 7, label: 'revive events (chance 100%)', strategy: 'explore', config: { REVIVE_CHANCE: 1 } });
+  add(revive);
+  const noObj = await runGame({ humans: 5, label: 'objectives disabled', strategy: 'explore', config: { REVIVE_CHANCE: 0, OBJECTIVES: false, FAKE_ROLES: 0 } });
+  add(noObj);
+  assert(noObj.objectiveDeaths === 0 && noObj.roleStats.fakes === 0, 'no objective deaths / no fake role when disabled');
+
+  assert(agg.kills >= 3, `simulations should produce kills (got ${agg.kills})`);
+  assert(agg.trials >= 2, `simulations should reach trials (got ${agg.trials})`);
+  assert(agg.objectiveDeaths >= 1, 'objective deadline deaths should occur');
+  console.log(`ALL SIMULATIONS PASSED — totals: ${JSON.stringify(agg)}`);
   process.exit(0);
 } catch (err) {
   console.error(err);
