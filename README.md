@@ -132,7 +132,7 @@ npm start
 1. **สร้าง repo บน GitHub** (กด New repository ตั้งชื่อ เช่น `danganronpa-web` ไม่ต้องติ๊กสร้าง README) แล้ว push โค้ดจากเครื่องนี้ (โฟลเดอร์นี้มี git repo และ commit แรกอยู่แล้ว):
 
    ```bash
-   git remote add origin https://github.com/<ชื่อผู้ใช้>/danganronpa-web.git
+   git remote add origin https://github.com/popLazySans/DetectiveSim.git
    ```
 
    ```bash
@@ -145,8 +145,8 @@ npm start
 5. รอ build 1–2 นาที จะได้ URL แบบ `https://despair-board.onrender.com` เปิดแล้วสร้างห้อง กด **🔗 คัดลอกลิงก์เชิญ** ส่งให้เพื่อนได้เลย
 6. ต่อไปทุกครั้งที่ `git push` Render จะ deploy ใหม่ให้อัตโนมัติ (`autoDeploy: true`)
 
-ถ้า repo เป็น public จะใช้ปุ่มนี้แทนข้อ 3 ได้ (แก้ `<ชื่อผู้ใช้>` ในลิงก์ก่อน):
-`[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/<ชื่อผู้ใช้>/danganronpa-web)`
+ถ้า repo เป็น public จะใช้ปุ่มนี้แทนข้อ 3 ได้:
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/popLazySans/DetectiveSim)
 
 ### ข้อจำกัดของแพลนฟรี Render
 
