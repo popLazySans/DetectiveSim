@@ -45,8 +45,8 @@ const LocationSchema = z.object({
           name: z.string(),
           description: z.string().describe('1 ประโยค บอกใบ้ว่าใช้ทำอะไรได้'),
           kind: z
-            .enum(['weapon', 'poison', 'tool', 'rope', 'food', 'key', 'cloth', 'power', 'fixture'])
-            .describe('weapon=อาวุธ, poison=ยา/สารพิษ, tool=เครื่องมือ/ของหนัก, rope=เชือก/สายไฟ/เทป (ใช้ประกอบกับดัก), food=อาหาร/เครื่องดื่มกลางห้อง (กินได้ วางยาได้ ไม่ใช่ของพกพา), key=กุญแจผู้ดูแลที่ไขประตูห้องได้ทุกห้อง, cloth=ผ้า, power=แผงไฟ/กล้อง (ติดตั้งถาวร ใช้ตัดไฟ/ใส่ฟิวส์), fixture=ของติดตั้งถาวรอื่น ๆ'),
+            .enum(['weapon', 'poison', 'tool', 'rope', 'food', 'lockpick', 'key', 'cloth', 'power', 'fixture'])
+            .describe('weapon=อาวุธ, poison=ยา/สารพิษ, tool=เครื่องมือ/ของหนัก, rope=เชือก/สายไฟ/เทป (ใช้ประกอบกับดัก), food=อาหาร/เครื่องดื่มกลางห้อง (กินได้ วางยาได้ ไม่ใช่ของพกพา), lockpick=ที่สะเดาะกุญแจ/ชุดไขควงช่างกุญแจ (ใช้สะเดาะกลอนประตูห้องที่ล็อก ใส่ 1 ชิ้น), key=ห้ามใช้ (ระบบสร้างกุญแจประจำห้องให้เอง), cloth=ผ้า, power=แผงไฟ/กล้อง (ติดตั้งถาวร ใช้ตัดไฟ/ใส่ฟิวส์), fixture=ของติดตั้งถาวรอื่น ๆ'),
         }),
       ),
     }),
@@ -216,7 +216,7 @@ ${characters.map(fmtCharacter).join('\n')}
 ข้อกำหนด:
 1. name: ชื่อสถานที่สั้น ๆ น่าสนใจ / description: บรรยากาศ 2-3 ประโยค บอกว่าทำไมออกไปไม่ได้ (ห้ามเอ่ยถึงทางออกที่ซ่อนอยู่)
 2. zones: ห้อง 8 ห้อง — ห้องแรกคือ "ที่นอนรวม" ที่ทุกคนนอน (มีของธรรมดา 1-2 ชิ้น เช่น ผ้า ไฟฉาย) ห้องที่ 2-8 คือห้องสำรวจ แต่ละห้องมีของ 2-3 ชิ้น
-3. ของในห้อง 2-8 รวมกันต้องมี: อาวุธ (weapon) อย่างน้อย 5 ชิ้น, ยา/สารพิษ (poison) 3 ชิ้น, เชือก/สายไฟ (rope) 3 ชิ้น, เครื่องมือ/ของหนัก (tool) 3 ชิ้น, แผงไฟหรือกล้อง (power) 2-3 ชิ้น, อาหารกลางห้อง (food) 2 ชิ้นในคนละห้อง, กุญแจผู้ดูแล (key) 1 ชิ้น, ผ้า (cloth) 1-2 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน 2 ชิ้น ชื่อของห้ามซ้ำกัน
+3. ของในห้อง 2-8 รวมกันต้องมี: อาวุธ (weapon) อย่างน้อย 5 ชิ้น, ยา/สารพิษ (poison) 3 ชิ้น, เชือก/สายไฟ (rope) 3 ชิ้น, เครื่องมือ/ของหนัก (tool) 3 ชิ้น, แผงไฟหรือกล้อง (power) 2-3 ชิ้น, อาหารกลางห้อง (food) 2 ชิ้นในคนละห้อง, ที่สะเดาะกุญแจ (lockpick) 1 ชิ้น (ห้ามสร้างกุญแจ ระบบจะสร้างกุญแจประจำห้องให้เอง), ผ้า (cloth) 1-2 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน 2 ชิ้น ชื่อของห้ามซ้ำกัน
 4. exits: ทางออกที่เป็นไปได้ 5 ทาง route ครบทั้ง locked, code, repair, power, breach อย่างละ 1 แต่ละทาง "ซ่อน" อยู่ในห้องสำรวจคนละห้อง (zoneName ต้องตรงกับชื่อห้อง) ชื่อและคำบรรยายต้องสมเหตุสมผลกับสถานที่ และ itemNames ต้องสอดคล้องกับ route (ของพวกนี้ระบบจะซ่อนตามห้องเอง ไม่ต้องใส่ใน zones)
 5. ทุกอย่างสมจริง ของทุกชิ้นต้องมีเหตุผลว่าทำไมถึงอยู่ในห้องนั้น`;
           const loc = await callJson({ user, schema: LocationSchema, effort: 'medium', label: 'location' });
@@ -226,19 +226,20 @@ ${characters.map(fmtCharacter).join('\n')}
             id: `z${zi + 1}`,
             name: z.name,
             description: z.description,
-            items: (z.items || []).map((it, ii) => ({ id: `z${zi + 1}_i${ii + 1}`, name: it.name, description: it.description, kind: it.kind, portable: !nonPortable.has(it.kind), master: it.kind === 'key' })),
+            items: (z.items || []).map((it, ii) => ({ id: `z${zi + 1}_i${ii + 1}`, name: it.name, description: it.description, kind: it.kind, portable: !nonPortable.has(it.kind), master: false })),
           }));
           const explore = zones.slice(1);
           const all = () => zones.flatMap((z) => z.items);
           const inject = (kind, name, description) => {
             const z = explore[Math.floor(Math.random() * explore.length)];
-            z.items.push({ id: `${z.id}_x${z.items.length + 1}`, name, description, kind, portable: !nonPortable.has(kind), master: kind === 'key' });
+            z.items.push({ id: `${z.id}_x${z.items.length + 1}`, name, description, kind, portable: !nonPortable.has(kind), master: false });
           };
           // กันขาด: ของที่กลไกเกมต้องมี
           if (!all().some((i) => i.kind === 'food')) inject('food', 'ตู้เสบียงสำรอง', 'อาหารกระป๋อง ขนมปัง และน้ำดื่ม');
           if (!all().some((i) => i.kind === 'rope')) inject('rope', 'เชือกไนลอนม้วนใหญ่', 'เหนียวและยาวหลายเมตร');
           if (!all().some((i) => i.kind === 'power')) inject('power', 'ตู้เบรกเกอร์ไฟ', 'ควบคุมไฟของทั้งอาคาร');
           if (!all().some((i) => i.kind === 'tool')) inject('tool', 'ค้อนปอนด์', 'หนักและแข็ง');
+          if (!all().some((i) => i.kind === 'lockpick')) inject('lockpick', 'ชุดไขควงและเหล็กงัดกลอน', 'ใช้สะเดาะกลอนประตูที่ล็อกได้');
           if (all().filter((i) => i.kind === 'weapon').length < 3) inject('weapon', 'ท่อนเหล็ก', 'ท่อนเหล็กยาวหนักมือ');
           const portableCount = all().filter((i) => i.portable).length;
           if (portableCount < 6) throw new Error('location has too few portable items');

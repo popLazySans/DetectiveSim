@@ -4,7 +4,7 @@
 import { CHARACTERS } from './characters.js';
 import { ULTIMATE_POOL, TRAITS } from './mock.js';
 import { makeObjective, objectiveOutcome, objectiveTargetZone, hasFood } from './objectives.js';
-import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS } from './rules.js';
+import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS } from './rules.js';
 import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView } from './escape.js';
 
 export const PHASE = {
@@ -86,6 +86,7 @@ const shuffle = (arr) => {
   return a;
 };
 const chance = (p) => Math.random() < p;
+const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
@@ -112,6 +113,8 @@ const freshPlayerState = () => ({
   knownBodies: new Set(),
   zoneMemory: {},
   stained: null,
+  doorWork: null, // งานค้างที่ประตูที่ล็อก { zoneId, method: 'pick'|'break', need, progress }
+  caseJudged: false, // คดีที่ตัวเองเป็นเหยื่อถูกตัดสินแล้ว (ใช้กับอีเวนต์คืนชีพ หลังศพถูกเก็บไปแล้ว)
   kills: 0,
 });
 
@@ -273,10 +276,47 @@ export class Game {
 
   // ถือกุญแจที่ไขห้องนี้ได้ไหม (กุญแจประจำห้อง หรือกุญแจผู้ดูแลที่ไขได้ทุกห้อง)
   hasKeyFor(p, zoneId) {
-    return p.inventory.some((i) => i.kind === 'key' && (i.master || i.unlocksZoneId === zoneId));
+    return p.inventory.some((i) => i.kind === 'key' && i.unlocksZoneId === zoneId);
   }
 
   // คดีฆาตกรรมที่ศพยังไม่ถูกพบ/ประกาศ — คนที่ไม่ใช่คนร้ายของคดีเหล่านั้นลงมือซ้อนไม่ได้
+  // วิธีผ่านประตูที่ล็อกโดยไม่มีกุญแจ: ที่สะเดาะกุญแจ (สายเครื่องกลใช้เครื่องมืออะไรก็ได้) หรือนักสู้พังประตูมือเปล่า
+  doorMeans(p) {
+    const trait = this.traitOf(p);
+    const pickItem = p.inventory.find((i) => i.kind === 'lockpick') || (trait === 'tech' ? p.inventory.find((i) => i.kind === 'tool') : null);
+    if (pickItem) return { method: 'pick', item: pickItem, hours: DOOR.PICK_HOURS };
+    if (trait === 'combat') return { method: 'break', item: null, hours: DOOR.BREAK_HOURS };
+    return null;
+  }
+
+  doorMeansText(p) {
+    const m = this.doorMeans(p);
+    if (!m) return '';
+    return m.method === 'break'
+      ? `แต่คุณพังประตูได้ด้วยมือเปล่า (${m.hours[0]}–${m.hours[1]} ชั่วโมง) — เลือกห้องอื่นเพื่อเริ่มพัง`
+      : `แต่คุณสะเดาะกลอนได้ด้วย${m.item.name} (${m.hours[0]}–${m.hours[1]} ชั่วโมง) — เลือกห้องอื่นเพื่อเริ่ม`;
+  }
+
+  // ประตูที่ขวางการย้ายจากห้องปัจจุบันไป zid: ออกจากห้องที่ล็อก (inside) หรือเข้าห้องที่ล็อก (outside) — null ถ้าผ่านได้
+  doorBlocking(p, zid) {
+    if (!zid || zid === p.zoneId) return null;
+    const cur = this.zones.get(p.zoneId);
+    if (cur?.locked && !this.hasKeyFor(p, cur.id)) return { zone: cur, side: 'inside' };
+    const target = this.zones.get(zid);
+    if (target?.locked && !this.hasKeyFor(p, zid)) return { zone: target, side: 'outside' };
+    return null;
+  }
+
+  lockedIn(p) {
+    const z = this.zones.get(p.zoneId);
+    return !!(z?.locked && !this.hasKeyFor(p, z.id));
+  }
+
+  // ถูกขังและ "รู้ตัวแล้ว" (เพิ่งสังเกตตอนต้นชั่วโมง หรือชนประตูมาแล้ว)
+  knowsLockedIn(p) {
+    return this.lockedIn(p) && p.zoneMemory[p.zoneId]?.locked === true;
+  }
+
   openMurders() {
     return this.cases.filter((c) => MURDER_CAUSES.includes(c.cause) && !c.announced && !c.judged);
   }
@@ -488,12 +528,14 @@ export class Game {
         id: z.id,
         name: z.name,
         description: z.description,
-        items: z.items.map((it) => ({ ...it, portable: it.portable ?? PORTABLE_KINDS.has(it.kind), master: !!it.master || (it.kind === 'key' && it.master !== false), originZoneId: z.id, hidden: false, isPart: false })),
+        // กุญแจจากสถานที่ (AI/mock รุ่นเก่า) ถูกตัดทิ้ง — ระบบสร้างกุญแจประจำห้องให้เอง 1 ดอกต่อห้อง ไม่มีกุญแจผู้ดูแล
+        items: z.items.filter((it) => it.kind !== 'key').map((it) => ({ ...it, portable: it.portable ?? PORTABLE_KINDS.has(it.kind), master: false, originZoneId: z.id, hidden: false, isPart: false })),
         traps: [],
         evidence: [],
         dark: false,
         lockable: z.id !== loc.sleepZoneId,
         locked: false,
+        broken: false, // ประตูถูกพังแล้ว ล็อกไม่ได้อีก
         keyItemId: null,
       });
     }
@@ -502,16 +544,20 @@ export class Game {
     const explore = [...this.zones.values()].filter((z) => z.id !== loc.sleepZoneId);
     const want = CONFIG.LOCKED_ZONES >= 0 ? CONFIG.LOCKED_ZONES : explore.length <= 6 ? LOCKS.LOCKED_ZONES_SMALL : LOCKS.LOCKED_ZONES_LARGE;
     const toLock = shuffle(explore).slice(0, Math.min(want, Math.max(0, explore.length - 2)));
-    toLock.forEach((z, i) => {
-      z.locked = true;
-      // กุญแจประจำห้อง วางให้เห็นในห้องที่ไม่ได้ล็อก (ไม่ใช่ที่นอนรวม) เพื่อไม่ให้ติดตาย
-      const spots = explore.filter((o) => !toLock.includes(o));
-      const spot = pick(spots) || this.zones.get(loc.sleepZoneId);
-      const key = { id: `key_${z.id}`, name: `กุญแจ${z.name}`, description: `กุญแจเหล็กมีป้ายเขียนว่า "${z.name}" ใช้ล็อกและปลดล็อกประตูห้องนั้นได้`, kind: 'key', portable: true, hidden: false, isPart: false, unlocksZoneId: z.id, originZoneId: spot.id };
+    for (const z of toLock) z.locked = true;
+    // กุญแจประจำห้อง: ทุกห้องที่ล็อกได้มีกุญแจดอกเดียว (LOCKS.KEYS_PER_ROOM) วางให้เห็นในห้องอื่นที่ไม่ได้ล็อกตั้งแต่เริ่ม เพื่อไม่ให้ติดตาย
+    const openZones = explore.filter((o) => !o.locked);
+    for (const z of explore) {
+      const spot = pick(openZones.filter((o) => o.id !== z.id)) || this.zones.get(loc.sleepZoneId);
+      const key = { id: `key_${z.id}`, name: `กุญแจ${z.name}`, description: `กุญแจเหล็กมีป้ายเขียนว่า "${z.name}" — ดอกเดียวในที่นี้ที่ใช้ล็อกและปลดล็อกประตูห้องนั้นได้`, kind: 'key', portable: true, hidden: false, isPart: false, unlocksZoneId: z.id, originZoneId: spot.id };
       spot.items.push(key);
       z.keyItemId = key.id;
-      void i;
-    });
+    }
+    // ที่สะเดาะกุญแจอย่างน้อย 1 ชิ้นต่อสถานที่ (ถ้าสถานที่ไม่ได้ให้มา)
+    if (![...this.zones.values()].some((z) => z.items.some((i) => i.kind === 'lockpick'))) {
+      const spot = pick(openZones) || this.zones.get(loc.sleepZoneId);
+      spot.items.push({ id: 'lockpick_1', name: 'ชุดไขควงและเหล็กงัดกลอน', description: 'ไขควงปากแบนหลายขนาดกับเหล็กงอปลายแหลม ใช้สะเดาะกลอนประตูที่ล็อกได้ (ใช้เวลา 2–3 ชั่วโมง)', kind: 'lockpick', portable: true, hidden: false, isPart: false, originZoneId: spot.id });
+    }
     // ทางออกและของที่ต้องใช้ (ซ่อนหลังจากรู้แล้วว่าห้องไหนล็อก)
     buildExits(this, loc);
   }
@@ -601,6 +647,10 @@ export class Game {
         forgive('หมดเวลาสำหรับการนัดพบ');
         continue;
       }
+      if (this.lockedIn(p)) {
+        forgive('คุณถูกล็อกอยู่ในห้อง');
+        continue;
+      }
       const zoneId = objectiveTargetZone(this, p, due);
       if (!zoneId) {
         forgive('ของถูกซ่อนหรือหายไป');
@@ -649,9 +699,87 @@ export class Game {
     const p = this.alivePlayer(playerId);
     if (!this.zones.has(zoneId)) throw new GameError('ไม่มีห้องนี้');
     if (p.forced && p.forced.zoneId !== zoneId) throw new GameError(`ชั่วโมงนี้ภารกิจบังคับให้คุณไปที่${this.zoneName(p.forced.zoneId)}`);
+    if (zoneId !== p.zoneId && this.knowsLockedIn(p) && !this.doorMeans(p)) throw new GameError(`🔒 คุณถูกล็อกอยู่ใน${this.zoneName(p.zoneId)} ออกไม่ได้ — ต้องมีกุญแจ ที่สะเดาะกุญแจ หรือรอให้คนข้างนอกมาเปิด`);
     this.moves.set(playerId, zoneId);
     this.emit();
     if (this.alivePlayers().every((a) => this.moves.has(a.id))) this.resolveMoves();
+  }
+
+  // ผ่านประตู: ห้องที่ล็อกขวางทั้งคนนอก (เข้าไม่ได้) และคนใน (ออกไม่ได้) ถ้าไม่มีกุญแจ — มีที่สะเดาะ/เป็นนักสู้จึง "ทำงานกับประตู" ได้ทีละชั่วโมง
+  // คืนค่าห้องที่ไปถึงจริงในชั่วโมงนี้ (เดิมถ้าผ่านไม่ได้)
+  passDoor(p, zid, alive, bounced, busy) {
+    const stay = p.zoneId || this.location.sleepZoneId;
+    const block = this.doorBlocking(p, zid);
+    if (!block) {
+      p.doorWork = null; // ไปทางอื่นแล้ว งานค้างที่ประตูเดิมเริ่มใหม่
+      return zid;
+    }
+    const door = block.zone;
+    p.zoneMemory[door.id] = { ...(p.zoneMemory[door.id] || {}), day: this.day, hour: this.hour, phase: this.phase, locked: true, lockedSeenTurn: this.turn };
+    const means = this.doorMeans(p);
+    if (!means) {
+      bounced.add(p.id);
+      p.doorWork = null;
+      this.logTo(
+        p,
+        block.side === 'inside'
+          ? `🔒 คุณจะออกจาก${this.zn(door)}แต่พบว่าประตูถูกล็อกไว้จากข้างนอก — ออกไม่ได้ถ้าไม่มีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้`
+          : `🔒 คุณเดินไปถึง${this.zn(door)}แต่ประตูล็อกอยู่ เข้าไม่ได้ — ต้องหากุญแจของห้องนี้หรือที่สะเดาะกุญแจ คุณจึงยังอยู่ที่${this.zn(stay)}ต่อ`,
+        'danger',
+      );
+      return stay;
+    }
+    // งานกับประตู: สะเดาะ 2–3 ชม. / พัง 1–2 ชม. (สุ่มตอนเริ่ม) ต้องเลือกห้องเดิมซ้ำทุกชั่วโมง
+    if (!(p.doorWork && p.doorWork.zoneId === door.id && p.doorWork.method === means.method)) p.doorWork = { zoneId: door.id, method: means.method, need: randInt(means.hours[0], means.hours[1]), progress: 0, startedTurn: this.turn };
+    const w = p.doorWork;
+    w.progress++;
+    const icon = w.method === 'break' ? '💥' : '🪛';
+    const verb = w.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน';
+    const withTool = means.item ? `ด้วย${means.item.name}` : 'ด้วยมือเปล่า';
+    const fromSide = block.side === 'inside' ? 'ข้างใน' : 'ข้างนอก';
+    // เสียง: พังประตูดังมาก คนในห้องนั้นได้ยินแน่ คนห้องอื่นได้ยินแว่ว ๆ บางคน · สะเดาะเงียบ คนในห้องอาจได้ยินแกรกกราก
+    for (const o of alive) {
+      if (o.id === p.id) continue;
+      if (o.zoneId === door.id) {
+        if (w.method === 'break') this.logTo(o, `💥 มีเสียงทุบกระแทกประตู${this.zn(door)}ดังสนั่นจาก${fromSide} — ใครบางคนกำลังพยายามพังประตู`, 'danger');
+        else if (chance(DOOR.PICK_HEARD)) this.logTo(o, `👂 คุณได้ยินเสียงแกรกกรากเบา ๆ ที่กลอนประตู${this.zn(door)}`, 'witness');
+      } else if (w.method === 'break' && chance(DOOR.BREAK_HEARD_FAR)) this.logTo(o, `👂 คุณได้ยินเสียงทุบกระแทกดังมาจากทาง${this.zn(door)}`, 'witness');
+    }
+    if (w.progress < w.need) {
+      bounced.add(p.id);
+      busy.set(p.id, `${icon} กำลัง${verb}${this.zn(door)} (ทำไปแล้ว ${w.progress} ชั่วโมง)`);
+      this.logTo(p, `${icon} คุณใช้ชั่วโมงนี้${verb}${this.zn(door)}${withTool} ยังไม่สำเร็จ (ทำไปแล้ว ${w.progress} ชั่วโมง) — เลือกห้องนั้นอีกครั้งชั่วโมงหน้าเพื่อทำต่อ`, 'action');
+      return stay;
+    }
+    // สำเร็จ
+    door.locked = false;
+    if (w.method === 'break') {
+      door.broken = true;
+      door.lockable = false;
+      door.evidence.push(this.makeEvidence(door.id, `ประตู${door.name}ถูกพังจนบานเบี้ยวและกลอนหลุด ล็อกไม่ได้อีกแล้ว`, false, null, 'door'));
+      this.recordEvent(`${this.nick(p)}พังประตู${this.zn(door)}`);
+      this.logTo(p, `💥 คุณพังประตู${this.zn(door)}สำเร็จ${withTool} บานประตูพังจนล็อกไม่ได้อีก`, 'action');
+    } else {
+      this.recordEvent(`${this.nick(p)}สะเดาะกลอน${this.zn(door)}ได้สำเร็จ`);
+      this.logTo(p, `🪛 คุณสะเดาะกลอน${this.zn(door)}ได้สำเร็จ${withTool} ประตูเปิดแล้ว (ไม่ได้ล็อกอีก จนกว่าจะมีคนล็อกใหม่)`, 'action');
+    }
+    for (const o of alive) {
+      if (o.id === p.id || o.zoneId !== door.id) continue;
+      o.zoneMemory[door.id] = { ...(o.zoneMemory[door.id] || {}), locked: false, broken: door.broken };
+      this.logTo(o, `🚪 ประตู${this.zn(door)}เปิดออก — ${w.method === 'break' ? 'ถูกพังจาก' : 'มีคนสะเดาะกลอนจาก'}${fromSide}`, 'danger');
+    }
+    p.doorWork = null;
+    p.zoneMemory[door.id] = { ...(p.zoneMemory[door.id] || {}), locked: false, broken: door.broken };
+    busy.set(p.id, `${icon} ${verb}${this.zn(door)}สำเร็จ — ชั่วโมงนี้หมดไปกับประตู`);
+    // ผ่านประตูบานนี้ได้แล้ว แต่ถ้าปลายทางก็ล็อกอยู่อีกบาน (ออกจากห้องที่ถูกขังไปเข้าห้องที่ล็อก) ต้องรอชั่วโมงหน้า
+    const next = this.doorBlocking(p, zid);
+    if (next) {
+      bounced.add(p.id);
+      p.zoneMemory[next.zone.id] = { ...(p.zoneMemory[next.zone.id] || {}), day: this.day, hour: this.hour, phase: this.phase, locked: true, lockedSeenTurn: this.turn };
+      this.logTo(p, `🔒 แต่${this.zn(next.zone)}ก็ล็อกอยู่เช่นกัน คุณจึงยังอยู่ที่${this.zn(stay)}ก่อน`, 'danger');
+      return stay;
+    }
+    return zid;
   }
 
   resolveMoves() {
@@ -660,28 +788,11 @@ export class Game {
     const positions = {};
     const prevZone = new Map(alive.map((p) => [p.id, p.zoneId]));
     const bounced = new Set();
+    const busy = new Map(); // pid → ข้อความแอ็กชันของคนที่ใช้ชั่วโมงนี้ไปกับประตู
     for (const p of alive) {
-      let zid = this.moves.get(p.id) || p.zoneId || this.location.sleepZoneId;
-      const target = this.zones.get(zid);
-      // ห้องที่ล็อกอยู่: เข้าได้เฉพาะคนที่มีกุญแจ (หรืออยู่ข้างในอยู่แล้ว) คนอื่นชนประตูแล้วต้องอยู่ที่เดิม
-      if (target.locked && zid !== p.zoneId && !this.hasKeyFor(p, zid)) {
-        bounced.add(p.id);
-        p.zoneMemory[zid] = { ...(p.zoneMemory[zid] || {}), day: this.day, hour: this.hour, phase: this.phase, locked: true, lockedSeenTurn: this.turn };
-        this.logTo(p, `🔒 คุณเดินไปถึง${this.zn(target)}แต่ประตูล็อกอยู่ เข้าไม่ได้ — ต้องหากุญแจของห้องนี้หรือกุญแจผู้ดูแล คุณจึงยังอยู่ที่${this.zn(p.zoneId || this.location.sleepZoneId)}ต่อ`, 'danger');
-        zid = p.zoneId || this.location.sleepZoneId;
-      }
+      const zid = this.passDoor(p, this.moves.get(p.id) || p.zoneId || this.location.sleepZoneId, alive, bounced, busy);
       p.zoneId = zid;
       positions[p.id] = zid;
-    }
-    // คนที่ออกจากห้องที่ล็อกอยู่โดยไม่มีใครถือกุญแจ → ประตูถูกเปิดค้างไว้ (ล็อกจากข้างนอกไม่ได้)
-    for (const z of this.zones.values()) {
-      if (!z.locked) continue;
-      const leavers = alive.filter((p) => prevZone.get(p.id) === z.id && p.zoneId !== z.id);
-      if (leavers.length && !leavers.some((p) => this.hasKeyFor(p, z.id))) {
-        z.locked = false;
-        for (const p of leavers) this.logTo(p, `🔓 คุณออกจาก${this.zn(z)}โดยไม่มีกุญแจ ประตูจึงถูกเปิดค้างไว้ ใครก็เข้าได้แล้ว`, 'info');
-        this.recordEvent(`${leavers.map((p) => this.nick(p)).join(', ')}ออกจาก${this.zn(z)}ที่ล็อกอยู่โดยไม่มีกุญแจ ประตูจึงไม่ล็อกอีกต่อไป`);
-      }
     }
     this.timeline.push({ day: this.day, hour: this.hour, turn: this.turn, phase: this.phase, positions, events: [] });
 
@@ -716,7 +827,7 @@ export class Game {
       const knewLocked = p.zoneMemory[z.id]?.locked === true;
       const lines = [bounced.has(p.id) ? `📍 คุณยังอยู่ที่${this.zn(z)}` : stayed ? `📍 คุณอยู่ที่${this.zn(z)}ต่อ` : `📍 คุณมาถึง${this.zn(z)}${z.locked ? ' (ประตูล็อกอยู่ คุณไขเข้ามาด้วยกุญแจ)' : ''}`];
       // การล็อก/ปลดล็อกทำเงียบ ๆ — คนที่อยู่ในห้องอยู่แล้วเพิ่งสังเกตเห็นสถานะประตูตอนต้นชั่วโมงถัดไป
-      if (stayed && z.locked && !knewLocked) lines.push(this.hasKeyFor(p, z.id) ? '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณมีกุญแจ จะปลดล็อกก็ได้' : '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณยังออกได้ แต่ถ้าออกโดยไม่มีกุญแจ ประตูจะถูกเปิดค้างไว้');
+      if (stayed && z.locked && !knewLocked) lines.push(this.hasKeyFor(p, z.id) ? '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณมีกุญแจ จะปลดล็อกหรือเดินออกไปก็ได้' : `🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้จากข้างนอก — คุณถูกขังอยู่ ${this.doorMeansText(p) || 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้'}`);
       if (stayed && !z.locked && knewLocked) lines.push('🔓 คุณสังเกตว่าประตูห้องนี้ไม่ได้ล็อกแล้ว');
       lines.push(others.length ? `คนที่อยู่ที่นี่ด้วย: ${others.map((o) => this.nick(o)).join(', ')}` : 'ไม่มีใครอยู่ที่นี่นอกจากคุณ');
       lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => (i.isPart ? `${i.name} ⭐` : i.name)).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
@@ -741,6 +852,7 @@ export class Game {
         items: visibleItems.map((i) => i.name),
         bodies: bodies.map((b) => this.nick(this.players.get(b.victimId))),
         locked: z.locked,
+        broken: z.broken,
         food: hasFood(z),
         searched: p.zoneMemory[z.id]?.searched,
       };
@@ -751,6 +863,8 @@ export class Game {
     if (this.alivePlayers().length <= 1) return this.endGame('last_one');
     if (this.checkBodyThreshold()) return;
     this.step = STEP.ACT;
+    // คนที่ใช้ชั่วโมงนี้ไปกับประตู (สะเดาะ/พัง) ทำอย่างอื่นไม่ได้
+    for (const [pid, label] of busy) if (this.players.get(pid)?.alive) this.actions.set(pid, { type: 'doorwork', label, busy: true, auto: true });
     // ภารกิจที่ครบกำหนดบังคับแอ็กชันด้วย
     for (const p of this.alivePlayers()) {
       if (!p.forced?.action) continue;
@@ -800,6 +914,7 @@ export class Game {
     victim.eliminatedDay = this.day;
     victim.eliminatedHour = this.hour;
     victim.forced = null;
+    victim.doorWork = null;
     const z = this.zones.get(info.zoneId);
     const dropped = victim.inventory.map((i) => i.name);
     for (const it of victim.inventory) {
@@ -953,7 +1068,7 @@ export class Game {
       const key = p.inventory.find((i) => i.kind === 'key' && (i.master || i.unlocksZoneId === z.id));
       // ผู้เล่นรู้สถานะประตูตามที่สังเกตตอนต้นชั่วโมง (zoneMemory) ไม่ใช่สถานะจริงทันที — คนที่โดนล็อกใส่เงียบ ๆ จะเพิ่งได้ตัวเลือกปลดล็อกชั่วโมงถัดไป
       const knownLocked = p.zoneMemory[z.id]?.locked === true;
-      if (key && !z.locked && !knownLocked) out.push({ type: 'lock', label: `🔒 ล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าห้องนี้ไม่ได้ · คนที่อยู่ในห้องตอนนี้จะยังไม่รู้ว่าถูกล็อกจนถึงชั่วโมงถัดไป · คนข้างในออกได้เสมอ แต่ถ้าคนออกไม่มีกุญแจ ประตูจะถูกเปิดค้างไว้' });
+      if (key && !z.locked && !knownLocked) out.push({ type: 'lock', label: `🔒 ล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าห้องนี้ไม่ได้ และคนข้างในที่ไม่มีกุญแจจะออกไม่ได้ (ถูกขัง) · คนในห้องตอนนี้จะยังไม่รู้ว่าถูกล็อกจนถึงชั่วโมงถัดไป · ผ่านได้แค่ด้วยกุญแจดอกนี้ ที่สะเดาะกุญแจ (2–3 ชม.) หรือนักสู้พังประตู (1–2 ชม.)' });
       if (key && z.locked && knownLocked) out.push({ type: 'unlock', label: `🔓 ปลดล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'เปิดให้ใครก็เข้าได้ · คนอื่นในห้องจะรู้ชั่วโมงถัดไป' });
     }
     if (inDay) {
@@ -1003,6 +1118,7 @@ export class Game {
     this.assertStep(STEP.ACT);
     const p = this.alivePlayer(playerId);
     if (this.actions.get(playerId)?.forced) throw new GameError('ชั่วโมงนี้ภารกิจบังคับการกระทำของคุณแล้ว');
+    if (this.actions.get(playerId)?.busy) throw new GameError('ชั่วโมงนี้คุณใช้เวลาไปกับประตูแล้ว ทำอย่างอื่นไม่ได้');
     action = action || {};
     const same = (a, k) => (a[k] ?? null) === (action[k] ?? null);
     const match = this.availableActions(p).find((a) => a.type === action.type && same(a, 'targetId') && same(a, 'itemId') && same(a, 'victimId') && same(a, 'recipeId') && same(a, 'exitId'));
@@ -1316,7 +1432,7 @@ export class Game {
     z.locked = true;
     p.zoneMemory[z.id] = { ...(p.zoneMemory[z.id] || {}), locked: true };
     // ล็อกเงียบ ๆ: คนอื่นในห้องยังไม่รู้ จะสังเกตเห็นตอนต้นชั่วโมงถัดไป (ใน resolveMoves)
-    this.logTo(p, `🔒 คุณล็อกประตู${this.zn(z)}แล้ว ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าไม่ได้ · คนอื่นในห้องยังไม่ทันสังเกต จะรู้ตอนชั่วโมงถัดไป (คนข้างในออกได้ แต่ถ้าคนออกไม่มีกุญแจ ประตูจะเปิดค้าง)`, 'action');
+    this.logTo(p, `🔒 คุณล็อกประตู${this.zn(z)}แล้ว ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าไม่ได้และคนข้างในออกไม่ได้ · คนอื่นในห้องยังไม่ทันสังเกต จะรู้ตอนชั่วโมงถัดไป`, 'action');
     this.recordEvent(`${this.nick(p)}ล็อก${this.zn(z)}`);
   }
 
@@ -1832,7 +1948,9 @@ export class Game {
       const c = this.caseOf(b.caseId);
       if (c?.judged) {
         b.judged = true;
-        const vc = this.charOf(this.players.get(b.victimId));
+        const vp = this.players.get(b.victimId);
+        if (vp) vp.caseJudged = true;
+        const vc = this.charOf(vp);
         if (vc) vc.ultimateRevealed = true;
       }
     }
@@ -1976,13 +2094,39 @@ export class Game {
     if (this.alivePlayers().length <= 1) return this.endGame('last_one');
     if (CONFIG.MAX_HOURS && this.turn >= CONFIG.MAX_HOURS) return this.endGame('timeout');
     this.day++;
-    for (const p of this.players.values()) p.stained = null;
+    this.resetAfterTrial();
     this.beginDay();
+  }
+
+  // วันใหม่หลังตัดสิน: ทุกอย่างที่เกี่ยวกับคดีที่ตัดสินแล้วหายไปเหมือนไม่เคยเกิดขึ้น (ศพ หลักฐาน รอยเปื้อน ความจำเรื่องศพ)
+  // ของของผู้ตายยังตกอยู่ตรงจุดที่ตาย (ถูกวางไว้ตั้งแต่ตอนตาย) ของในมือคนเป็นยังอยู่ ทุกคนกลับไปเริ่มที่ห้องนอนรวม
+  // ศพที่ยังไม่ถูกพบ (คดีที่ยังไม่ตัดสิน) ยังอยู่ที่เดิมพร้อมหลักฐานของมัน · อาหารที่ยังมีพิษและประตูที่พังคงอยู่
+  resetAfterTrial() {
+    const removed = [...this.bodies.values()].filter((b) => b.judged);
+    for (const b of removed) this.bodies.delete(b.victimId);
+    for (const z of this.zones.values()) {
+      z.evidence = z.evidence.filter((e) => {
+        if (e.caseId) return !this.caseOf(e.caseId)?.judged;
+        if (e.kind === 'door') return true;
+        if (e.kind === 'poison') return z.items.some((i) => i.kind === 'food' && i.poisoned);
+        return false;
+      });
+    }
+    const liveEvidence = new Set([...this.zones.values()].flatMap((z) => z.evidence.map((e) => e.id)));
+    for (const p of this.players.values()) {
+      p.stained = null;
+      p.doorWork = null;
+      for (const b of removed) p.knownBodies.delete(b.victimId);
+      p.evidence = p.evidence.filter((id) => liveEvidence.has(id));
+      p.zoneMemory = {};
+      if (p.alive) p.zoneId = this.location.sleepZoneId;
+    }
+    this.systemMessage('🌅 เช้าวันใหม่ ทุกคนตื่นขึ้นที่ห้องนอนรวม — ร่องรอยของคดีเมื่อวานถูกเก็บกวาดจนเหมือนไม่เคยเกิดขึ้น ของของผู้เสียชีวิตยังตกอยู่ตรงจุดที่เขาล้มลง');
   }
 
   // อีเวนต์พิเศษ: ผู้ตายบางคนอาจ "ไม่ได้ตายจริง" และกลับเข้าเกม (เฉพาะคดีที่ตัดสินแล้ว)
   async maybeRevive() {
-    const eligible = [...this.players.values()].filter((p) => !p.alive && p.fate === 'victim' && !p.revived && this.bodies.get(p.id)?.judged);
+    const eligible = [...this.players.values()].filter((p) => !p.alive && p.fate === 'victim' && !p.revived && (p.caseJudged || this.bodies.get(p.id)?.judged));
     if (!eligible.length || Math.random() >= CONFIG.REVIVE_CHANCE) return null;
     const target = pick(eligible);
     const c = this.charOf(target);
@@ -2166,6 +2310,7 @@ export class Game {
 
   botPickZone(b) {
     if (b.forced) return b.forced.zoneId;
+    if (this.lockedIn(b) && !this.doorMeans(b)) return b.zoneId;
     const canEnter = (id) => {
       const z = this.zones.get(id);
       return z && (!z.locked || this.hasKeyFor(b, id)) && !(b.zoneMemory[id]?.locked && b.zoneMemory[id]?.lockedSeenTurn >= this.turn - 3 && !this.hasKeyFor(b, id));
@@ -2254,6 +2399,16 @@ export class Game {
       bodyState: c.narrative?.bodyState || '',
       sceneNotes: c.narrative?.sceneNotes || '',
       judged: c.judged,
+    };
+  }
+
+  doorView(me) {
+    const m = this.doorMeans(me);
+    return {
+      lockedIn: this.knowsLockedIn(me),
+      hasKeyHere: this.hasKeyFor(me, me.zoneId),
+      means: m ? { method: m.method, label: m.method === 'break' ? `พังประตูด้วยมือเปล่าได้ (${m.hours[0]}–${m.hours[1]} ชม.)` : `สะเดาะกลอนด้วย${m.item.name}ได้ (${m.hours[0]}–${m.hours[1]} ชม.)` } : null,
+      work: me.doorWork ? { zoneId: me.doorWork.zoneId, zoneName: this.zoneName(me.doorWork.zoneId), method: me.doorWork.method, progress: me.doorWork.progress } : null,
     };
   }
 
@@ -2365,6 +2520,7 @@ export class Game {
         botRequests: CONFIG.BOT_REQUESTS,
         recipes: RECIPES.map((r) => ({ id: r.id, name: r.name, how: r.how, desc: r.desc, trait: r.trait, traitLabel: r.trait ? TRAITS[r.trait]?.label || r.trait : null })),
         traitEffects: TRAIT_EFFECTS,
+        door: { pickHours: DOOR.PICK_HOURS, breakHours: DOOR.BREAK_HOURS },
       },
       me: me
         ? {
@@ -2386,8 +2542,10 @@ export class Game {
             zoneId: me.zoneId,
             zoneName: me.zoneId ? this.zoneName(me.zoneId) : null,
             moveChoice: this.moves.get(me.id) || null,
-            actionChoice: myAction ? { type: myAction.type, label: myAction.label || myAction.type, forced: !!myAction.forced } : null,
+            actionChoice: myAction ? { type: myAction.type, label: myAction.label || myAction.type, forced: !!myAction.forced, busy: !!myAction.busy } : null,
             forced: me.forced ? { zoneId: me.forced.zoneId, zoneName: this.zoneName(me.forced.zoneId), actionLabel: forcedLabel(me.forced.action) } : null,
+            // ประตู: ถูกขังอยู่ไหม (เฉพาะที่รู้ตัวแล้ว) มีวิธีผ่านประตูที่ล็อกไหม และงานค้างที่ประตู (ไม่บอกว่าต้องอีกกี่ชั่วโมง — แล้วแต่ดวง)
+            door: me.alive && me.zoneId ? this.doorView(me) : null,
             ready: this.ready.has(me.id),
             myVote: this.votes.get(me.id) || null,
             voteConfirmed: this.confirmedVotes.has(me.id),

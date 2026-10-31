@@ -382,3 +382,7 @@ button.act.danger.selected { border-color: var(--red); background: rgba(255, 77,
 details.help { margin-top: 0.6rem; font-size: 0.88rem; }
 details.help summary { cursor: pointer; color: var(--cyan); }
 .zone .badge.red { font-size: 0.72rem; }
+
+/* ถูกขังในห้องที่ล็อก: เลือกห้องอื่นไม่ได้ */
+.zone.disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.6); }
+.zone.disabled:hover { border-color: var(--line); }

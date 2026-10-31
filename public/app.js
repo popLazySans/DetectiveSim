@@ -27,7 +27,7 @@
     timeout: '⏳ ครบกำหนดชั่วโมงสูงสุด — ผู้ที่เหลือได้รับการช่วยเหลือ',
   };
   const TRAIT_LABEL = { combat: 'นักสู้', stealth: 'เงียบเชียบ', medical: 'การแพทย์', tech: 'ช่างเทคนิค', social: 'นักพูด', detective: 'ช่างสังเกต', none: '' };
-  const KIND_ICON = { weapon: '🔪', poison: '🧪', tool: '🧰', rope: '🪢', food: '🍞', key: '🗝', cloth: '🧣', clue: '🗺', part: '⭐', trap: '🪤', power: '⚡', fixture: '🪑' };
+  const KIND_ICON = { weapon: '🔪', poison: '🧪', tool: '🧰', rope: '🪢', food: '🍞', key: '🗝', cloth: '🧣', clue: '🗺', part: '⭐', trap: '🪤', power: '⚡', fixture: '🪑', lockpick: '🪛' };
   const ROUTE_ICON = { locked: '🗝', code: '🔢', repair: '🔧', power: '⚡', breach: '🔨' };
 
   const store = {
@@ -401,6 +401,8 @@
       <p class="muted">${esc(s.location.description)}</p>
       ${me.isDesignated ? `<div class="clue culprit"><span class="ctag">🔪 วันนี้เกมเลือกคุณเป็น "ฆาตกร" (มีแค่คุณที่รู้)</span>จะลงมือหรือไม่ก็ได้ — ถ้าลงมือในวันนี้โอกาสสำเร็จสูงขึ้น ดูรายละเอียดในสมุดบันทึก ถ้าคนอื่นลงมือก่อน คุณจะเป็นแค่คนที่อยู่ในเหตุการณ์</div>` : ''}
       ${me.forced ? `<div class="clue night-self"><span class="ctag">⏰ ภารกิจครบกำหนด</span>ชั่วโมงนี้ระบบพาคุณไปที่ <b>${esc(me.forced.zoneName)}</b>${me.forced.actionLabel ? ` และจะ${esc(me.forced.actionLabel)}ให้เอง` : ''} (เลือกห้องอื่นไม่ได้)</div>` : ''}
+      ${me.door?.lockedIn ? `<div class="clue culprit"><span class="ctag">🔒 คุณถูกล็อกอยู่ใน${esc(me.zoneName || '')}</span>${me.door.means ? `ออกตามปกติไม่ได้ แต่คุณ${esc(me.door.means.label)} — เลือกห้องที่จะไป แล้วชั่วโมงนั้นจะหมดไปกับประตู (ใช้กี่ชั่วโมงแล้วแต่ดวง)${me.door.work ? ` · ทำไปแล้ว ${me.door.work.progress} ชม.` : ''}` : 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้ — เลือกได้แค่อยู่ห้องนี้ต่อ'}</div>` : ''}
+      ${me.door?.work && !me.door.lockedIn ? `<div class="clue night-self"><span class="ctag">${me.door.work.method === 'break' ? '💥' : '🪛'} งานค้างที่ประตู</span>คุณกำลัง${me.door.work.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน'}<b>${esc(me.door.work.zoneName)}</b> (ทำไปแล้ว ${me.door.work.progress} ชม.) — เลือกห้องนั้นอีกครั้งเพื่อทำต่อ เลือกห้องอื่นแล้วต้องเริ่มใหม่</div>` : ''}
       ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (กันแคมป์ — ครบกำหนดระบบพาไปทำ ไม่มีใครตาย)</span>${esc(o.text)} ${objectiveBadge(o)}</div>`).join('')}
       ${s.config.objectives && me.nextObjectiveIn != null && !me.objectives.some((o) => !o.done) ? `<p class="muted" style="font-size:.85rem">📋 ภารกิจถัดไปจะมาใน${me.nextObjectiveIn ? `อีก ${me.nextObjectiveIn} ชั่วโมง` : 'ชั่วโมงหน้า'}</p>` : ''}
       <p class="muted" style="font-size:.85rem">เลือกห้องจากแผนที่ด้านล่าง — ไม่มีใครเห็นว่าใครเลือกอะไร จนกว่าจะเข้าห้องแล้วเจอกัน</p>
@@ -414,6 +416,7 @@
     const sel = chosen || ui.selectedZone;
     const alive = s.players.filter((p) => p.alive);
     const moved = alive.filter((p) => p.moved).length;
+    const stuck = !!(me.door?.lockedIn && !me.door.means); // ถูกขังและไม่มีทางออก → เลือกได้แค่ห้องนี้
     return `<div class="card">
       <div class="row"><h3>🗺 แผนที่ — ${esc(s.location.name)}</h3><span class="spacer"></span>${s.phase === 'investigation' ? '<span class="badge red">รอบเก็บหลักฐาน</span>' : ''}</div>
       <div class="zones">${zones
@@ -424,15 +427,20 @@
           if (z.isSleep) tags.push('<span class="badge">ที่นอนรวม</span>');
           const exitsHere = (me.exits || []).filter((x) => x.zoneId === z.id);
           for (const x of exitsHere) tags.push(`<span class="badge yellow" title="${esc(x.requirement)}">🚪 ${esc(x.name)}${x.open ? ' (เปิดแล้ว)' : ''}</span>`);
-          if (mem?.locked) tags.push(`<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูล็อกอยู่ (อาจเปลี่ยนไปแล้ว)">🔒 ล็อกอยู่</span>`);
+          if (mem?.broken) tags.push('<span class="badge" title="ประตูถูกพังแล้ว ล็อกไม่ได้อีก">🚪 ประตูพัง</span>');
+          else if (mem?.locked) {
+            const hasKey = me.inventory.some((i) => i.kind === 'key' && i.unlocksZoneName === z.name);
+            const hint = hasKey ? 'คุณมีกุญแจ' : me.door?.means ? me.door.means.label : 'ต้องมีกุญแจหรือที่สะเดาะกุญแจ';
+            tags.push(`<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูล็อกอยู่ (อาจเปลี่ยนไปแล้ว) · ${esc(hint)}">🔒 ล็อกอยู่ · ${esc(hint)}</span>`);
+          }
           if (mem?.food) tags.push('<span class="badge">🍞 มีอาหาร</span>');
           if (here) tags.push('<span class="badge cyan">คุณอยู่ที่นี่ล่าสุด</span>');
           const bodiesHere = me.knownBodies.filter((b) => b.zoneName === z.name);
-          return `<div class="zone ${sel === z.id ? 'selected' : ''} ${exitsHere.length ? 'exit' : ''} ${chosen ? 'locked' : ''}" data-action="pick-zone" data-id="${esc(z.id)}">
+          return `<div class="zone ${sel === z.id ? 'selected' : ''} ${exitsHere.length ? 'exit' : ''} ${chosen ? 'locked' : ''} ${stuck && !here ? 'disabled' : ''}" data-action="pick-zone" data-id="${esc(z.id)}">
             <div class="zname">${esc(z.name)}</div>
             <div class="ztags">${tags.join(' ')}</div>
             <div class="zdesc">${esc(z.description)}</div>
-            ${mem ? `<div class="zmem">ครั้งล่าสุด (${esc(timeText(mem.day, mem.hour))}): ${mem.people?.length ? `คน: ${esc(mem.people.join(', '))}` : 'ไม่มีใคร'} · ${mem.items?.length ? `ของ: ${esc(mem.items.join(', '))}` : 'ไม่เห็นของ'}${mem.searched ? ' · สำรวจแล้ว' : ''}</div>` : '<div class="zmem muted">ยังไม่เคยเข้าไป (หรือของถูกจัดใหม่)</div>'}
+            ${mem && !mem.people ? `<div class="zmem muted">ยังไม่เคยเข้าไป — ${esc(timeText(mem.day, mem.hour))} เดินมาชนประตูที่ล็อกอยู่</div>` : mem ? `<div class="zmem">ครั้งล่าสุด (${esc(timeText(mem.day, mem.hour))}): ${mem.people?.length ? `คน: ${esc(mem.people.join(', '))}` : 'ไม่มีใคร'} · ${mem.items?.length ? `ของ: ${esc(mem.items.join(', '))}` : 'ไม่เห็นของ'}${mem.searched ? ' · สำรวจแล้ว' : ''}</div>` : '<div class="zmem muted">ยังไม่เคยเข้าไป (หรือของถูกจัดใหม่)</div>'}
             ${bodiesHere.length ? `<div class="zbody">☠ ศพ: ${esc(bodiesHere.map((b) => b.name).join(', '))}</div>` : ''}
           </div>`;
         })
@@ -480,7 +488,7 @@
     const alive = s.players.filter((p) => p.alive);
     const acted = alive.filter((p) => p.acted).length;
     if (me.actionChoice) {
-      return `<div class="card"><h3>${me.actionChoice.forced ? '⏰ ภารกิจบังคับการกระทำของคุณชั่วโมงนี้' : 'คุณเลือกแล้ว'}</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น (${acted}/${alive.length})</p><p class="muted">ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ</p></div>`;
+      return `<div class="card"><h3>${me.actionChoice.busy ? '🪛 ชั่วโมงนี้คุณใช้เวลาไปกับประตู' : me.actionChoice.forced ? '⏰ ภารกิจบังคับการกระทำของคุณชั่วโมงนี้' : 'คุณเลือกแล้ว'}</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น (${acted}/${alive.length})</p><p class="muted">${me.actionChoice.busy ? 'สะเดาะ/พังประตูใช้ทั้งชั่วโมง ทำอย่างอื่นไม่ได้ — ถ้ายังไม่สำเร็จ เลือกห้องนั้นอีกครั้งชั่วโมงหน้า' : 'ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ'}</p></div>`;
     }
     const list = me.availableActions || [];
     const selected = list.find((a) => actionKey(a) === ui.selectedAction) || null;
@@ -951,6 +959,10 @@
         break;
       case 'pick-zone':
         if (state.me.moveChoice || !state.me.alive) break;
+        if (state.me.door?.lockedIn && !state.me.door.means && id !== state.me.zoneId) {
+          toast('🔒 คุณถูกล็อกอยู่ในห้องนี้ ออกไม่ได้ — ต้องมีกุญแจ ที่สะเดาะกุญแจ หรือรอคนมาเปิด', 'error');
+          break;
+        }
         ui.selectedZone = id;
         renderMain(state);
         break;
