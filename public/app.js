@@ -515,11 +515,27 @@
 
   const logEntryHtml = (l) => `<div class="logent k-${esc(l.kind)}">${esc(l.text)}</div>`;
 
+  // ขอของจากบอทที่อยู่ห้องเดียวกัน (ช่วยทดสอบเกม) — เลือกคู่ "บอท: ของ" แล้วกดขอ
+  function requestHtml(s) {
+    const me = s.me;
+    if (!s.config.botRequests || !me.alive) return '';
+    const bots = (me.zonePeople || []).filter((p) => p.isBot);
+    if (!bots.length) return '';
+    const pairs = bots.flatMap((b) => (b.items || []).map((i) => ({ value: `${b.id}|${i.id}`, label: `${b.name}: ${KIND_ICON[i.kind] || '•'} ${i.name}${i.isPart ? ' ⭐' : ''}` })));
+    const full = me.inventory.length >= s.config.inventoryMax;
+    return `<div class="give request">
+      <div class="agtitle">🙏 ขอของจากบอทในห้องนี้ (บอทให้เสมอ — มีไว้ช่วยทดสอบเกม)</div>
+      ${pairs.length
+        ? `<div class="row"><select id="request-pair">${pairs.map((p) => `<option value="${esc(p.value)}">${esc(p.label)}</option>`).join('')}</select><button data-action="request" ${full ? 'disabled title="คุณถือของเต็มมือ"' : ''}>ขอเลย</button>${full ? '<span class="muted" style="font-size:.8rem">คุณถือของเต็มมือ วางของก่อน</span>' : ''}</div>`
+        : `<p class="muted" style="font-size:.8rem">บอทในห้องนี้ (${esc(bots.map((b) => b.name).join(', '))}) ไม่ได้ถือของอะไรเลย</p>`}
+    </div>`;
+  }
+
   function giveHtml(s) {
     const me = s.me;
     const people = me.zonePeople || [];
     if (!me.alive || !people.length) return `<p class="muted" style="font-size:.85rem">🎁 ให้ของได้เฉพาะคนที่อยู่ห้องเดียวกันตอนนี้${people.length ? '' : ' — ชั่วโมงนี้ไม่มีใครอยู่กับคุณ'}</p>`;
-    if (!me.inventory.length) return `<p class="muted" style="font-size:.85rem">🎁 คนในห้องนี้: ${esc(people.map((p) => p.name).join(', '))} — คุณไม่มีของให้</p>`;
+    if (!me.inventory.length) return `<p class="muted" style="font-size:.85rem">🎁 คนในห้องนี้: ${esc(people.map((p) => p.name).join(', '))} — คุณไม่มีของให้</p>` + requestHtml(s);
     return `<div class="give">
       <div class="agtitle">🎁 ให้ของกับคนในห้องเดียวกัน (ก่อนเริ่มชั่วโมงถัดไป)</div>
       <div class="row">
@@ -529,7 +545,7 @@
         <button data-action="give">ให้เลย</button>
       </div>
       <p class="muted" style="font-size:.8rem">คนอื่นในห้องจะเห็นว่าคุณยื่นของให้ (อาจไม่เห็นว่าเป็นอะไร) · ใช้ช่วยกันทำภารกิจ "หยิบของ" ได้</p>
-    </div>`;
+    </div>` + requestHtml(s);
   }
 
   function reportHtml(s) {
@@ -959,6 +975,13 @@
         const targetId = $('#give-to')?.value;
         if (!itemId || !targetId) break;
         if (await act('day:give', { targetId, itemId })) toast('ให้ของเรียบร้อย');
+        break;
+      }
+      case 'request': {
+        const pair = $('#request-pair')?.value || '';
+        const [targetId, itemId] = pair.split('|');
+        if (!targetId || !itemId) break;
+        if (await act('day:request', { targetId, itemId })) toast('ได้ของจากบอทแล้ว');
         break;
       }
       case 'ready':

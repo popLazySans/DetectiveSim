@@ -43,7 +43,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   const host = ids[0];
   if (bots) game.setBots(host, bots);
 
-  const stats = { hours: 0, days: 0, trials: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0 };
+  const stats = { hours: 0, days: 0, trials: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, requests: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0 };
   let rolesChecked = false;
   let roleStats = { hidden: 0, fakes: 0 };
   let ticks = 0;
@@ -98,7 +98,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
         assert(!json.includes('exitZoneId') && !json.includes('"isExit"'), 'exit zone leaked via location view');
         for (const o of game.players.values()) {
           if (o.id === id) continue;
-          for (const it of o.inventory) assert(!json.includes(`"id":"${it.id}"`), `inventory item ${it.id} of ${o.id} leaked to ${id}`);
+          const botVisible = o.isBot && CONFIG.BOT_REQUESTS && me.alive && (game.step === STEP.ACT || game.step === STEP.REPORT) && o.zoneId === me.zoneId;
+          if (!botVisible) for (const it of o.inventory) assert(!json.includes(`"id":"${it.id}"`), `inventory item ${it.id} of ${o.id} leaked to ${id}`);
           for (const l of o.log) assert(!json.includes(`"${l.id}"`), `private log entry of ${o.id} leaked to ${id}`);
           for (const ob of o.objectives) assert(!json.includes(`"${ob.id}"`), `objective of ${o.id} leaked to ${id}`);
         }
@@ -278,6 +279,33 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     stats.gives++;
   };
 
+  // ช่วงพัก: ขอของจากบอทที่อยู่ห้องเดียวกัน (บอทให้เสมอ)
+  const tryRequest = (p) => {
+    const bots = game.presentIn(p.zoneId).filter((o) => o.isBot && o.inventory.length);
+    if (!bots.length || p.inventory.length >= CONFIG.INVENTORY_MAX) return;
+    const v = game.viewFor(p.id);
+    const bot = pick(bots);
+    const shown = v.me.zonePeople.find((zp) => zp.id === bot.id);
+    const it = pick(bot.inventory);
+    if (!CONFIG.BOT_REQUESTS) {
+      assert(shown?.isBot && shown.items === undefined, 'bot inventory hidden when requests are disabled');
+      let blocked = false;
+      try { game.requestItem(p.id, bot.id, it.id); } catch { blocked = true; }
+      assert(blocked && bot.inventory.includes(it), 'requests rejected when disabled');
+      return;
+    }
+    assert(shown?.isBot && Array.isArray(shown.items) && shown.items.length === bot.inventory.length, 'co-located bot inventory is visible for requests');
+    game.requestItem(p.id, bot.id, it.id);
+    assert(p.inventory.includes(it) && !bot.inventory.includes(it), 'request transfers the item from the bot');
+    let threw = false;
+    const human = game.alivePlayers().find((o) => !o.isBot && o.id !== p.id && o.zoneId === p.zoneId && o.inventory.length);
+    if (human) {
+      try { game.requestItem(p.id, human.id, human.inventory[0].id); } catch { threw = true; }
+      assert(threw, 'cannot request items from humans');
+    }
+    stats.requests++;
+  };
+
   const decideVote = (p) => {
     const cands = game.voteCandidates(p.id);
     assert(cands.length > 0, 'voter has candidates');
@@ -424,6 +452,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   const v = game.viewFor(p.id);
                   assert(v.me.log.some((l) => l.day === game.day && l.hour === game.hour && l.kind === 'move'), 'player has a move log entry for this hour');
                   tryGive(p);
+                  tryRequest(p);
                   game.markReady(p.id);
                 }
               }
@@ -515,7 +544,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
 
   Object.assign(CONFIG, saved);
   console.log(
-    `✔ ${label}: ${all.length} players · end=${game.endReason} (day ${stats.days}, ${stats.hours} h) · ${stats.trials} trial(s) (${stats.wrongVotes} wrong, ${stats.noneVotes} none, ${stats.runoffs} runoff) · kills ${stats.kills} (trap ${stats.trapKills}, defense ${stats.defenses}, wrong-target ${stats.wrongTargets}) · crafts ${stats.crafts} traps ${stats.trapsPlaced} poison ${stats.poisonings} · locks ${stats.locks} bounces ${stats.bounces} murder-locks ${stats.lockBlocks} · objectives done ${stats.objectivesDone}, forced ${stats.forced} · gives ${stats.gives} · exits found ${stats.exitsFound}/2 attempts ${stats.exitAttempts} · ${roleStats.hidden} hidden + ${roleStats.fakes} fake · ${stats.leakChecks} leak checks, ${stats.actionsChecked} action checks`,
+    `✔ ${label}: ${all.length} players · end=${game.endReason} (day ${stats.days}, ${stats.hours} h) · ${stats.trials} trial(s) (${stats.wrongVotes} wrong, ${stats.noneVotes} none, ${stats.runoffs} runoff) · kills ${stats.kills} (trap ${stats.trapKills}, defense ${stats.defenses}, wrong-target ${stats.wrongTargets}) · crafts ${stats.crafts} traps ${stats.trapsPlaced} poison ${stats.poisonings} · locks ${stats.locks} bounces ${stats.bounces} murder-locks ${stats.lockBlocks} · objectives done ${stats.objectivesDone}, forced ${stats.forced} · gives ${stats.gives} requests ${stats.requests} · exits found ${stats.exitsFound}/2 attempts ${stats.exitAttempts} · ${roleStats.hidden} hidden + ${roleStats.fakes} fake · ${stats.leakChecks} leak checks, ${stats.actionsChecked} action checks`,
   );
   return { ...stats, endReason: game.endReason, roleStats, game };
 }
@@ -636,17 +665,61 @@ async function unitTests() {
     game.resolveActions();
     assert(lockedExit.open && game.phase === PHASE.ENDED && game.endReason === 'escape', 'using the key opens the exit and ends the game');
   }
+  // 6) ขอของจากบอท (เฉพาะบอท เฉพาะช่วงพัก ห้องเดียวกัน)
+  {
+    const g2 = new Game({ code: 'UNIT2', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    g2.addPlayer({ id: 'h-xxxxxxxx', name: 'คน' });
+    g2.addPlayer({ id: 'h2-xxxxxxxx', name: 'คนสอง' });
+    g2.setBots('h-xxxxxxxx', 1);
+    g2.onChange = () => {};
+    await g2.start('h-xxxxxxxx');
+    g2.clearTimers();
+    const h = g2.players.get('h-xxxxxxxx');
+    const h2 = g2.players.get('h2-xxxxxxxx');
+    const bot = g2.players.get('bot-1');
+    const item = [...g2.zones.values()].flatMap((z) => z.items).find((i) => i.portable);
+    bot.inventory = [item];
+    h2.inventory = [];
+    g2.phase = PHASE.DAY;
+    g2.step = STEP.ACT;
+    let threw = false;
+    try { g2.requestItem(h.id, bot.id, item.id); } catch { threw = true; }
+    assert(threw, 'requests only during the rest step');
+    g2.step = STEP.REPORT;
+    bot.zoneId = h.zoneId;
+    const v = g2.viewFor(h.id);
+    const zp = v.me.zonePeople.find((x) => x.id === bot.id);
+    assert(zp?.isBot && zp.items?.some((i) => i.id === item.id), 'bot items visible to co-located human at rest');
+    assert(!v.me.zonePeople.find((x) => x.id === h2.id)?.items, 'human items are not listed');
+    g2.requestItem(h.id, bot.id, item.id);
+    assert(h.inventory.includes(item) && !bot.inventory.length, 'bot hands over the requested item');
+    threw = false;
+    try { g2.requestItem(h.id, h2.id, 'x'); } catch (e) { threw = /เฉพาะจากบอท|ไม่ถูกต้อง|ไม่มีของ/.test(e.message); }
+    assert(threw, 'cannot request from a human');
+    const saved2 = CONFIG.BOT_REQUESTS;
+    CONFIG.BOT_REQUESTS = false;
+    bot.inventory = [item];
+    h.inventory = [];
+    threw = false;
+    try { g2.requestItem(h.id, bot.id, item.id); } catch { threw = true; }
+    assert(threw && !g2.viewFor(h.id).me.zonePeople.find((x) => x.id === bot.id)?.items, 'BOT_REQUESTS=false disables requests and hides bot items');
+    CONFIG.BOT_REQUESTS = saved2;
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors, hidden exit discovery/opening');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors, hidden exit discovery/opening, bot item requests');
 }
 
 try {
   await unitTests();
-  const agg = { kills: 0, trapKills: 0, trials: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0 };
+  const agg = { kills: 0, trapKills: 0, trials: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, requests: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0 };
   const add = (r) => { for (const k of Object.keys(agg)) agg[k] += r[k] || 0; };
 
   for (let i = 0; i < 4; i++) add(await runGame({ humans: 8, label: `explore #${i + 1}`, strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
-  add(await runGame({ humans: 3, bots: 4, label: 'with bots', strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
+  const withBots = await runGame({ humans: 3, bots: 4, label: 'with bots', strategy: 'explore', config: { REVIVE_CHANCE: 0 } });
+  add(withBots);
+  const noReq = await runGame({ humans: 3, bots: 4, label: 'with bots (requests disabled)', strategy: 'peaceful', config: { REVIVE_CHANCE: 0, BOT_REQUESTS: false, MAX_HOURS: 16 } });
+  add(noReq);
+  assert(noReq.requests === 0, 'no requests when BOT_REQUESTS is off');
   add(await runGame({ humans: 15, label: 'full 15', strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
   const wrong = await runGame({ humans: 8, label: 'always wrong vote → game over', strategy: 'explore', voteStrategy: 'wrong', config: { REVIVE_CHANCE: 0 } });
   add(wrong);

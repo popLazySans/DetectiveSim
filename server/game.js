@@ -41,6 +41,8 @@ export const CONFIG = {
   OBJECTIVES: process.env.OBJECTIVES !== 'false',
   // เจ้าของ Ultimate ที่ถูกซ่อน (???) รู้ของจริงเสมอ
   KNOW_OWN_ULTIMATE_CHANCE: 1,
+  // ขอของจาก "บอท" ที่อยู่ห้องเดียวกันได้ตอนพักชั่วโมง (ช่วยทดสอบเกม) ปิดด้วย BOT_REQUESTS=false
+  BOT_REQUESTS: process.env.BOT_REQUESTS !== 'false',
   // ตัวคูณความเร็วของบอท (ใช้ค่าน้อย ๆ ตอนเทสต์)
   BOT_DELAY_SCALE: Number(process.env.BOT_DELAY_SCALE || 1),
   // โหวตเสมอ → โหวตรอบตัดสินเฉพาะคนที่เสมอ ได้สูงสุดกี่รอบ ก่อนจะสุ่มตัดสิน
@@ -1563,6 +1565,30 @@ export class Game {
     this.emit();
   }
 
+  // ขอของจากบอทที่อยู่ห้องเดียวกัน (บอทให้เสมอ) — มีไว้ให้ทดสอบเกมง่ายขึ้น
+  requestItem(playerId, botId, itemId) {
+    if (!CONFIG.BOT_REQUESTS) throw new GameError('ระบบขอของจากบอทถูกปิดอยู่');
+    this.assertPhase(PHASE.DAY);
+    this.assertStep(STEP.REPORT);
+    const p = this.alivePlayer(playerId);
+    const t = this.players.get(botId);
+    if (!t || !t.alive || t.id === p.id) throw new GameError('เลือกผู้ให้ไม่ถูกต้อง');
+    if (!t.isBot) throw new GameError('ขอของได้เฉพาะจากบอท');
+    if (t.zoneId !== p.zoneId) throw new GameError('ขอของได้เฉพาะบอทที่อยู่ห้องเดียวกันตอนนี้');
+    const idx = t.inventory.findIndex((i) => i.id === itemId);
+    if (idx < 0) throw new GameError('บอทไม่มีของชิ้นนี้');
+    if (p.inventory.length >= CONFIG.INVENTORY_MAX) throw new GameError(`คุณถือของเต็มมือแล้ว (สูงสุด ${CONFIG.INVENTORY_MAX} ชิ้น)`);
+    const it = t.inventory.splice(idx, 1)[0];
+    p.inventory.push(it);
+    const z = this.zones.get(p.zoneId);
+    this.logTo(p, `🙏 คุณขอ${it.name}${it.isPart ? ' ⭐' : ''}จาก${this.nick(t)} เขายื่นให้ทันที`, 'action');
+    onObtainItem(this, p, it);
+    for (const o of this.presentIn(z.id)) if (o.id !== p.id && o.id !== t.id) this.logTo(o, `👀 คุณเห็น${this.nick(t)}ยื่น${chance(0.5) ? it.name : 'อะไรบางอย่าง'}ให้${this.nick(p)}`, 'witness');
+    this.recordEvent(`${this.nick(p)}ขอ${it.name}จาก${this.nick(t)}ที่${this.zn(z)}`);
+    this.checkObjectivesAfterTake(p, it);
+    this.emit();
+  }
+
   // ---------- objectives ----------
   checkObjectivesAfterMove(p) {
     for (const o of p.objectives) {
@@ -2328,6 +2354,7 @@ export class Game {
         hiddenUltimates: hiddenUltimateCap(this.players.size || CONFIG.MIN_PLAYERS),
         fakeRoles: Math.min(CONFIG.FAKE_ROLES, Math.max(0, this.players.size - 1)),
         exitsPerGame: ESCAPE.EXITS_PER_GAME,
+        botRequests: CONFIG.BOT_REQUESTS,
         recipes: RECIPES.map((r) => ({ id: r.id, name: r.name, how: r.how, desc: r.desc, trait: r.trait, traitLabel: r.trait ? TRAITS[r.trait]?.label || r.trait : null })),
         traitEffects: TRAIT_EFFECTS,
       },
@@ -2369,7 +2396,11 @@ export class Game {
             knownBodies: [...me.knownBodies].map((id) => ({ playerId: id, name: this.nick(this.players.get(id)), zoneName: this.zoneName(this.bodies.get(id)?.zoneId), announced: !!this.bodies.get(id)?.announced })),
             zoneMemory: me.zoneMemory,
             availableActions: me.alive && this.step === STEP.ACT ? this.availableActions(me) : [],
-            zonePeople: me.alive && inZoneStep ? this.presentIn(me.zoneId).filter((o) => o.id !== me.id).map((o) => ({ id: o.id, name: this.nick(o), invFull: o.inventory.length >= CONFIG.INVENTORY_MAX })) : [],
+            zonePeople: me.alive && inZoneStep
+              ? this.presentIn(me.zoneId)
+                  .filter((o) => o.id !== me.id)
+                  .map((o) => ({ id: o.id, name: this.nick(o), isBot: o.isBot, invFull: o.inventory.length >= CONFIG.INVENTORY_MAX, items: o.isBot && CONFIG.BOT_REQUESTS ? o.inventory.map((i) => ({ id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart })) : undefined }))
+              : [],
             eventPrivateNote: ev && ev.playerId === me.id ? ev.privateNote : null,
             notices: this.notices.get(me.id) || [],
             // ผู้ชม (ตายแล้ว) เห็นตำแหน่งทุกคน ศพ และทางออกทั้งหมด แต่ไม่เห็นว่าใครเป็นคนร้าย

@@ -124,6 +124,7 @@ io.on('connection', (socket) => {
   socket.on('day:act', handle(({ type, itemId, itemId2, targetId, victimId, toZoneId, recipeId, exitId }) => game().chooseAction(me(), { type, itemId, itemId2, targetId, victimId, toZoneId, recipeId, exitId })));
   socket.on('day:ready', handle(() => game().markReady(me())));
   socket.on('day:give', handle(({ targetId, itemId }) => game().giveItem(me(), String(targetId || ''), String(itemId || ''))));
+  socket.on('day:request', handle(({ targetId, itemId }) => game().requestItem(me(), String(targetId || ''), String(itemId || ''))));
   socket.on('host:forceStep', handle(() => game().forceStep(me())));
   // การตัดสิน
   socket.on('vote:cast', handle(({ targetId }) => game().castVote(me(), String(targetId || ''))));
