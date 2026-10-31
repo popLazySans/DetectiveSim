@@ -203,7 +203,7 @@
             <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
             <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 5 ชั่วโมง ไม่มีใครตายเพราะภารกิจ — แต่ถ้าครบกำหนดแล้วยังไม่ทำ ระบบจะพาคุณไปทำเอง (ล็อกห้อง) มีไว้กันทุกคนแคมป์อยู่ห้องเดียวกัน</li>
             <li><b>ศพอยู่ที่ตาย:</b> จนกว่าจะมีคนย้าย เมื่อมีคนพบศพครบ 3 คน (ไม่นับคนฆ่า) จะประกาศและเข้าสู่รอบเก็บหลักฐาน 1 ชั่วโมง แล้วตัดสิน</li>
-            <li><b>การตัดสิน:</b> เล่าหลักฐานที่แต่ละคนเจอในแชท แล้วโหวต — โหวตถูก: คนนั้นถูกประหาร · โหวตผิด: คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · มีตัวเลือก "ไม่มีคนร้ายให้ลงโทษ" ถ้าคนร้ายตายไปแล้ว</li>
+            <li><b>การตัดสิน:</b> เล่าหลักฐานที่แต่ละคนเจอในแชท แล้วโหวต — โหวตถูก: คนนั้นถูกประหาร (ใครก็เป็นฆาตกรได้พร้อมกันหลายคน ถ้ายังมีฆาตกรเหลือ ระบบบอกแค่ว่า "ยังมีอีก 1 คน" ไม่บอกจำนวน แล้วเก็บหลักฐาน-ตัดสินต่อในวันเดิมจนจับครบ) · โหวตผิด: คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · มีตัวเลือก "ไม่มีคนร้ายให้ลงโทษ" ถ้าคนร้ายตายไปแล้ว</li>
             <li>ทุกคนมี Ultimate ที่ให้ "trait" ใช้ได้จริง · 1–2 คนถูกซ่อนเป็น ??? และ 1 คนถือโรลปลอม — เจ้าตัวรู้ของจริงเสมอ และการ์ดของคุณจะบอกชัดว่าคนอื่นเห็นคุณเป็นอะไร</li>
           </ol>
         </div>
@@ -604,8 +604,9 @@
     const alive = s.players.filter((p) => p.alive);
     const done = alive.filter((p) => p.voteConfirmed).length;
     return `<div class="card">
-      <h2>⚖ การตัดสิน</h2>
-      <p>เล่าหลักฐานและสิ่งที่แต่ละคนเห็นในแชท แล้วโหวตทางขวา — <b>โหวตถูก</b> คนนั้นถูกประหาร · <b>โหวตผิด</b> คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · ถ้าเชื่อว่าคนร้ายตายไปแล้ว เลือก <b>"ไม่มีคนร้ายให้ลงโทษ"</b></p>
+      <h2>⚖ การตัดสิน${s.huntRound > 1 ? ` — รอบที่ ${s.huntRound} ของวันนี้` : ''}</h2>
+      ${s.huntRound > 1 ? `<p class="status" style="color:var(--red)">📢 "ยังมีฆาตกรอีก 1 คนซ่อนอยู่ในหมู่พวกคุณ" — ระบบไม่บอกว่าเหลือกี่คน ดูคดีที่ยังเปิดอยู่ในการ์ด "ศพที่ถูกประกาศ"</p>` : ''}
+      <p>เล่าหลักฐานและสิ่งที่แต่ละคนเห็นในแชท แล้วโหวตทางขวา — <b>โหวตถูก</b> คนนั้นถูกประหาร (ถ้ายังมีฆาตกรเหลือ ระบบจะบอก แต่ไม่บอกว่ากี่คน แล้วตามหาต่อ) · <b>โหวตผิด</b> คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · ถ้าเชื่อว่าคนร้ายตายไปแล้ว เลือก <b>"ไม่มีคนร้ายให้ลงโทษ"</b></p>
       <p class="muted">ยืนยันโหวตแล้ว ${done}/${alive.length}${s.runoff ? ` · <span class="badge red">รอบตัดสินครั้งที่ ${s.runoff.number}</span>` : ''}</p>
     </div>`;
   }
@@ -630,12 +631,13 @@
       <div class="verdict">${r.correct ? '✔ โหวตถูกต้อง!' : '✘ โหวตผิด!'}</div>
       <p>เสียงส่วนใหญ่โหวต: <b>${esc(displayName(r.votedId))}</b>${r.randomTiebreak ? ' <span class="badge yellow">ยังเสมอหลังรอบตัดสิน จึงสุ่มตัดสิน</span>' : ''}</p>
       <p>${r.correct ? (r.executedId ? `⛓ <b>${esc(displayName(r.executedId))}</b> ถูกประหาร` : r.cases.some((c) => c.killerName) ? '🕊 ไม่มีใครถูกประหาร — คนร้ายของคดีนี้ตายไปก่อนแล้ว จึงไม่มีใครให้ลงโทษ' : '🕊 ไม่มีใครถูกประหาร — ไม่มีคนร้ายในคดีนี้') : `☠ ทุกคนที่เหลือถูกประหาร${r.escaped?.length ? ` · 🏃 คนร้ายตัวจริง <b>${esc(r.escaped.map(displayName).join(', '))}</b> รอดไปได้` : ''}`}</p>
+      ${r.correct ? (r.moreKillers ? `<p class="status" style="color:var(--red)">📢 เสียงประกาศ: "ยังมีฆาตกรอีก 1 คนซ่อนอยู่ในหมู่พวกคุณ" — คดีที่ยังไม่ปิด: <b>${esc((r.stillOpen || []).join(', '))}</b> · ระบบไม่บอกว่าเหลือกี่คน การตามหาจะดำเนินต่อ: เก็บหลักฐานอีก 1 ชั่วโมง แล้วตัดสินใหม่</p>` : `<p class="status">🕊 คดีทั้งหมดของวันนี้ปิดแล้ว ไม่มีฆาตกรเหลืออยู่ — ขึ้นวันใหม่ได้</p>`) : ''}
       ${r.runoffs ? `<p class="muted">มีการโหวตรอบตัดสิน ${r.runoffs} ครั้ง</p>` : ''}
       <h3>ผลโหวต</h3>
       <div class="tally">${r.tally
         .map((t) => `<div class="bar ${culpritPlayers.has(playerById(t.targetId)?.name) ? 'culprit' : ''}"><span>${esc(displayName(t.targetId))}</span><div class="fill"><i style="width:${(t.count / maxVotes) * 100}%"></i></div><span>${t.count}</span></div>`)
         .join('') || '<p class="muted">ไม่มีคะแนนโหวต</p>'}</div>
-      <h3>ความจริงของคดี</h3>
+      <h3>ความจริงของคดี${r.moreKillers ? 'ที่ปิดในรอบนี้' : ''}</h3>
       ${r.cases
         .map(
           (c) => `<div class="case">
@@ -643,7 +645,7 @@
           <p>${esc(c.truthSummary)}</p>
           <ul class="obs">
             <li>ผู้ตาย: <b>${esc(c.victimName)}</b> (${esc(c.victimPlayer)}) · ที่${esc(c.zoneName)} · ${esc(timeText(c.day, c.hour))}</li>
-            <li>คนร้าย: <b>${c.unsolved ? 'ยังจับไม่ได้ — คนร้ายยังลอยนวล' : c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName && !c.killerAlive && !r.executedId ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : ''}</li>
+            <li>คนร้าย: <b>${c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName && !c.killerAlive && !r.executedId ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : ''}</li>
             ${c.weaponName ? `<li>อาวุธ: ${esc(c.weaponName)}${c.messy ? ' · ลงมือแบบเลอะเทอะ' : ' · ลงมือเงียบเชียบ'}${c.moved ? ' · ศพถูกย้าย' : ''}</li>` : ''}
             ${c.witnesses?.length ? `<li>คนที่เห็นตอนลงมือ: ${esc(c.witnesses.join(', '))}</li>` : ''}
             ${c.present?.length ? `<li>คนที่อยู่ในห้องตอนนั้น: ${esc(c.present.join(', '))}</li>` : ''}
@@ -652,7 +654,6 @@
         </div>`,
         )
         .join('')}
-      ${r.stillOpen?.length ? `<p class="muted">คดีที่ยังไม่คลี่คลาย (คนร้ายยังลอยนวล): ${esc(r.stillOpen.join(', '))}</p>` : ''}
       <details><summary>ใครไปห้องไหนในแต่ละชั่วโมง และเกิดอะไรขึ้นจริง ๆ</summary>${timelineHtml(r.timeline)}</details>
     </div>`;
   }
@@ -783,7 +784,9 @@
         break;
       }
       case 'trial_result':
-        body += me.isHost ? `<button class="primary" data-action="next-round">☀ ขึ้นวันใหม่ (วันที่ ${s.day + 1})</button>` : `<p class="status">รอหัวห้องขึ้นวันใหม่...</p>`;
+        body += s.lastResult?.moreKillers
+          ? me.isHost ? `<button class="primary" data-action="next-round">🔎 ตามหาฆาตกรที่เหลือ (เก็บหลักฐานต่อ)</button>` : `<p class="status">รอหัวห้องเริ่มการตามหาฆาตกรที่เหลือ...</p>`
+          : me.isHost ? `<button class="primary" data-action="next-round">☀ ขึ้นวันใหม่ (วันที่ ${s.day + 1})</button>` : `<p class="status">รอหัวห้องขึ้นวันใหม่...</p>`;
         break;
       default:
         body += `<p class="status">กรุณารอสักครู่...</p>`;
@@ -822,7 +825,7 @@
   function historyHtml(s) {
     if (!s.history?.length) return '';
     return `<div class="card history"><h3>การตัดสินที่ผ่านมา</h3><ol>${s.history
-      .map((h) => `<li><b>${esc(timeText(h.day, h.hour))}</b> ผู้ตาย: ${esc(h.victims.join(', ') || '-')}<br>โหวต: ${esc(h.votedName)} <span class="${h.correct ? 'ok' : 'bad'}">${h.correct ? '(ถูก)' : '(ผิด)'}</span>${h.culprits.length ? ` · คนร้าย: ${esc(h.culprits.join(', '))}` : ' · ไม่มีคนร้าย'}</li>`)
+      .map((h) => `<li><b>${esc(timeText(h.day, h.hour))}</b>${h.round > 1 ? ` <span class="badge">รอบที่ ${h.round}</span>` : ''} ผู้ตาย: ${esc(h.victims.join(', ') || '-')}<br>โหวต: ${esc(h.votedName)} <span class="${h.correct ? 'ok' : 'bad'}">${h.correct ? '(ถูก)' : '(ผิด)'}</span>${h.culprits.length ? ` · คนร้าย: ${esc(h.culprits.join(', '))}` : ' · ไม่มีคนร้าย'}${h.moreKillers ? ' · <span class="bad">ยังมีฆาตกรเหลือ</span>' : ''}</li>`)
       .join('')}</ol></div>`;
   }
 
@@ -884,7 +887,7 @@
     </div>
     <p class="muted" style="margin-top:.6rem">เล่นไป ${o.days} วัน ${o.hours} ชั่วโมง · ${esc(END_LABEL[s.endReason] || '')}</p>
     ${o.exits?.length ? `<h3 style="margin-top:.8rem">ทางออกของสถานที่นี้</h3>${o.exits.map((x) => `<div class="case">${ROUTE_ICON[x.route] || '🚪'} <b>${esc(x.name)}</b> ที่${esc(x.zoneName)} — ${x.open ? `<span class="badge green">เปิดสำเร็จโดย ${esc(x.openedBy.join(', '))}</span>` : `<span class="badge">มีคนค้นพบ ${x.discovered} คน ไม่ได้เปิด</span>`}</div>`).join('')}` : ''}
-    ${o.unsolved?.length ? `<h3 style="margin-top:.8rem">คดีที่ไม่เคยจับคนร้ายได้</h3>${o.unsolved.map((c) => `<div class="case"><b>${esc(c.victimName)}</b> — ${esc(c.causeLabel)}${c.killerName ? ` โดย <b>${esc(c.killerName)}</b>` : ''} ที่${esc(c.zoneName)} ${esc(timeText(c.day, c.hour))}${c.truthSummary ? `<br><span class="muted">${esc(c.truthSummary)}</span>` : ''}</div>`).join('')}` : ''}`;
+    ${o.unsolved?.length ? `<h3 style="margin-top:.8rem">คดีที่ยังไม่ได้ตัดสินตอนเกมจบ</h3>${o.unsolved.map((c) => `<div class="case"><b>${esc(c.victimName)}</b> — ${esc(c.causeLabel)}${c.killerName ? ` โดย <b>${esc(c.killerName)}</b>` : ''} ที่${esc(c.zoneName)} ${esc(timeText(c.day, c.hour))}${c.truthSummary ? `<br><span class="muted">${esc(c.truthSummary)}</span>` : ''}</div>`).join('')}` : ''}`;
     $('#end-truth').innerHTML = s.lastResult ? resultHtml(s) : '';
     $('#end-controls').innerHTML = s.me.isHost
       ? `<button class="primary" data-action="restart">เล่นอีกครั้งกับคนเดิม</button> <button class="ghost" data-action="leave">ออกจากห้อง</button>`

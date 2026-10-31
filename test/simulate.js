@@ -67,7 +67,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   const host = ids[0];
   if (bots) game.setBots(host, bots);
 
-  const stats = { hours: 0, days: 0, trials: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, requests: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
+  const stats = { hours: 0, days: 0, trials: 0, huntRounds: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, requests: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
   let rolesChecked = false;
   let roleStats = { hidden: 0, fakes: 0 };
   let ticks = 0;
@@ -366,6 +366,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
 
   // ก่อนเลือกแอ็กชัน: ถ้ามีศพซ่อนอยู่ คนที่ไม่ใช่คนร้ายต้องลงมือไม่ได้ (ระบบปฏิเสธ)
   const checkMurderLock = (p) => {
+    if (!CONFIG.MURDER_LOCK) return;
     const open = game.cases.filter((c) => MURDER_CAUSES.includes(c.cause) && !c.announced && !c.judged);
     if (!open.length || open.every((c) => c.killerId === p.id)) return;
     const attack = game.availableActions(p).find((a) => a.type === 'attack' && !a.disabled);
@@ -408,7 +409,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
           switch (game.phase) {
             case PHASE.DAY:
             case PHASE.INVESTIGATION: {
-              if (game.phase === PHASE.INVESTIGATION) assert([...game.bodies.values()].every((b) => b.announced), 'all bodies are announced together once one is found');
+              if (game.phase === PHASE.INVESTIGATION) assert([...game.bodies.values()].every((b) => b.announced || b.turn === game.turn), 'all bodies are announced together once one is found (a trap death this very hour joins the next trial)');
               if (!rolesChecked && game.characters.length) {
                 rolesChecked = true;
                 const n = game.characters.length;
@@ -533,9 +534,19 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               const r = game.lastResult;
               assert(r && Array.isArray(r.cases) && r.cases.length >= 1, 'result has judged cases');
               assert(Array.isArray(r.timeline) && r.timeline.length >= 1 && r.timeline.every((t) => t.positions.length && t.positions.every((x) => x.zoneName) && t.hour >= 1), 'result has timeline positions with hours');
-              for (const c of r.cases) assert(c.victimName && c.zoneName && c.causeLabel && (c.killerName || c.unsolved) && c.hour >= 1, 'case reveal complete');
-              for (const c of r.cases) if (c.unsolved) assert(!c.killerName && !c.killerPlayer && !c.designatedName && game.players.get(game.caseOf(c.id).killerId)?.alive, 'an unsolved case hides its still-living culprit');
-              assert(!r.stillOpen?.length && game.cases.filter((c) => c.announced).every((c) => c.judged), 'every announced case is closed by the trial');
+              for (const c of r.cases) assert(c.victimName && c.zoneName && c.causeLabel && (c.killerName || !game.caseOf(c.id).killerId) && c.hour >= 1, 'case reveal complete');
+              for (const c of r.cases) if (game.caseOf(c.id).killerId) assert(!game.players.get(game.caseOf(c.id).killerId).alive, 'a revealed case never has a living culprit');
+              const stillOpenCases = game.openCases();
+              if (r.moreKillers) {
+                assert(r.correct && stillOpenCases.length >= 1 && stillOpenCases.every((c) => c.killerId && game.players.get(c.killerId).alive), 'open cases after a correct vote all have a living culprit');
+                assert(r.stillOpen.length === stillOpenCases.length, 'result lists the still-open cases by victim');
+                for (const c of stillOpenCases) assert(!r.cases.some((x) => x.killerPlayer === game.players.get(c.killerId).name), 'result does not name a still-living culprit');
+                const verdict = game.chat.at(-1).text;
+                assert(/ยังมีฆาตกรอีก 1 คน/.test(verdict) && stillOpenCases.every((c) => !verdict.includes(game.nick(game.players.get(c.killerId)))), 'verdict says one more killer remains, never how many or who');
+                assert(game.history.at(-1).moreKillers === true, 'history marks the hunt as unfinished');
+              } else {
+                assert(!r.stillOpen?.length && stillOpenCases.length === 0 && game.cases.filter((c) => c.announced).every((c) => c.judged), 'every announced case is closed by the final verdict of the day');
+              }
               if (r.votedId === NONE_VOTE) stats.noneVotes++;
               if (r.correct && r.executedId) assert(game.players.get(r.executedId).fate === 'executed', 'executed fate');
               const rv = game.viewFor(ids[0]);
@@ -546,13 +557,18 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               // a revived player starts objectives over, so the pacing check must forget their old deadline
               for (const p of game.players.values()) if (p.revived && p.revivedDay === game.day) objectiveSeen.delete(p.id);
               if (game.phase !== PHASE.ENDED) {
-                assert(game.day === dayBefore + 1 && game.hour === 1, 'trial ends the day; new day starts at hour 1');
-                assert(game.bodies.size === 0, 'no bodies remain after the trial (all announced and judged together)');
-                for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of judged cases is wiped');
-                for (const p of game.alivePlayers()) {
-                  assert(p.zoneId === game.location.sleepZoneId, 'everyone restarts the day in the sleep zone');
-                  if (invBefore.has(p.id)) assert(p.inventory.map((i) => i.id).join(',') === invBefore.get(p.id), 'survivors keep their items');
+                if (r.moreKillers) {
+                  stats.huntRounds++;
+                  assert(game.phase === PHASE.INVESTIGATION && game.step === STEP.MOVE && game.day === dayBefore && game.huntRound >= 2, 'hunt continues in the same day with another evidence hour');
+                  assert([...game.bodies.values()].every((b) => !b.judged && !game.caseOf(b.caseId).judged) && game.bodies.size === stillOpenCases.length, 'bodies of closed cases are collected, open-case bodies stay');
+                  for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of closed cases is wiped');
+                } else {
+                  assert(game.day === dayBefore + 1 && game.hour === 1, 'trial ends the day; new day starts at hour 1');
+                  assert(game.bodies.size === 0, 'no bodies remain after the final verdict (all cases of the day closed)');
+                  for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of judged cases is wiped');
+                  for (const p of game.alivePlayers()) assert(p.zoneId === game.location.sleepZoneId, 'everyone restarts the day in the sleep zone');
                 }
+                for (const p of game.alivePlayers()) if (invBefore.has(p.id)) assert(p.inventory.map((i) => i.id).join(',') === invBefore.get(p.id), 'survivors keep their items');
                 for (const p of game.players.values()) if (!p.alive) assert(p.inventory.length === 0, 'dead players hold nothing (dropped where they died)');
               }
               break;
@@ -613,7 +629,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   if (game.endReason === 'wrong_vote') {
     assert(all.every((p) => !p.alive), 'wrong vote kills everyone');
     // only culprits of cases that reached a trial escape; a killer whose body was never found is punished with everyone else
-    for (const c of game.cases.filter((x) => x.killerId && x.announced && !x.unsolved)) {
+    for (const c of game.cases.filter((x) => x.killerId && x.announced)) {
       const k = game.players.get(c.killerId);
       assert(['escaped', 'executed', 'victim'].includes(k.fate) || k.revived, `killer fate after wrong vote (${k.fate})`);
     }
@@ -624,7 +640,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
 
   Object.assign(CONFIG, saved);
   console.log(
-    `✔ ${label}: ${all.length} players · end=${game.endReason} (day ${stats.days}, ${stats.hours} h) · ${stats.trials} trial(s) (${stats.wrongVotes} wrong, ${stats.noneVotes} none, ${stats.runoffs} runoff) · kills ${stats.kills} (trap ${stats.trapKills}, defense ${stats.defenses}, wrong-target ${stats.wrongTargets}) · crafts ${stats.crafts} traps ${stats.trapsPlaced} poison ${stats.poisonings} · locks ${stats.locks} bounces ${stats.bounces} door-work ${stats.doorWorks} (breaks ${stats.breaks}) locked-in ${stats.lockedIn} murder-locks ${stats.lockBlocks} · objectives done ${stats.objectivesDone}, forced ${stats.forced} · gives ${stats.gives} requests ${stats.requests} · exits found ${stats.exitsFound}/2 attempts ${stats.exitAttempts} · ${roleStats.hidden} hidden + ${roleStats.fakes} fake · ${stats.leakChecks} leak checks, ${stats.actionsChecked} action checks`,
+    `✔ ${label}: ${all.length} players · end=${game.endReason} (day ${stats.days}, ${stats.hours} h) · ${stats.trials} trial(s) (${stats.huntRounds} hunt rounds, ${stats.wrongVotes} wrong, ${stats.noneVotes} none, ${stats.runoffs} runoff) · kills ${stats.kills} (trap ${stats.trapKills}, defense ${stats.defenses}, wrong-target ${stats.wrongTargets}) · crafts ${stats.crafts} traps ${stats.trapsPlaced} poison ${stats.poisonings} · locks ${stats.locks} bounces ${stats.bounces} door-work ${stats.doorWorks} (breaks ${stats.breaks}) locked-in ${stats.lockedIn} murder-locks ${stats.lockBlocks} · objectives done ${stats.objectivesDone}, forced ${stats.forced} · gives ${stats.gives} requests ${stats.requests} · exits found ${stats.exitsFound}/2 attempts ${stats.exitAttempts} · ${roleStats.hidden} hidden + ${roleStats.fakes} fake · ${stats.leakChecks} leak checks, ${stats.actionsChecked} action checks`,
   );
   return { ...stats, endReason: game.endReason, roleStats, game };
 }
@@ -666,10 +682,12 @@ async function unitTests() {
   Math.random = realRandom;
   assert(!b.alive && b.deathCause === 'trap' && game.cases.at(-1).trapType === 'poison' && game.cases.at(-1).killerId === a.id, 'eater dies from poisoned food, poisoner is culprit');
   assert(!food.poisoned, 'poisoned batch is gone after a death');
-  // 2) ล็อกการฆาตกรรม: c (ไม่ใช่คนร้าย) ลงมือไม่ได้ ส่วน a (คนร้าย) ลงมือได้
+  // 2) ล็อกการฆาตกรรม (ตัวเลือก MURDER_LOCK ปิดโดยค่าเริ่มต้น): เปิดแล้ว c (ไม่ใช่คนร้าย) ลงมือไม่ได้ ส่วน a (คนร้าย) ลงมือได้
   game.phase = PHASE.DAY;
   game.step = STEP.ACT;
   game.actions = new Map();
+  assert(!CONFIG.MURDER_LOCK && !game.murderLockedFor(c), 'murder lock is off by default: anyone may act while a body is hidden');
+  CONFIG.MURDER_LOCK = true;
   assert(game.murderLockedFor(c) && !game.murderLockedFor(a), 'murder lock applies to non-culprits only');
   const atkC = game.availableActions(c).find((x) => x.type === 'attack' && x.targetId === a.id);
   let threw = false;
@@ -680,6 +698,7 @@ async function unitTests() {
   game.actions = new Map();
   game.chooseAction(a.id, atkA);
   assert(game.actions.get(a.id)?.type === 'attack', 'culprit can still attack');
+  CONFIG.MURDER_LOCK = false;
   game.actions = new Map();
   // 3) คราฟกับดัก → วาง → คนเข้าห้องโดน
   a.inventory = [weapon, rope];
@@ -929,7 +948,7 @@ async function unitTests() {
     assert(yItems.every((i) => scene.items.includes(i)) && x.inventory.map((i) => i.id).join(',') === xInv, 'dead player items stay where they died, survivors keep theirs');
     assert([x, w].every((p) => p.zoneId === g3.location.sleepZoneId), 'survivors restart at the sleep zone');
   }
-  // 8) พบศพร่างเดียว → เปิดเผยทุกร่าง · การตัดสินปิดทุกคดี · คดีที่คนร้ายไม่ถูกโหวตปิดโดยไม่เฉลย · ไม่มีศพเหลือหลังวันใหม่
+  // 8) ฆาตกรหลายคน: พบศพร่างเดียว → เปิดเผยทุกร่าง · ตัดสินถูก → ประหารคนนั้น บอกแค่ "ยังมีอีก 1 คน" · เก็บหลักฐานต่อในวันเดิม → ตัดสินรอบ 2 · ปิดครบแล้วค่อยขึ้นวันใหม่โดยไม่มีศพเหลือ
   {
     const g4 = new Game({ code: 'UNIT4', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
     const ids4 = ['m1-xxxxxxxx', 'm2-xxxxxxxx', 'm3-xxxxxxxx', 'm4-xxxxxxxx', 'm5-xxxxxxxx', 'm6-xxxxxxxx'];
@@ -947,6 +966,7 @@ async function unitTests() {
     g4.step = STEP.ACT;
     Math.random = () => 0;
     g4.do_attack(k1, { targetId: v1.id });
+    assert(!g4.murderLockedFor(k2), 'with the lock off a second person may still kill while a body is hidden');
     g4.do_attack(k2, { targetId: v2.id });
     Math.random = realRandom;
     assert(!v1.alive && !v2.alive && g4.bodies.size === 2 && g4.cases.length === 2, 'two murders by two different killers');
@@ -954,36 +974,55 @@ async function unitTests() {
     g4.bodies.get(v1.id).discoveredBy.add(s1.id);
     s1.knownBodies.add(v1.id);
     await g4.startInvestigation();
-    assert(g4.phase === PHASE.INVESTIGATION && [...g4.bodies.values()].every((b) => b.announced) && g4.cases.every((c) => c.announced), 'finding one body announces every body');
+    assert(g4.phase === PHASE.INVESTIGATION && g4.huntRound === 1 && [...g4.bodies.values()].every((b) => b.announced) && g4.cases.every((c) => c.announced), 'finding one body announces every body');
     assert([s1, s2, k1, k2].every((p) => p.knownBodies.has(v1.id) && p.knownBodies.has(v2.id)), 'everyone now knows where both bodies are');
     const ann = g4.chat.at(-1).text;
     assert(/ศพทุกร่างในสถานที่ถูกเปิดเผยพร้อมกัน/.test(ann) && /ยังไม่มีใครเคยเห็น/.test(ann), 'announcement mentions the never-seen body');
     await g4.beginTrial();
+    assert(!/รอบที่/.test(g4.chat.at(-1).text), 'first trial of the day is not numbered');
     for (const p of g4.alivePlayers()) {
       g4.castVote(p.id, p.id === k1.id ? k2.id : k1.id); // โหวตตัวเองไม่ได้
       g4.confirmVote(p.id);
     }
-    assert(g4.phase === PHASE.TRIAL_RESULT && g4.lastResult.correct && k1.fate === 'executed' && k2.alive, 'voting one of two killers is correct; the other stays alive');
+    const c1 = g4.cases.find((c) => c.victimId === v1.id);
     const c2 = g4.cases.find((c) => c.victimId === v2.id);
-    assert(c2.judged && c2.unsolved && g4.cases.every((c) => c.judged) && [...g4.bodies.values()].every((b) => b.judged), "every announced case closes; the unvoted killer's case is marked unsolved");
-    const r2 = g4.lastResult.cases.find((c) => c.id === c2.id);
-    assert(r2 && r2.unsolved && !r2.killerName && !r2.killerPlayer && !r2.designatedName && !r2.truthSummary.includes(g4.nick(k2)), 'the unsolved case hides its culprit');
-    assert(!g4.history.at(-1).culprits.includes(g4.nick(k2)) && g4.history.at(-1).unsolved.includes(g4.nick(v2)), 'history does not name the uncaught killer');
-    assert(g4.viewFor(s1.id).lastResult.cases.every((c) => c.killerPlayer !== k2.name), 'client view does not name the uncaught killer');
-    assert(/ถูกปิดโดยจับคนร้ายไม่ได้/.test(g4.chat.at(-1).text), 'verdict message says a case closed unsolved');
+    const r1 = g4.lastResult;
+    assert(g4.phase === PHASE.TRIAL_RESULT && r1.correct && k1.fate === 'executed' && k2.alive, 'first verdict executes the voted killer; the other stays alive');
+    assert(c1.judged && !c2.judged && r1.moreKillers === true && r1.round === 1 && r1.stillOpen.length === 1 && r1.stillOpen[0] === g4.nick(v2), "the other killer's case stays open and the result says more remain");
+    assert(r1.cases.length === 1 && r1.cases[0].id === c1.id && r1.cases.every((c) => c.killerPlayer !== k2.name), 'only the closed case is revealed; the living killer is not named');
+    const verdict1 = g4.chat.at(-1).text;
+    assert(/ยังมีฆาตกรอีก 1 คน/.test(verdict1) && !verdict1.includes(g4.nick(k2)), 'announcement says one more killer remains without naming or counting');
+    assert(g4.history.at(-1).culprits.join() === g4.nick(k1) && g4.history.at(-1).moreKillers && g4.history.at(-1).round === 1, 'history records round 1 with the hunt unfinished');
+    const view1 = g4.viewFor(s1.id);
+    assert(view1.lastResult.moreKillers && view1.lastResult.cases.every((c) => c.killerPlayer !== k2.name) && view1.announcedCases.some((c) => c.id === c2.id && !c.judged), 'client sees the open case but not the hidden killer');
+    const hourBefore = g4.hour;
     await g4.nextRound(ids4[0]);
-    assert(g4.phase === PHASE.DAY && g4.bodies.size === 0 && g4.day === 2, 'new day starts with no bodies left');
-    g4.endGame('timeout');
-    const un = g4.outcome.unsolved.find((c) => c.id === c2.id);
-    assert(un && un.killerPlayer === k2.name, 'game-over summary finally reveals the uncaught killer');
+    assert(g4.phase === PHASE.INVESTIGATION && g4.step === STEP.MOVE && g4.day === 1 && g4.hour === hourBefore + 1 && g4.huntRound === 2, 'hunt continues: another evidence hour in the same day');
+    assert(g4.bodies.size === 1 && g4.bodies.has(v2.id) && !g4.bodies.has(v1.id) && !s1.knownBodies.has(v1.id) && s1.knownBodies.has(v2.id), 'body of the closed case is collected; the open case keeps its body');
+    assert([...g4.zones.values()].every((z) => z.evidence.every((e) => e.caseId !== c1.id)), 'evidence of the closed case is wiped');
+    const huntMsg = g4.chat.at(-1).text;
+    assert(/การตามหาฆาตกรที่เหลือ/.test(huntMsg) && /รอบที่ 2/.test(huntMsg) && huntMsg.includes(g4.nick(v2)) && !huntMsg.includes(g4.nick(k2)), 'hunt message announces round 2 and the open case, not the killer');
+    for (const p of g4.alivePlayers()) g4.chooseMove(p.id, p.zoneId);
+    assert(g4.phase === PHASE.INVESTIGATION && g4.step === STEP.ACT, 'hunt hour proceeds to actions');
+    for (const p of g4.alivePlayers()) if (g4.phase === PHASE.INVESTIGATION && g4.step === STEP.ACT) g4.chooseAction(p.id, { type: 'search' });
+    assert(g4.phase === PHASE.TRIAL && /รอบที่ 2/.test(g4.chat.at(-1).text), 'after the evidence hour the second trial begins');
+    for (const p of g4.alivePlayers()) {
+      g4.castVote(p.id, p.id === k2.id ? s1.id : k2.id);
+      g4.confirmVote(p.id);
+    }
+    const r2 = g4.lastResult;
+    assert(g4.phase === PHASE.TRIAL_RESULT && r2.correct && k2.fate === 'executed' && !r2.moreKillers && r2.round === 2 && c2.judged && r2.cases.some((c) => c.id === c2.id && c.killerPlayer === k2.name), 'second verdict catches the last killer, reveals the case, and the hunt ends');
+    assert(/ไม่มีฆาตกรเหลืออยู่/.test(g4.chat.at(-1).text) && g4.history.length === 2 && g4.history.at(-1).round === 2 && !g4.history.at(-1).moreKillers, 'final verdict says no killer remains');
+    await g4.nextRound(ids4[0]);
+    assert(g4.phase === PHASE.DAY && g4.day === 2 && g4.bodies.size === 0 && g4.huntRound === 0, 'only then does a new day start, with no bodies left');
   }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / unsolved cases close');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed)');
 }
 
 try {
   await unitTests();
-  const agg = { kills: 0, trapKills: 0, trials: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, requests: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
+  const agg = { kills: 0, trapKills: 0, trials: 0, huntRounds: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, requests: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
   const add = (r) => { for (const k of Object.keys(agg)) agg[k] += r[k] || 0; };
 
   for (let i = 0; i < 4; i++) add(await runGame({ humans: 8, label: `explore #${i + 1}`, strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
@@ -1032,7 +1071,7 @@ try {
   assert(agg.trials >= 2, `simulations should reach trials (got ${agg.trials})`);
   assert(agg.forced >= 1, 'objective enforcement should trigger somewhere');
   assert(agg.gives >= 1, 'item giving should happen somewhere');
-  assert(agg.lockBlocks >= 1, 'murder lock should block someone somewhere');
+  assert(agg.huntRounds >= 1, 'a multi-killer hunt (second trial in one day) should occur somewhere');
   console.log(`ALL SIMULATIONS PASSED — totals: ${JSON.stringify(agg)}`);
   process.exit(0);
 } catch (err) {
