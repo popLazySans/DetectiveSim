@@ -712,7 +712,12 @@ export class Game {
       const others = this.presentIn(z.id).filter((o) => o.id !== p.id);
       const bodies = this.bodiesIn(z.id);
       const visibleItems = z.items.filter((i) => !i.hidden);
-      const lines = [bounced.has(p.id) ? `📍 คุณยังอยู่ที่${this.zn(z)}` : `📍 คุณมาถึง${this.zn(z)}${z.locked ? ' (ประตูล็อกอยู่ คุณไขเข้ามาด้วยกุญแจ)' : ''}`];
+      const stayed = bounced.has(p.id) || prevZone.get(p.id) === z.id;
+      const knewLocked = p.zoneMemory[z.id]?.locked === true;
+      const lines = [bounced.has(p.id) ? `📍 คุณยังอยู่ที่${this.zn(z)}` : stayed ? `📍 คุณอยู่ที่${this.zn(z)}ต่อ` : `📍 คุณมาถึง${this.zn(z)}${z.locked ? ' (ประตูล็อกอยู่ คุณไขเข้ามาด้วยกุญแจ)' : ''}`];
+      // การล็อก/ปลดล็อกทำเงียบ ๆ — คนที่อยู่ในห้องอยู่แล้วเพิ่งสังเกตเห็นสถานะประตูตอนต้นชั่วโมงถัดไป
+      if (stayed && z.locked && !knewLocked) lines.push(this.hasKeyFor(p, z.id) ? '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณมีกุญแจ จะปลดล็อกก็ได้' : '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณยังออกได้ แต่ถ้าออกโดยไม่มีกุญแจ ประตูจะถูกเปิดค้างไว้');
+      if (stayed && !z.locked && knewLocked) lines.push('🔓 คุณสังเกตว่าประตูห้องนี้ไม่ได้ล็อกแล้ว');
       lines.push(others.length ? `คนที่อยู่ที่นี่ด้วย: ${others.map((o) => this.nick(o)).join(', ')}` : 'ไม่มีใครอยู่ที่นี่นอกจากคุณ');
       lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => (i.isPart ? `${i.name} ⭐` : i.name)).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
       for (const b of bodies) {
@@ -946,8 +951,10 @@ export class Game {
     if (food) out.push({ type: 'eat', label: `🍞 กินอาหาร/ดื่มน้ำ (${food.name})`, desc: 'พักกินอะไรสักหน่อย — ใช้ทำภารกิจ "ไปกินอาหาร" ได้ · ระวัง ถ้ามีคนผสมยาพิษไว้คุณอาจไม่รู้ตัว' });
     if (z.lockable) {
       const key = p.inventory.find((i) => i.kind === 'key' && (i.master || i.unlocksZoneId === z.id));
-      if (key && !z.locked) out.push({ type: 'lock', label: `🔒 ล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าห้องนี้ไม่ได้ · คนข้างในออกได้เสมอ แต่ถ้าคนออกไม่มีกุญแจ ประตูจะถูกเปิดค้างไว้' });
-      if (key && z.locked) out.push({ type: 'unlock', label: `🔓 ปลดล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'เปิดให้ใครก็เข้าได้' });
+      // ผู้เล่นรู้สถานะประตูตามที่สังเกตตอนต้นชั่วโมง (zoneMemory) ไม่ใช่สถานะจริงทันที — คนที่โดนล็อกใส่เงียบ ๆ จะเพิ่งได้ตัวเลือกปลดล็อกชั่วโมงถัดไป
+      const knownLocked = p.zoneMemory[z.id]?.locked === true;
+      if (key && !z.locked && !knownLocked) out.push({ type: 'lock', label: `🔒 ล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าห้องนี้ไม่ได้ · คนที่อยู่ในห้องตอนนี้จะยังไม่รู้ว่าถูกล็อกจนถึงชั่วโมงถัดไป · คนข้างในออกได้เสมอ แต่ถ้าคนออกไม่มีกุญแจ ประตูจะถูกเปิดค้างไว้' });
+      if (key && z.locked && knownLocked) out.push({ type: 'unlock', label: `🔓 ปลดล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'เปิดให้ใครก็เข้าได้ · คนอื่นในห้องจะรู้ชั่วโมงถัดไป' });
     }
     if (inDay) {
       for (const o of others) {
@@ -1307,8 +1314,9 @@ export class Game {
     const z = this.zones.get(p.zoneId);
     if (!z.lockable || z.locked || !this.hasKeyFor(p, z.id)) return this.logTo(p, 'ล็อกห้องนี้ไม่ได้', 'danger');
     z.locked = true;
-    this.logTo(p, `🔒 คุณล็อกประตู${this.zn(z)}แล้ว ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าไม่ได้ (คนข้างในออกได้ แต่ถ้าคนออกไม่มีกุญแจ ประตูจะเปิดค้าง)`, 'action');
-    for (const o of this.witnessesOf(p, z)) if (chance(0.8)) this.logTo(o, `👀 ${this.nick(p)}ล็อกประตู${this.zn(z)}จากข้างใน`, 'witness');
+    p.zoneMemory[z.id] = { ...(p.zoneMemory[z.id] || {}), locked: true };
+    // ล็อกเงียบ ๆ: คนอื่นในห้องยังไม่รู้ จะสังเกตเห็นตอนต้นชั่วโมงถัดไป (ใน resolveMoves)
+    this.logTo(p, `🔒 คุณล็อกประตู${this.zn(z)}แล้ว ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าไม่ได้ · คนอื่นในห้องยังไม่ทันสังเกต จะรู้ตอนชั่วโมงถัดไป (คนข้างในออกได้ แต่ถ้าคนออกไม่มีกุญแจ ประตูจะเปิดค้าง)`, 'action');
     this.recordEvent(`${this.nick(p)}ล็อก${this.zn(z)}`);
   }
 
@@ -1316,8 +1324,8 @@ export class Game {
     const z = this.zones.get(p.zoneId);
     if (!z.locked || !this.hasKeyFor(p, z.id)) return this.logTo(p, 'ปลดล็อกไม่ได้', 'danger');
     z.locked = false;
-    this.logTo(p, `🔓 คุณปลดล็อกประตู${this.zn(z)}แล้ว ใครก็เข้าได้`, 'action');
-    for (const o of this.witnessesOf(p, z)) if (chance(0.8)) this.logTo(o, `👀 ${this.nick(p)}ปลดล็อกประตู${this.zn(z)}`, 'witness');
+    p.zoneMemory[z.id] = { ...(p.zoneMemory[z.id] || {}), locked: false };
+    this.logTo(p, `🔓 คุณปลดล็อกประตู${this.zn(z)}แล้ว ใครก็เข้าได้ · คนอื่นในห้องจะสังเกตเห็นตอนชั่วโมงถัดไป`, 'action');
     this.recordEvent(`${this.nick(p)}ปลดล็อก${this.zn(z)}`);
   }
 

@@ -641,6 +641,31 @@ async function unitTests() {
   game.moves = new Map([[a.id, from.id], [b.id, from.id]]);
   game.resolveMoves();
   assert(!locked.locked, 'leaving a locked room without a key leaves the door unlocked');
+  // 4b) ล็อกเงียบ ๆ: คนที่อยู่ในห้องตอนล็อกยังไม่รู้ จนต้นชั่วโมงถัดไปจึงสังเกตเห็นและได้ตัวเลือกปลดล็อก
+  a.inventory = [key];
+  b.inventory = [];
+  game.moves = new Map([[a.id, locked.id], [b.id, locked.id]]);
+  game.resolveMoves(); // ประตูเปิดค้างอยู่ ทั้งคู่เข้าได้
+  assert(a.zoneId === locked.id && b.zoneId === locked.id && b.zoneMemory[locked.id]?.locked === false, 'both enter the now-unlocked room and remember it as unlocked');
+  game.step = STEP.ACT;
+  const bLogBefore = b.log.length;
+  game.do_lock(a);
+  assert(locked.locked && a.zoneMemory[locked.id]?.locked === true, 'locking takes effect at once and the locker knows');
+  assert(b.log.length === bLogBefore && b.zoneMemory[locked.id]?.locked === false, 'others in the room are not told about the lock yet');
+  b.inventory = [{ id: 'unit_master', name: 'กุญแจผู้ดูแล', description: '', kind: 'key', portable: true, master: true }];
+  assert(!game.availableActions(b).some((x) => x.type === 'lock' || x.type === 'unlock'), 'a key holder who does not know about the lock gets no lock/unlock option yet');
+  game.moves = new Map([[a.id, locked.id], [b.id, locked.id]]);
+  game.resolveMoves(); // ชั่วโมงถัดไป ทั้งคู่อยู่ต่อ
+  assert(b.zoneMemory[locked.id]?.locked === true && /เพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้/.test(b.log.at(-1).text), 'next hour the roommate notices the door is locked');
+  assert(!/ไขเข้ามาด้วยกุญแจ/.test(a.log.at(-1).text) && !/เพิ่งสังเกต/.test(a.log.at(-1).text), 'the locker who stays is not told they unlocked their way in');
+  game.step = STEP.ACT;
+  assert(game.availableActions(b).some((x) => x.type === 'unlock'), 'once aware, the key holder can unlock');
+  game.do_unlock(b);
+  assert(!locked.locked && b.zoneMemory[locked.id]?.locked === false && a.zoneMemory[locked.id]?.locked === true, 'unlocking is quiet too: the other key holder still believes it is locked');
+  game.moves = new Map([[a.id, locked.id], [b.id, locked.id]]);
+  game.resolveMoves();
+  assert(a.zoneMemory[locked.id]?.locked === false && /ไม่ได้ล็อกแล้ว/.test(a.log.at(-1).text), 'next hour the other player notices the door is unlocked');
+  b.inventory = [];
   // 5) ทางออก: ไม่รู้จัก → ไม่มีแอ็กชัน, ค้นพบแล้วจึงมี, เส้นทางแบบกุญแจเปิดได้เมื่อถือกุญแจ
   const exit = [...game.exits.values()][0];
   a.zoneId = exit.zoneId;
@@ -706,7 +731,7 @@ async function unitTests() {
     CONFIG.BOT_REQUESTS = saved2;
   }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors, hidden exit discovery/opening, bot item requests');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (quiet lock, noticed next hour), hidden exit discovery/opening, bot item requests');
 }
 
 try {
