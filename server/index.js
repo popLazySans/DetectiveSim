@@ -121,7 +121,7 @@ io.on('connection', (socket) => {
   socket.on('chat:send', handle(({ text }) => game().sendChat(me(), text)));
   // วงจรวัน: เลือกห้อง → เลือกแอ็กชัน → อ่านบันทึก/พร้อมไปต่อ
   socket.on('day:move', handle(({ zoneId }) => game().chooseMove(me(), String(zoneId || ''))));
-  socket.on('day:act', handle(({ type, itemId, targetId, victimId, toZoneId }) => game().chooseAction(me(), { type, itemId, targetId, victimId, toZoneId })));
+  socket.on('day:act', handle(({ type, itemId, itemId2, targetId, victimId, toZoneId, recipeId, exitId }) => game().chooseAction(me(), { type, itemId, itemId2, targetId, victimId, toZoneId, recipeId, exitId })));
   socket.on('day:ready', handle(() => game().markReady(me())));
   socket.on('day:give', handle(({ targetId, itemId }) => game().giveItem(me(), String(targetId || ''), String(itemId || ''))));
   socket.on('host:forceStep', handle(() => game().forceStep(me())));

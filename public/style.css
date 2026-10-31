@@ -373,3 +373,12 @@ button.act.danger.selected { border-color: var(--red); background: rgba(255, 77,
 .rolerow .rval.real { color: var(--pink); }
 .give { margin-top: 0.7rem; padding: 0.6rem 0.75rem; background: var(--panel-2); border: 1px dashed var(--yellow); border-radius: 8px; }
 .give select { max-width: 220px; }
+
+/* ---------- v2.2: ทางออกที่ซ่อนอยู่ / ล็อกห้อง / คราฟกับดัก ---------- */
+.exitbox { background: var(--panel-2); border: 1px solid var(--yellow); border-radius: 8px; padding: 0.5rem 0.7rem; margin-top: 0.4rem; font-size: 0.9rem; }
+.exitbox.open { border-color: var(--green); }
+.chip.trap { border-color: var(--red); color: var(--red); }
+.chip small { color: var(--muted); font-weight: 400; }
+details.help { margin-top: 0.6rem; font-size: 0.88rem; }
+details.help summary { cursor: pointer; color: var(--cyan); }
+.zone .badge.red { font-size: 0.72rem; }

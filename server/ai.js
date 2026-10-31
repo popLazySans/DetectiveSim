@@ -25,8 +25,17 @@ const UltimatesSchema = z.object({
 const LocationSchema = z.object({
   name: z.string(),
   description: z.string().describe('บรรยากาศ 2-3 ประโยค และบอกว่าทำไมออกไปไม่ได้'),
-  exitDescription: z.string().describe('ทางออกเดียวของสถานที่เป็นอะไร และต้องใช้ของอะไรบ้างถึงจะออกได้ (สอดคล้องกับ partNames)'),
-  partNames: z.array(z.string()).describe('ชื่อ "ของสำหรับหนี" 4 ชิ้นที่สอดคล้องกับทางออก เช่น กุญแจ รหัส เชื้อเพลิง แผนที่ เครื่องมือ'),
+  exits: z
+    .array(
+      z.object({
+        name: z.string().describe('ชื่อทางออก เช่น "ประตูเหล็กด้านหลัง" "ลิฟต์ขนของ" "เรือยนต์ที่ท่า"'),
+        description: z.string().describe('บรรยาย 1-2 ประโยค ว่าทางออกนี้คืออะไร และทำไมถึงยังออกไม่ได้'),
+        zoneName: z.string().describe('ชื่อห้อง (ตรงกับ zones[].name) ที่ทางออกนี้ซ่อนอยู่ ห้ามเป็นห้องแรก'),
+        route: z.enum(['locked', 'code', 'repair', 'power', 'breach']).describe('วิธีเปิด: locked=ต้องหากุญแจ, code=แป้นรหัส 3 หลัก (ระบบซ่อนเศษรหัส 3 ชิ้น), repair=ต้องหาชิ้นส่วน 2 ชิ้น+เครื่องมือ, power=ต้องเอาฟิวส์ไปใส่แผงไฟก่อน, breach=ทุบ/งัดด้วยของหนัก'),
+        itemNames: z.array(z.string()).describe('ชื่อของที่ต้องใช้: locked → [ชื่อกุญแจ], repair → [ชิ้นส่วน 2 ชื่อ], power → [ชื่อฟิวส์], code/breach → []'),
+      }),
+    )
+    .describe('ทางออกที่เป็นไปได้ 4-5 ทาง route ไม่ซ้ำกัน (ระบบจะสุ่มใช้ 2 ทางต่อเกม)'),
   zones: z.array(
     z.object({
       name: z.string(),
@@ -35,7 +44,9 @@ const LocationSchema = z.object({
         z.object({
           name: z.string(),
           description: z.string().describe('1 ประโยค บอกใบ้ว่าใช้ทำอะไรได้'),
-          kind: z.enum(['weapon', 'poison', 'tool', 'key', 'cloth', 'power', 'fixture']).describe('weapon=อาวุธ, poison=ยา/สารพิษ, tool=เครื่องมือ/เชือก, key=กุญแจ, cloth=ผ้า, power=แผงไฟ/กล้อง (ติดตั้งถาวร ใช้ตัดไฟได้), fixture=ของติดตั้งถาวรอื่น ๆ'),
+          kind: z
+            .enum(['weapon', 'poison', 'tool', 'rope', 'food', 'key', 'cloth', 'power', 'fixture'])
+            .describe('weapon=อาวุธ, poison=ยา/สารพิษ, tool=เครื่องมือ/ของหนัก, rope=เชือก/สายไฟ/เทป (ใช้ประกอบกับดัก), food=อาหาร/เครื่องดื่มกลางห้อง (กินได้ วางยาได้ ไม่ใช่ของพกพา), key=กุญแจผู้ดูแลที่ไขประตูห้องได้ทุกห้อง, cloth=ผ้า, power=แผงไฟ/กล้อง (ติดตั้งถาวร ใช้ตัดไฟ/ใส่ฟิวส์), fixture=ของติดตั้งถาวรอื่น ๆ'),
         }),
       ),
     }),
@@ -195,40 +206,44 @@ ${characters.map(fmtCharacter).join('\n')}
       );
     },
 
-    // สถานที่เดียวทั้งเกม: 7-8 ห้อง (ห้องแรก = ที่นอนรวม, ห้องสุดท้าย = ทางออก ไม่มีของ)
+    // สถานที่เดียวทั้งเกม: 8 ห้อง (ห้องแรก = ที่นอนรวม) + เทมเพลตทางออก 4-5 ทาง (ระบบสุ่มใช้ 2 ทาง ซ่อนในห้องธรรมดา)
     async generateLocation({ playerCount = 6 } = {}) {
       return withFallback(
         'location',
         async () => {
-          const user = `สร้าง "สถานที่ปิดตาย" สำหรับเกมที่มีผู้เล่น ${playerCount} คน ผู้เล่นต้องสำรวจห้องต่าง ๆ เพื่อหาของสำหรับหนี
+          const user = `สร้าง "สถานที่ปิดตาย" สำหรับเกมที่มีผู้เล่น ${playerCount} คน ผู้เล่นต้องสำรวจห้องต่าง ๆ เพื่อหา "ทางออกที่ซ่อนอยู่" และของที่ต้องใช้เปิดมัน
 
 ข้อกำหนด:
-1. name: ชื่อสถานที่สั้น ๆ น่าสนใจ / description: บรรยากาศ 2-3 ประโยค บอกว่าทำไมออกไปไม่ได้
-2. zones: ห้อง 8 ห้อง เรียงลำดับดังนี้ — ห้องแรกคือ "ที่นอนรวม" ที่ทุกคนนอน (มีของธรรมดา 1-2 ชิ้น เช่น ผ้า ไฟฉาย), ห้องที่ 2-7 คือห้องสำรวจ แต่ละห้องมีของ 2 ชิ้น, ห้องสุดท้ายคือ "ทางออก" (items เป็น [] ว่าง)
-3. ของในห้อง 2-7 รวมกันต้องมี: อาวุธ (weapon) อย่างน้อย 4 ชิ้น, ยา/สารพิษ (poison) 2-3 ชิ้น, แผงไฟหรือกล้อง (power) 2 ชิ้น, กุญแจ (key) 1-2 ชิ้น, ผ้า (cloth) 1-2 ชิ้น, เครื่องมือ/เชือก (tool) 2-3 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน 2 ชิ้น ชื่อของห้ามซ้ำกัน
-4. exitDescription: ทางออกเป็นอะไร และต้องใช้ของอะไรบ้าง / partNames: ของสำหรับหนี 4 ชิ้นที่สอดคล้องกับทางออก (ระบบจะสุ่มซ่อน 2-3 ชิ้นตามห้อง)
+1. name: ชื่อสถานที่สั้น ๆ น่าสนใจ / description: บรรยากาศ 2-3 ประโยค บอกว่าทำไมออกไปไม่ได้ (ห้ามเอ่ยถึงทางออกที่ซ่อนอยู่)
+2. zones: ห้อง 8 ห้อง — ห้องแรกคือ "ที่นอนรวม" ที่ทุกคนนอน (มีของธรรมดา 1-2 ชิ้น เช่น ผ้า ไฟฉาย) ห้องที่ 2-8 คือห้องสำรวจ แต่ละห้องมีของ 2-3 ชิ้น
+3. ของในห้อง 2-8 รวมกันต้องมี: อาวุธ (weapon) อย่างน้อย 5 ชิ้น, ยา/สารพิษ (poison) 3 ชิ้น, เชือก/สายไฟ (rope) 3 ชิ้น, เครื่องมือ/ของหนัก (tool) 3 ชิ้น, แผงไฟหรือกล้อง (power) 2-3 ชิ้น, อาหารกลางห้อง (food) 2 ชิ้นในคนละห้อง, กุญแจผู้ดูแล (key) 1 ชิ้น, ผ้า (cloth) 1-2 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน 2 ชิ้น ชื่อของห้ามซ้ำกัน
+4. exits: ทางออกที่เป็นไปได้ 5 ทาง route ครบทั้ง locked, code, repair, power, breach อย่างละ 1 แต่ละทาง "ซ่อน" อยู่ในห้องสำรวจคนละห้อง (zoneName ต้องตรงกับชื่อห้อง) ชื่อและคำบรรยายต้องสมเหตุสมผลกับสถานที่ และ itemNames ต้องสอดคล้องกับ route (ของพวกนี้ระบบจะซ่อนตามห้องเอง ไม่ต้องใส่ใน zones)
 5. ทุกอย่างสมจริง ของทุกชิ้นต้องมีเหตุผลว่าทำไมถึงอยู่ในห้องนั้น`;
           const loc = await callJson({ user, schema: LocationSchema, effort: 'medium', label: 'location' });
-          if (!loc.zones || loc.zones.length < 4) throw new Error('location has too few zones');
-          if (!loc.partNames || loc.partNames.length < 2) throw new Error('location has too few part names');
+          if (!loc.zones || loc.zones.length < 5) throw new Error('location has too few zones');
+          const nonPortable = new Set(['fixture', 'power', 'food']);
           const zones = loc.zones.map((z, zi) => ({
             id: `z${zi + 1}`,
             name: z.name,
             description: z.description,
-            items: (z.items || []).map((it, ii) => ({ id: `z${zi + 1}_i${ii + 1}`, name: it.name, description: it.description, kind: it.kind, portable: it.kind !== 'fixture' && it.kind !== 'power' })),
+            items: (z.items || []).map((it, ii) => ({ id: `z${zi + 1}_i${ii + 1}`, name: it.name, description: it.description, kind: it.kind, portable: !nonPortable.has(it.kind), master: it.kind === 'key' })),
           }));
-          zones[zones.length - 1].items = [];
-          const portableCount = zones.flatMap((z) => z.items).filter((i) => i.portable).length;
-          if (portableCount < 6) throw new Error('location has too few portable items');
-          return {
-            name: loc.name,
-            description: loc.description,
-            exitDescription: loc.exitDescription,
-            partNames: loc.partNames,
-            zones,
-            sleepZoneId: zones[0].id,
-            exitZoneId: zones[zones.length - 1].id,
+          const explore = zones.slice(1);
+          const all = () => zones.flatMap((z) => z.items);
+          const inject = (kind, name, description) => {
+            const z = explore[Math.floor(Math.random() * explore.length)];
+            z.items.push({ id: `${z.id}_x${z.items.length + 1}`, name, description, kind, portable: !nonPortable.has(kind), master: kind === 'key' });
           };
+          // กันขาด: ของที่กลไกเกมต้องมี
+          if (!all().some((i) => i.kind === 'food')) inject('food', 'ตู้เสบียงสำรอง', 'อาหารกระป๋อง ขนมปัง และน้ำดื่ม');
+          if (!all().some((i) => i.kind === 'rope')) inject('rope', 'เชือกไนลอนม้วนใหญ่', 'เหนียวและยาวหลายเมตร');
+          if (!all().some((i) => i.kind === 'power')) inject('power', 'ตู้เบรกเกอร์ไฟ', 'ควบคุมไฟของทั้งอาคาร');
+          if (!all().some((i) => i.kind === 'tool')) inject('tool', 'ค้อนปอนด์', 'หนักและแข็ง');
+          if (all().filter((i) => i.kind === 'weapon').length < 3) inject('weapon', 'ท่อนเหล็ก', 'ท่อนเหล็กยาวหนักมือ');
+          const portableCount = all().filter((i) => i.portable).length;
+          if (portableCount < 6) throw new Error('location has too few portable items');
+          const exits = (loc.exits || []).filter((e) => e && e.name && e.route).map((e) => ({ name: e.name, description: e.description || '', zoneName: e.zoneName || null, route: e.route, itemNames: Array.isArray(e.itemNames) ? e.itemNames.filter(Boolean) : [] }));
+          return { name: loc.name, description: loc.description, zones, sleepZoneId: zones[0].id, exits };
         },
         () => mockLocation(),
       );
@@ -243,9 +258,10 @@ ${characters.map(fmtCharacter).join('\n')}
           const causeText = {
             attack: `${ctx.killer?.nickname}ลงมือฆ่า${ctx.victim.nickname}โดยตรง${ctx.weapon ? `ด้วย${ctx.weapon.name} (${ctx.weapon.kind})` : 'ด้วยมือเปล่า'} ${ctx.messy ? 'แบบเลอะเทอะ มีการต่อสู้' : 'อย่างเงียบเชียบ แทบไม่มีร่องรอยการต่อสู้'}`,
             wrongTarget: `${ctx.killer?.nickname}ตั้งใจฆ่าคนอื่นแต่พลาดไปโดน${ctx.victim.nickname}${ctx.weapon ? `ด้วย${ctx.weapon.name}` : ''} ต่อหน้าคนในห้อง`,
-            trap: `${ctx.victim.nickname}โดนกับดักที่${ctx.killer?.nickname}วางไว้ล่วงหน้าด้วย${ctx.weapon?.name} (${ctx.weapon?.kind === 'poison' ? 'ผสมในน้ำดื่ม' : 'ตั้งให้ตกใส่/สะดุด'}) คนวางไม่ได้อยู่ในห้องตอนตาย`,
+            trap: `${ctx.victim.nickname}โดนกับดักที่${ctx.killer?.nickname}เตรียมไว้ล่วงหน้า: ${
+              { poison: `ยาพิษ (${ctx.weapon?.name}) ที่ผสมไว้ในอาหารกลางห้อง`, blade: `${ctx.weapon?.name} (อาวุธผูกเชือกขึงไว้ที่ประตู เหวี่ยงใส่คนที่เปิดประตู)`, fall: `${ctx.weapon?.name} (สายสะดุดโยงของหนักให้หล่นใส่)`, shock: `${ctx.weapon?.name} (สายไฟเปลือยต่อกับลูกบิดประตู ไฟช็อต)` }[ctx.trapType] || ctx.weapon?.name || 'กลไกที่ตั้งไว้'
+            } คนวางไม่ได้อยู่ในห้องตอนตาย`,
             defense: `${ctx.victim.nickname}เป็นฝ่ายจู่โจม${ctx.killer?.nickname}ก่อน แต่ถูกสวนกลับจนตายด้วยมือเปล่า มีร่องรอยการต่อสู้ชัดเจน`,
-            objective: `${ctx.victim.nickname}ไม่ได้ถูกใครฆ่า: ตายเพราะทำ "ภารกิจลับ" ไม่ทันกำหนด (กฎของสถานที่นี้) ศพต้องไม่มีบาดแผล ไม่มีร่องรอยพิษ และห้ามบอกสาเหตุใน bodyState/sceneNotes เด็ดขาด ให้ดูคลุมเครือเหมือนอาจเป็นการวางยาก็ได้`,
           }[ctx.cause] || ctx.cause;
           const user = `จงเขียนคำบรรยายคดีจาก "ข้อเท็จจริง" ต่อไปนี้ (ห้ามเปลี่ยนข้อเท็จจริง ห้ามเพิ่มพยานหรือหลักฐานใหม่)
 
@@ -262,7 +278,7 @@ ${ctx.witnesses?.length ? `## คนที่เห็นเหตุการ�
 
 ข้อกำหนด:
 1. title = ชื่อคดีสั้น ๆ
-2. bodyState = สภาพศพที่ทุกคนเห็นด้วยตาเปล่า 2-3 ประโยค สอดคล้องกับอาวุธ/สาเหตุ (ของมีคม→แผลบาด, ของหนัก→รอยช้ำ, เชือก/ผ้า→รอยรัด, ปืน/ธนู→แผลทะลุ, ยาพิษ→ริมฝีปากเขียวไม่มีแผล, ภารกิจ→ไม่มีแผลไม่มีร่องรอย) ห้ามเอ่ยชื่อคนร้าย ห้ามบอกใบ้ลักษณะเฉพาะของคนร้าย
+2. bodyState = สภาพศพที่ทุกคนเห็นด้วยตาเปล่า 2-3 ประโยค สอดคล้องกับอาวุธ/สาเหตุ (ของมีคม→แผลบาด, ของหนัก→รอยช้ำ, เชือก/ผ้า→รอยรัด, ปืน/ธนู→แผลทะลุ, ยาพิษ→ริมฝีปากเขียวไม่มีแผล, ไฟช็อต→รอยไหม้ที่มือ) ห้ามเอ่ยชื่อคนร้าย ห้ามบอกใบ้ลักษณะเฉพาะของคนร้าย
 3. sceneNotes = ความผิดปกติรอบศพ 1-2 ประโยค: ถ้าถูกย้ายให้มีรอยลาก ถ้าเลอะเทอะให้มีของล้ม/คราบ ถ้าเรียบร้อยให้บอกว่าเรียบร้อยผิดปกติ ห้ามเพิ่มหลักฐานที่ชี้ตัวคน
 4. truthSummary = สรุปความจริง 2-4 ประโยคสำหรับเฉลยหลังตัดสิน บอกชื่อคนร้าย (ถ้ามี) วิธี ที่ไหน วันไหน`;
           const out = await callJson({ user, schema: NarrativeSchema, effort: 'medium', maxTokens: 4000, label: 'narrative' });

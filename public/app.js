@@ -27,7 +27,8 @@
     timeout: '⏳ ครบกำหนดชั่วโมงสูงสุด — ผู้ที่เหลือได้รับการช่วยเหลือ',
   };
   const TRAIT_LABEL = { combat: 'นักสู้', stealth: 'เงียบเชียบ', medical: 'การแพทย์', tech: 'ช่างเทคนิค', social: 'นักพูด', detective: 'ช่างสังเกต', none: '' };
-  const KIND_ICON = { weapon: '🔪', poison: '🧪', tool: '🧰', key: '🗝', cloth: '🧣', part: '⭐', power: '⚡', fixture: '🪑' };
+  const KIND_ICON = { weapon: '🔪', poison: '🧪', tool: '🧰', rope: '🪢', food: '🍞', key: '🗝', cloth: '🧣', clue: '🗺', part: '⭐', trap: '🪤', power: '⚡', fixture: '🪑' };
+  const ROUTE_ICON = { locked: '🗝', code: '🔢', repair: '🔧', power: '⚡', breach: '🔨' };
 
   const store = {
     get playerId() {
@@ -89,7 +90,7 @@
   };
   const zoneById = (id) => state.location?.zones.find((z) => z.id === id);
   const zoneName = (id) => zoneById(id)?.name || '?';
-  const actionKey = (a) => `${a.type}|${a.itemId || ''}|${a.targetId || ''}|${a.victimId || ''}`;
+  const actionKey = (a) => `${a.type}|${a.itemId || ''}|${a.targetId || ''}|${a.victimId || ''}|${a.recipeId || ''}|${a.exitId || ''}`;
   const timeText = (day, hour) => `วันที่ ${day}${hour ? ` ชั่วโมงที่ ${hour}` : ''}`;
 
   // รูปตัวละคร: ถ้ามีไฟล์ใน public/portraits ใช้รูป ไม่งั้นใช้วงกลมตัวอักษรแรกของชื่อเล่น
@@ -292,7 +293,7 @@
       ${s.location ? `<span class="loc">📍 ${esc(s.location.name)}</span>` : ''}
       ${s.stepDeadline ? `<span class="badge yellow">⏱ <span id="step-countdown">--</span></span>` : ''}
       <span class="spacer"></span>
-      ${s.escape ? `<span class="badge ${s.escape.found === s.escape.total ? 'green' : 'yellow'}" title="ของสำหรับหนีที่ถูกพบแล้ว (ใครถืออยู่ไม่มีใครรู้)">⭐ ของหนี ${s.escape.found}/${s.escape.total}</span>` : ''}
+      ${s.location && s.me?.exits ? `<span class="badge ${s.me.exits.length ? 'yellow' : ''}" title="ทางออกที่คุณค้นพบแล้ว (คนอื่นไม่รู้ว่าคุณรู้)">🚪 ทางออกที่คุณรู้จัก ${s.me.exits.length}/${s.exitsTotal}</span>` : ''}
       ${aiBadge(s)}
       <span class="badge" title="นับเฉพาะคนที่รู้แน่ว่าตายแล้ว">ยังอยู่ ${alive}/${s.players.length}</span>`);
     setHtml('#roster', s.players.map((p) => playerCard(s, p)).join(''));
@@ -401,6 +402,7 @@
       ${me.isDesignated ? `<div class="clue culprit"><span class="ctag">🔪 วันนี้เกมเลือกคุณเป็น "ฆาตกร" (มีแค่คุณที่รู้)</span>จะลงมือหรือไม่ก็ได้ — ถ้าลงมือในวันนี้โอกาสสำเร็จสูงขึ้น ดูรายละเอียดในสมุดบันทึก ถ้าคนอื่นลงมือก่อน คุณจะเป็นแค่คนที่อยู่ในเหตุการณ์</div>` : ''}
       ${me.forced ? `<div class="clue night-self"><span class="ctag">⏰ ภารกิจครบกำหนด</span>ชั่วโมงนี้ระบบพาคุณไปที่ <b>${esc(me.forced.zoneName)}</b>${me.forced.actionLabel ? ` และจะ${esc(me.forced.actionLabel)}ให้เอง` : ''} (เลือกห้องอื่นไม่ได้)</div>` : ''}
       ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (กันแคมป์ — ครบกำหนดระบบพาไปทำ ไม่มีใครตาย)</span>${esc(o.text)} ${objectiveBadge(o)}</div>`).join('')}
+      ${s.config.objectives && me.nextObjectiveIn != null && !me.objectives.some((o) => !o.done) ? `<p class="muted" style="font-size:.85rem">📋 ภารกิจถัดไปจะมาใน${me.nextObjectiveIn ? `อีก ${me.nextObjectiveIn} ชั่วโมง` : 'ชั่วโมงหน้า'}</p>` : ''}
       <p class="muted" style="font-size:.85rem">เลือกห้องจากแผนที่ด้านล่าง — ไม่มีใครเห็นว่าใครเลือกอะไร จนกว่าจะเข้าห้องแล้วเจอกัน</p>
     </div>`;
   }
@@ -420,13 +422,16 @@
           const here = me.zoneId === z.id;
           const tags = [];
           if (z.isSleep) tags.push('<span class="badge">ที่นอนรวม</span>');
-          if (z.isExit) tags.push('<span class="badge yellow">ทางออก</span>');
+          const exitsHere = (me.exits || []).filter((x) => x.zoneId === z.id);
+          for (const x of exitsHere) tags.push(`<span class="badge yellow" title="${esc(x.requirement)}">🚪 ${esc(x.name)}${x.open ? ' (เปิดแล้ว)' : ''}</span>`);
+          if (mem?.locked) tags.push(`<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูล็อกอยู่ (อาจเปลี่ยนไปแล้ว)">🔒 ล็อกอยู่</span>`);
+          if (mem?.food) tags.push('<span class="badge">🍞 มีอาหาร</span>');
           if (here) tags.push('<span class="badge cyan">คุณอยู่ที่นี่ล่าสุด</span>');
           const bodiesHere = me.knownBodies.filter((b) => b.zoneName === z.name);
-          return `<div class="zone ${sel === z.id ? 'selected' : ''} ${z.isExit ? 'exit' : ''} ${chosen ? 'locked' : ''}" data-action="pick-zone" data-id="${esc(z.id)}">
+          return `<div class="zone ${sel === z.id ? 'selected' : ''} ${exitsHere.length ? 'exit' : ''} ${chosen ? 'locked' : ''}" data-action="pick-zone" data-id="${esc(z.id)}">
             <div class="zname">${esc(z.name)}</div>
             <div class="ztags">${tags.join(' ')}</div>
-            <div class="zdesc">${esc(z.description)}${z.isExit ? `<br><span class="muted">${esc(s.location.exitDescription)}</span>` : ''}</div>
+            <div class="zdesc">${esc(z.description)}</div>
             ${mem ? `<div class="zmem">ครั้งล่าสุด (${esc(timeText(mem.day, mem.hour))}): ${mem.people?.length ? `คน: ${esc(mem.people.join(', '))}` : 'ไม่มีใคร'} · ${mem.items?.length ? `ของ: ${esc(mem.items.join(', '))}` : 'ไม่เห็นของ'}${mem.searched ? ' · สำรวจแล้ว' : ''}</div>` : '<div class="zmem muted">ยังไม่เคยเข้าไป (หรือของถูกจัดใหม่)</div>'}
             ${bodiesHere.length ? `<div class="zbody">☠ ศพ: ${esc(bodiesHere.map((b) => b.name).join(', '))}</div>` : ''}
           </div>`;
@@ -459,12 +464,15 @@
   }
 
   const ACTION_GROUPS = [
-    ['ทั่วไป', ['search', 'rest', 'escape']],
+    ['ทางออก', ['exit', 'exit_power']],
+    ['ทั่วไป', ['search', 'eat', 'rest']],
+    ['ประตู', ['lock', 'unlock']],
     ['หยิบของ', ['take']],
     ['ตรวจศพ', ['examine']],
     ['ของที่คุณถือ', ['hide', 'drop']],
     ['ความสามารถพิเศษ', ['steal', 'interrogate', 'sabotage']],
-    ['อันตราย', ['attack', 'trap', 'moveBody', 'clean']],
+    ['ประกอบกับดัก', ['craft']],
+    ['อันตราย', ['attack', 'trap', 'poisonFood', 'moveBody', 'clean']],
   ];
 
   function actionPickerHtml(s) {
@@ -607,7 +615,7 @@
       ${r.cases
         .map(
           (c) => `<div class="case">
-          <div class="row"><b>${esc(c.title || 'คดี')}</b><span class="spacer"></span><span class="badge">${esc(c.causeLabel)}</span></div>
+          <div class="row"><b>${esc(c.title || 'คดี')}</b><span class="spacer"></span><span class="badge">${esc(c.causeLabel)}${c.trapLabel ? `: ${esc(c.trapLabel)}` : ''}</span></div>
           <p>${esc(c.truthSummary)}</p>
           <ul class="obs">
             <li>ผู้ตาย: <b>${esc(c.victimName)}</b> (${esc(c.victimPlayer)}) · ที่${esc(c.zoneName)} · ${esc(timeText(c.day, c.hour))}</li>
@@ -664,7 +672,7 @@
           </div>`
         : `<div class="ult">${esc(c.ultimate)}</div><span class="badge">ทุกคนเห็นโรลนี้</span>`}
       <p>${esc(c.ultimateDescription || '')}</p>
-      ${t && t.key !== 'none' ? `<p style="margin-top:.5rem">${traitBadge(t.key)} <span class="muted" style="font-size:.85rem">${esc(t.description)}</span></p>` : '<p class="muted" style="font-size:.85rem">ไม่มี trait พิเศษ — ใช้แอ็กชันพื้นฐานได้ทุกอย่าง</p>'}
+      ${t && t.key !== 'none' ? `<p style="margin-top:.5rem">${traitBadge(t.key)} <span class="muted" style="font-size:.85rem">${esc(t.description)}</span></p><ul class="obs" style="font-size:.82rem">${(t.effects || []).map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : '<p class="muted" style="font-size:.85rem">ไม่มี trait พิเศษ — ใช้แอ็กชันพื้นฐานได้ทุกอย่าง (ลงมือมือเปล่า 35%, ถืออาวุธ 70%)</p>'}
       ${!me.alive ? `<p><span class="badge red">${FATE_LABEL[me.fate] || 'เสียชีวิต'}</span></p>` : ''}
     </div>`;
   }
@@ -676,12 +684,35 @@
     const objs = me.objectives || [];
     return `<div class="card inv">
       <h3>🎒 ของที่ถือ (${inv.length}/${s.config.inventoryMax})</h3>
-      ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''}" title="${esc(i.description || '')}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
+      ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''} ${i.kind === 'trap' ? 'trap' : ''}" title="${esc(i.description || '')}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}${i.unlocksZoneName ? ` <small>(ไข${esc(i.unlocksZoneName)})</small>` : i.master ? ' <small>(ไขได้ทุกห้อง)</small>' : i.exitName ? ` <small>(${esc(i.exitName)})</small>` : ''}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
+      ${exitsHtml(s)}
       ${s.config.objectives ? `<h3 style="margin-top:.7rem">📋 ภารกิจลับ</h3>
       ${objs.length ? objs.map((o) => `<div class="objective ${o.done ? 'done' : o.remainingHours <= 1 ? 'due' : ''}">${o.done ? (o.forgiven ? '➖' : '✅') : '•'} ${esc(o.text)} ${objectiveBadge(o)}</div>`).join('') : '<p class="muted">ไม่มีภารกิจค้าง</p>'}
       <p class="muted" style="font-size:.78rem">ภารกิจมีไว้กันแคมป์ — ครบกำหนดแล้วระบบพาไปทำเอง ไม่มีใครตายเพราะภารกิจ</p>` : ''}
       ${me.isDesignated ? '<p style="margin-top:.5rem"><span class="badge red">🔪 วันนี้เกมเลือกคุณเป็นฆาตกร</span></p>' : ''}
     </div>`;
+  }
+
+  // ทางออกที่ "คุณ" ค้นพบแล้ว (คนอื่นไม่รู้ว่าคุณรู้)
+  function exitsHtml(s) {
+    const exits = s.me.exits || [];
+    const total = s.exitsTotal || 0;
+    return `<h3 style="margin-top:.7rem">🚪 ทางออกที่คุณรู้จัก (${exits.length}/${total})</h3>
+      ${exits.length
+        ? exits.map((x) => `<div class="exitbox ${x.open ? 'open' : ''}">
+            <div class="row"><b>${ROUTE_ICON[x.route] || '🚪'} ${esc(x.name)}</b><span class="spacer"></span><span class="badge yellow">${esc(x.zoneName)}</span></div>
+            <div class="muted" style="font-size:.82rem">${esc(x.description)}</div>
+            <div style="font-size:.85rem;margin-top:.25rem"><b>${esc(x.routeLabel)}:</b> ${esc(x.requirement)}</div>
+            ${x.items?.length ? `<div class="chips" style="margin-top:.3rem">${x.items.map((i) => `<span class="chip ${i.held ? 'part' : ''}" title="${i.held ? 'คุณถืออยู่' : 'ยังไม่ได้อยู่กับคุณ'}">${i.held ? '✅' : '⬜'} ${esc(i.name)}</span>`).join('')}</div>` : ''}
+            ${x.route === 'breach' ? `<div class="muted" style="font-size:.82rem">ความคืบหน้า ${x.progress}/${x.progressNeeded}</div>` : ''}${x.route === 'power' ? `<div class="muted" style="font-size:.82rem">${x.powered ? '⚡ มีไฟแล้ว' : 'ยังไม่มีไฟ'}</div>` : ''}
+          </div>`).join('')
+        : `<p class="muted" style="font-size:.85rem">ยังไม่รู้ว่าทางออกอยู่ห้องไหน — "สำรวจห้องอย่างละเอียด" ในห้องต่าง ๆ หรือหาแผนผัง/บันทึกที่ซ่อนอยู่ (มีทั้งหมด ${total} ทาง แต่ละทางเปิดไม่เหมือนกัน)</p>`}
+      <details class="help"><summary>🛠 สูตรประกอบกับดัก และกติกากับดัก</summary>
+        <ul class="obs">${(s.config.recipes || []).map((r) => `<li><b>${esc(r.name)}</b> = ${esc(r.how)}${r.traitLabel ? ` <span class="badge cyan">${esc(r.traitLabel)}</span>` : ''}<br><span class="muted">${esc(r.desc)}</span></li>`).join('')}
+          <li><b>ยาพิษในอาหาร</b> = ถือยา/สารพิษไปห้องที่มีอาหาร แล้วเลือก "ผสมยาพิษ" (ไม่ต้องคราฟ)</li>
+        </ul>
+        <p class="muted" style="font-size:.8rem">ของเดี่ยว ๆ วางเป็นกับดักไม่ได้ ต้องประกอบก่อน (ใช้ 1 ชั่วโมง) แล้วค่อย "วางกับดัก" ที่ทางเข้าห้อง · ถ้ามีศพที่ยังไม่ถูกพบ คนที่ไม่ใช่คนร้ายคดีนั้นจะลงมือ/วางกับดักไม่ได้จนกว่าจะพบศพ</p>
+      </details>`;
   }
 
   function actionsHtml(s) {
@@ -827,7 +858,8 @@
       <div><h3 style="color:var(--green)">รอดชีวิต (${o.survived.length})</h3><ul>${o.survived.map(row).join('') || '<li class="muted">ไม่มีใครรอด</li>'}</ul></div>
       <div><h3 style="color:var(--red)">ไม่รอด (${o.died.length})</h3><ul>${o.died.map(row).join('') || '<li class="muted">ไม่มีใครตาย</li>'}</ul></div>
     </div>
-    <p class="muted" style="margin-top:.6rem">เล่นไป ${o.days} วัน ${o.hours} ชั่วโมง · ของหนีถูกพบ ${o.escapeFound}/${o.escapeTotal} ชิ้น · ${esc(END_LABEL[s.endReason] || '')}</p>
+    <p class="muted" style="margin-top:.6rem">เล่นไป ${o.days} วัน ${o.hours} ชั่วโมง · ${esc(END_LABEL[s.endReason] || '')}</p>
+    ${o.exits?.length ? `<h3 style="margin-top:.8rem">ทางออกของสถานที่นี้</h3>${o.exits.map((x) => `<div class="case">${ROUTE_ICON[x.route] || '🚪'} <b>${esc(x.name)}</b> ที่${esc(x.zoneName)} — ${x.open ? `<span class="badge green">เปิดสำเร็จโดย ${esc(x.openedBy.join(', '))}</span>` : `<span class="badge">มีคนค้นพบ ${x.discovered} คน ไม่ได้เปิด</span>`}</div>`).join('')}` : ''}
     ${o.unsolved?.length ? `<h3 style="margin-top:.8rem">คดีที่ไม่เคยถูกตัดสิน</h3>${o.unsolved.map((c) => `<div class="case"><b>${esc(c.victimName)}</b> — ${esc(c.causeLabel)}${c.killerName ? ` โดย <b>${esc(c.killerName)}</b>` : ''} ที่${esc(c.zoneName)} ${esc(timeText(c.day, c.hour))}${c.truthSummary ? `<br><span class="muted">${esc(c.truthSummary)}</span>` : ''}</div>`).join('')}` : ''}`;
     $('#end-truth').innerHTML = s.lastResult ? resultHtml(s) : '';
     $('#end-controls').innerHTML = s.me.isHost
@@ -916,7 +948,7 @@
       case 'confirm-action': {
         const a = (state.me.availableActions || []).find((x) => actionKey(x) === ui.selectedAction);
         if (!a) break;
-        const payload = { type: a.type, itemId: a.itemId, targetId: a.targetId, victimId: a.victimId };
+        const payload = { type: a.type, itemId: a.itemId, itemId2: a.itemId2, targetId: a.targetId, victimId: a.victimId, recipeId: a.recipeId, exitId: a.exitId };
         if (a.needsZone) payload.toZoneId = $('#move-body-to')?.value || '';
         if (a.danger && !(await confirmDialog(`ยืนยัน "${a.label}"? เลือกแล้วเปลี่ยนไม่ได้`))) break;
         await act('day:act', payload);
