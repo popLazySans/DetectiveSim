@@ -252,7 +252,7 @@ ${characters.map(fmtCharacter).join('\n')}
 ## สถานที่: ${ctx.location?.name}
 ## ห้องที่เกิดเหตุ: ${ctx.zone?.name} — ${ctx.zone?.description}
 ## ห้องที่พบศพ: ${ctx.discoveredZone?.name}${ctx.moved ? ' (ศพถูกย้ายมาจากห้องที่เกิดเหตุ)' : ' (ไม่ได้ถูกย้าย)'}
-## วันที่เกิดเหตุ: วันที่ ${ctx.day}
+## เวลาเกิดเหตุ: วันที่ ${ctx.day}${ctx.hour ? ` ชั่วโมงที่ ${ctx.hour}` : ''}
 ## ผู้ตาย
 ${fmtCharacter(ctx.victim)}
 ${ctx.killer ? `## คนร้าย (ความลับ ห้ามหลุดใน title/bodyState/sceneNotes)\n${fmtCharacter(ctx.killer)}` : '## ไม่มีคนร้าย'}

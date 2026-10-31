@@ -5,6 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import { Game, GameError } from './game.js';
@@ -17,9 +18,18 @@ const ROOM_TTL_MS = 2 * 60 * 60 * 1000;
 const ai = createAI();
 const rooms = new Map();
 
+// รูปตัวละคร (ถ้ามี): วางไฟล์ public/portraits/<characterId>.png|jpg|webp เช่น c01.png
+const PORTRAITS = new Map();
+try {
+  for (const f of fs.readdirSync(path.join(here, '..', 'public', 'portraits'))) {
+    const m = /^(c\d{2})\.(png|jpe?g|webp)$/i.exec(f);
+    if (m && !PORTRAITS.has(m[1])) PORTRAITS.set(m[1], `/portraits/${f}`);
+  }
+} catch {}
+
 const app = express();
 app.use(express.static(path.join(here, '..', 'public')));
-app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size, aiMode: ai.mode, model: ai.model, lastAiError: ai.lastError }));
+app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size, aiMode: ai.mode, model: ai.model, lastAiError: ai.lastError, portraits: PORTRAITS.size }));
 
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 64 * 1024 });
@@ -90,7 +100,7 @@ io.on('connection', (socket) => {
 
   socket.on('room:create', handle(({ name, playerId }) => {
     const code = genCode();
-    const g = new Game({ code, ai, onChange: broadcast });
+    const g = new Game({ code, ai, onChange: broadcast, portraits: PORTRAITS });
     rooms.set(code, g);
     console.log(`[room ${code}] created by ${name}`);
     return joinRoom(socket, g, playerId, name);
@@ -113,6 +123,7 @@ io.on('connection', (socket) => {
   socket.on('day:move', handle(({ zoneId }) => game().chooseMove(me(), String(zoneId || ''))));
   socket.on('day:act', handle(({ type, itemId, targetId, victimId, toZoneId }) => game().chooseAction(me(), { type, itemId, targetId, victimId, toZoneId })));
   socket.on('day:ready', handle(() => game().markReady(me())));
+  socket.on('day:give', handle(({ targetId, itemId }) => game().giveItem(me(), String(targetId || ''), String(itemId || ''))));
   socket.on('host:forceStep', handle(() => game().forceStep(me())));
   // การตัดสิน
   socket.on('vote:cast', handle(({ targetId }) => game().castVote(me(), String(targetId || ''))));

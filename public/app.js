@@ -16,15 +16,15 @@
     trial_result: 'ผลการตัดสิน',
     ended: 'จบเกม',
   };
-  const STEP_LABEL = { move: 'เลือกห้องที่จะไป', act: 'เลือกสิ่งที่จะทำ', report: 'อ่านบันทึกแล้วไปต่อ' };
-  const FATE_LABEL = { victim: 'ถูกฆ่า', perished: 'เสียชีวิตปริศนา', executed: 'ถูกประหาร', punished: 'ถูกประหาร (โหวตผิด)', escaped: 'คนร้ายรอด', survivor: 'รอดชีวิต' };
-  const FATE_ICON = { victim: '☠', perished: '✝', executed: '⛓', punished: '⚖', escaped: '🏃', survivor: '🏁' };
-  const FATE_CLASS = { victim: 'purple', perished: 'purple', executed: 'red', punished: 'red', escaped: 'yellow', survivor: 'green' };
+  const STEP_LABEL = { move: 'เลือกห้องที่จะไป', act: 'เลือกสิ่งที่จะทำ', report: 'พักชั่วโมง — อ่านบันทึก / ให้ของ' };
+  const FATE_LABEL = { victim: 'ถูกฆ่า', executed: 'ถูกประหาร', punished: 'ถูกประหาร (โหวตผิด)', escaped: 'คนร้ายรอด', survivor: 'รอดชีวิต' };
+  const FATE_ICON = { victim: '☠', executed: '⛓', punished: '⚖', escaped: '🏃', survivor: '🏁' };
+  const FATE_CLASS = { victim: 'purple', executed: 'red', punished: 'red', escaped: 'yellow', survivor: 'green' };
   const END_LABEL = {
     escape: '🚪 หนีออกมาได้สำเร็จ',
     wrong_vote: '☠ โหวตผิด — คนร้ายชนะ',
     last_one: '🏁 เหลือผู้รอดชีวิตคนเดียว',
-    timeout: '⏳ ครบกำหนดวัน — ผู้ที่เหลือได้รับการช่วยเหลือ',
+    timeout: '⏳ ครบกำหนดชั่วโมงสูงสุด — ผู้ที่เหลือได้รับการช่วยเหลือ',
   };
   const TRAIT_LABEL = { combat: 'นักสู้', stealth: 'เงียบเชียบ', medical: 'การแพทย์', tech: 'ช่างเทคนิค', social: 'นักพูด', detective: 'ช่างสังเกต', none: '' };
   const KIND_ICON = { weapon: '🔪', poison: '🧪', tool: '🧰', key: '🗝', cloth: '🧣', part: '⭐', power: '⚡', fixture: '🪑' };
@@ -48,7 +48,7 @@
   let state = null;
   let currentScreen = null;
   let countdownTimer = null;
-  const ui = { joinError: '', selectedZone: null, selectedAction: null, moveBodyTo: '', notebookOpen: true, seenAnnouncement: '', seenEventDay: 0, seenResultDay: 0 };
+  const ui = { joinError: '', selectedZone: null, selectedAction: null, moveBodyTo: '', notebookOpen: true, seenAnnouncement: '', seenEventDay: 0, seenResultTurn: 0 };
 
   const send = (event, payload = {}) =>
     new Promise((resolve) => {
@@ -90,6 +90,15 @@
   const zoneById = (id) => state.location?.zones.find((z) => z.id === id);
   const zoneName = (id) => zoneById(id)?.name || '?';
   const actionKey = (a) => `${a.type}|${a.itemId || ''}|${a.targetId || ''}|${a.victimId || ''}`;
+  const timeText = (day, hour) => `วันที่ ${day}${hour ? ` ชั่วโมงที่ ${hour}` : ''}`;
+
+  // รูปตัวละคร: ถ้ามีไฟล์ใน public/portraits ใช้รูป ไม่งั้นใช้วงกลมตัวอักษรแรกของชื่อเล่น
+  function avatarHtml(c, size = 'sm') {
+    if (!c) return '';
+    if (c.portrait) return `<img class="avatar ${size}" src="${esc(c.portrait)}" alt="${esc(c.nickname)}" loading="lazy">`;
+    const hue = [...c.id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0);
+    return `<span class="avatar ${size} initial" style="--hue:${hue}">${esc((c.nickname || '?').slice(0, 1))}</span>`;
+  }
 
   // ---------- socket ----------
   const connBanner = $('#conn-banner');
@@ -137,24 +146,23 @@
     if (!s.me) return renderJoin();
     if (s.phase === 'lobby') return renderLobby();
     if (s.phase === 'ended') return renderEnd();
-    // ล้างตัวเลือกค้างเมื่อเปลี่ยนจังหวะ
     if (s.step !== 'move') ui.selectedZone = null;
     if (s.step !== 'act') {
       ui.selectedAction = null;
       ui.moveBodyTo = '';
     }
     renderGame();
-    const annKey = s.announcement ? `${s.announcement.day}:${(s.announcement.caseIds || []).join(',')}` : '';
+    const annKey = s.announcement ? `${s.announcement.turn}:${(s.announcement.caseIds || []).join(',')}` : '';
     if (s.phase === 'investigation' && annKey && annKey !== ui.seenAnnouncement) {
       ui.seenAnnouncement = annKey;
-      openModal(`<h2 style="color:var(--red)">🔔 ประกาศพบศพ!</h2>${casesHtml(s)}<p class="muted">ของในทุกห้องถูกจัดใหม่ — เลือกห้องที่จะไปเก็บหลักฐาน 1 ห้อง ทำได้ 1 อย่าง แล้วเข้าสู่การตัดสิน</p>${todayLogHtml(s, 'สิ่งที่คุณเจอวันนี้ก่อนการประกาศ', 'day')}`, 'เริ่มเก็บหลักฐาน');
+      openModal(`<h2 style="color:var(--red)">🔔 ประกาศพบศพ!</h2>${casesHtml(s)}<p class="muted">ของในทุกห้องถูกจัดใหม่ — เลือกห้องที่จะไปเก็บหลักฐาน 1 ห้อง ทำได้ 1 อย่าง แล้วเข้าสู่การตัดสิน</p>`, 'เริ่มเก็บหลักฐาน');
     }
     if (s.phase === 'day' && s.step === 'move' && s.specialEvent && s.specialEvent.day === s.day && s.specialEvent.day !== ui.seenEventDay) {
       ui.seenEventDay = s.specialEvent.day;
       openModal(eventHtml(s), 'รับทราบ');
     }
-    if (s.phase === 'trial_result' && s.lastResult && s.lastResult.day !== ui.seenResultDay) {
-      ui.seenResultDay = s.lastResult.day;
+    if (s.phase === 'trial_result' && s.lastResult && s.lastResult.turn !== ui.seenResultTurn) {
+      ui.seenResultTurn = s.lastResult.turn;
       openModal(resultHtml(s), 'ปิด');
     }
     if (s.stepDeadline && !countdownTimer) countdownTimer = setInterval(updateCountdown, 1000);
@@ -189,12 +197,13 @@
           <h3>กติกาย่อ</h3>
           <ol>
             <li><b>เป้าหมายหลัก:</b> ทุกคนถูกขังในสถานที่เดียวที่มีหลายห้อง ของสำหรับหนี 2–3 ชิ้นถูกสุ่มซ่อนไว้ตามห้อง หาให้เจอแล้วเอาไปรวมกันที่ห้องทางออก → ทุกคนที่ยังอยู่รอด</li>
-            <li><b>แต่ละวัน:</b> ทุกคนเลือกห้องพร้อมกัน (ไม่มีใครรู้ว่าใครเลือกอะไร) → เห็นว่าใครอยู่ห้องเดียวกับคุณ เห็นของในห้อง → เลือกทำได้ 1 อย่าง: สำรวจ หยิบของ ซ่อนของ ลงมือฆ่า วางกับดัก ย้ายศพ ทำลายหลักฐาน ตรวจศพ… ทุกอย่างมีโอกาสสำเร็จ/พลาด/สำเร็จแบบเลอะเทอะ</li>
-            <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกร" วันละคนให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
-            <li><b>ภารกิจลับ:</b> ทุกคนได้ภารกิจที่มีกำหนดเวลา ทำไม่ทัน = ตาย โดยคนอื่นเห็นแค่ศพที่ไม่มีบาดแผล</li>
-            <li><b>ศพอยู่ที่ตาย:</b> จนกว่าจะมีคนย้าย เมื่อมีคนพบศพครบ 3 คน (ไม่นับคนฆ่า) จะประกาศและเข้าสู่รอบเก็บหลักฐาน 1 รอบ แล้วตัดสิน</li>
-            <li><b>การตัดสิน:</b> เล่าหลักฐานที่แต่ละคนเจอในแชท แล้วโหวต — โหวตถูก: คนนั้นถูกประหาร · โหวตผิด: คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · มีตัวเลือก "ไม่มีคนร้ายให้ลงโทษ" ถ้าเชื่อว่าศพนั้นไม่ใช่ฆาตกรรม (หรือคนร้ายตายไปแล้ว)</li>
-            <li>ทุกคนมี Ultimate ที่ให้ "trait" ใช้ได้จริง (นักสู้ เงียบเชียบ การแพทย์ ช่างเทคนิค นักพูด ช่างสังเกต) · 1–2 คน Ultimate ถูกซ่อนเป็น ??? · 1 คนถือโรลปลอม</li>
+            <li><b>เวลา:</b> ทุกครั้งที่เข้าห้อง = 1 ชั่วโมง (รวมรอบเก็บหลักฐาน) ตัดสินคดีเสร็จจึงขึ้นวันใหม่ ไม่มีเวลาจำกัดทั้งในเกมและเวลาจริง</li>
+            <li><b>แต่ละชั่วโมง:</b> ทุกคนเลือกห้องพร้อมกัน (ไม่มีใครรู้ว่าใครเลือกอะไร) → เห็นว่าใครอยู่ห้องเดียวกับคุณ เห็นของในห้อง → เลือกทำได้ 1 อย่าง: สำรวจ หยิบของ ซ่อนของ ลงมือฆ่า วางกับดัก ย้ายศพ ทำลายหลักฐาน ตรวจศพ… ทุกอย่างมีโอกาสสำเร็จ/พลาด/สำเร็จแบบเลอะเทอะ → พักชั่วโมง: อ่านบันทึก และ<b>ให้ของ</b>กับคนในห้องเดียวกันได้</li>
+            <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
+            <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 5 ชั่วโมง ไม่มีใครตายเพราะภารกิจ — แต่ถ้าครบกำหนดแล้วยังไม่ทำ ระบบจะพาคุณไปทำเอง (ล็อกห้อง) มีไว้กันทุกคนแคมป์อยู่ห้องเดียวกัน</li>
+            <li><b>ศพอยู่ที่ตาย:</b> จนกว่าจะมีคนย้าย เมื่อมีคนพบศพครบ 3 คน (ไม่นับคนฆ่า) จะประกาศและเข้าสู่รอบเก็บหลักฐาน 1 ชั่วโมง แล้วตัดสิน</li>
+            <li><b>การตัดสิน:</b> เล่าหลักฐานที่แต่ละคนเจอในแชท แล้วโหวต — โหวตถูก: คนนั้นถูกประหาร · โหวตผิด: คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · มีตัวเลือก "ไม่มีคนร้ายให้ลงโทษ" ถ้าคนร้ายตายไปแล้ว</li>
+            <li>ทุกคนมี Ultimate ที่ให้ "trait" ใช้ได้จริง · 1–2 คนถูกซ่อนเป็น ??? และ 1 คนถือโรลปลอม — เจ้าตัวรู้ของจริงเสมอ และการ์ดของคุณจะบอกชัดว่าคนอื่นเห็นคุณเป็นอะไร</li>
           </ol>
         </div>
       </div>`;
@@ -249,7 +258,7 @@
           <label>จำนวนบอท <select id="bot-count">${range(0, maxBots).map((n) => `<option value="${n}" ${n === bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
           <span class="muted">ผู้เล่นทั้งหมด ${s.players.length}/${s.config.maxPlayers} (ขั้นต่ำ ${s.config.minPlayers})</span>
         </div>
-        <p class="muted">บอทจะเดินสำรวจ ทำภารกิจ และโหวตเอง (บางครั้งก็ลงมือฆ่า) · เกมยาวสูงสุด ${s.config.maxDays} วัน · ประกาศศพเมื่อมีคนพบ ${s.config.bodyDiscoverers} คน</p>
+        <p class="muted">บอทจะเดินสำรวจ ทำภารกิจ และโหวตเอง (บางครั้งก็ลงมือฆ่า) · ไม่มีเวลาจำกัด · ประกาศศพเมื่อมีคนพบ ${s.config.bodyDiscoverers} คน · ภารกิจมีเวลา ${s.config.objectiveHours} ชั่วโมง</p>
         <p class="muted">ชวนเพื่อน: ส่งลิงก์ <code>${esc(inviteLink(s.code))}</code> หรือรหัส <b>${esc(s.code)}</b> ${isLocalHost() ? '<br><span class="warn">⚠ ลิงก์นี้เป็น localhost เพื่อนเครื่องอื่นเปิดไม่ได้ — เปิดเว็บผ่าน IP ในวง Wi-Fi หรือ URL จาก npm run share แล้วค่อยคัดลอกลิงก์ (ดู README หัวข้อ "เล่นกับเพื่อน")</span>' : ''}</p>
         <button class="primary" data-action="start" ${s.players.length < s.config.minPlayers ? 'disabled' : ''}>เริ่มเกม</button>`
       : `<h3>รอหัวห้องเริ่มเกม</h3><p class="muted">ผู้เล่น ${s.players.length}/${s.config.maxPlayers} · ชวนเพื่อนเพิ่มด้วยลิงก์ <code>${esc(inviteLink(s.code))}</code> หรือรหัส <b>${esc(s.code)}</b></p>`);
@@ -278,7 +287,7 @@
     setHtml('#topbar', `
       <span class="logo">DESPAIR BOARD</span>
       <span class="badge">ห้อง ${esc(s.code)}</span>
-      <span class="badge pink">วันที่ ${s.day}/${s.config.maxDays}</span>
+      <span class="badge pink">🕐 วันที่ ${s.day} · ชั่วโมงที่ ${s.hour}</span>
       <span class="phase">${esc(phaseText)}</span>
       ${s.location ? `<span class="loc">📍 ${esc(s.location.name)}</span>` : ''}
       ${s.stepDeadline ? `<span class="badge yellow">⏱ <span id="step-countdown">--</span></span>` : ''}
@@ -298,6 +307,15 @@
     return `<span class="badge cyan" title="สายความสามารถที่ใช้ได้จริงในเกม">${esc(TRAIT_LABEL[trait] || trait)}</span>`;
   }
 
+  // Ultimate ที่แสดงบนการ์ด: ของคนอื่นเห็นตามที่เกมให้เห็น ของตัวเองบอกชัดว่า "คนอื่นเห็นเป็นอะไร"
+  function ultimateLine(c, isMe) {
+    if (!c) return '<div class="ult muted">กำลังสุ่ม...</div>';
+    if (isMe && c.shownToOthers === '???') return `<div class="ult"><span class="unknown">???</span> <span class="real">(โรลจริง: ${esc(c.ultimate)})</span> ${traitBadge(c.trait)}</div><div><span class="badge purple">คนอื่นเห็นคุณเป็น ???</span></div>`;
+    if (isMe && c.shownToOthers) return `<div class="ult">${esc(c.shownToOthers)} <span class="real">(ปลอม — โรลจริง: ${esc(c.ultimate)})</span> ${traitBadge(c.trait)}</div><div><span class="badge purple">โรลปลอม · คนอื่นเห็นว่าคุณคือ ${esc(c.shownToOthers)}</span></div>`;
+    if (c.ultimate === '???') return '<div class="ult unknown" title="Ultimate ถูกซ่อน">???</div>';
+    return `<div class="ult">${esc(c.ultimate)} ${traitBadge(c.trait)}</div>${c.fakeRoleExposed ? `<div><span class="badge purple" title="Ultimate ที่ประกาศไว้เป็นของปลอม">โรลปลอม · ประกาศว่า ${esc(c.fakeUltimate || '?')}</span></div>` : ''}`;
+  }
+
   function playerCard(s, p) {
     const me = s.me;
     const isMe = p.id === me.id;
@@ -315,26 +333,17 @@
     }
     if (s.phase === 'trial' && p.alive) marks.push(`<span class="mark ${p.voteConfirmed ? 'ok' : ''}" title="โหวต">${p.voteConfirmed ? '🗳️' : '…'}</span>`);
     if (p.knownDead) marks.push(`<span class="mark" title="${FATE_LABEL[p.fate] || 'เสียชีวิต'}">${FATE_ICON[p.fate] || '✝'}</span>`);
-    const ultHtml = c
-      ? c.ultimate === '???'
-        ? '<div class="ult unknown" title="Ultimate ถูกซ่อน">???</div>'
-        : `<div class="ult">${esc(c.ultimate)} ${traitBadge(c.trait)}</div>${
-            c.fakeRoleExposed
-              ? `<div><span class="badge purple" title="Ultimate ที่ประกาศไว้เป็นของปลอม">โรลปลอม · ประกาศว่า ${esc(c.fakeUltimate || '?')}</span></div>`
-              : isMe && c.fakeUltimate
-                ? `<div><span class="badge purple" title="คนอื่นเห็น Ultimate ของคุณเป็นชื่อนี้">คนอื่นเห็น: ${esc(c.fakeUltimate)}</span></div>`
-                : ''
-          }`
-      : '<div class="ult muted">กำลังสุ่ม...</div>';
     const sameZone = !isMe && p.zoneId && me.alive && p.zoneId === me.zoneId && (s.step === 'act' || s.step === 'report');
     return `<div class="pcard ${p.knownDead ? 'dead' : ''} ${isMe ? 'me' : ''} ${clickable ? 'clickable' : ''} ${selected ? 'selected' : ''}"
         ${clickable ? `data-action="vote" data-id="${esc(p.id)}"` : ''} title="${c ? esc(`${c.appearance} — ${c.personality}`) : ''}">
       <div class="marks">${marks.join('')}</div>
-      <div class="pname">${esc(p.name)}${p.isBot ? ' <span class="badge">บอท</span>' : ''}${isMe ? ' <span class="badge cyan">คุณ</span>' : ''}</div>
-      ${c ? `<div class="cname">${esc(c.name)} (${esc(c.nickname)})</div>` : ''}
-      ${ultHtml}
+      <div class="phead">${avatarHtml(c)}<div>
+        <div class="pname">${esc(p.name)}${p.isBot ? ' <span class="badge">บอท</span>' : ''}${isMe ? ' <span class="badge cyan">คุณ</span>' : ''}</div>
+        ${c ? `<div class="cname">${esc(c.name)} (${esc(c.nickname)})</div>` : ''}
+      </div></div>
+      ${ultimateLine(c, isMe)}
       ${sameZone ? `<div><span class="badge green">อยู่ห้องเดียวกับคุณ</span></div>` : !isMe && p.zoneId && !me.alive ? `<div class="muted" style="font-size:.8rem">📍 ${esc(zoneName(p.zoneId))}</div>` : ''}
-      ${p.knownDead && p.fate ? `<div class="muted" style="font-size:.8rem">${FATE_LABEL[p.fate]} · วันที่ ${p.eliminatedDay}</div>` : ''}
+      ${p.knownDead && p.fate ? `<div class="muted" style="font-size:.8rem">${FATE_LABEL[p.fate]} · ${esc(timeText(p.eliminatedDay, p.eliminatedHour))}</div>` : ''}
       ${p.alive && p.revived ? '<div><span class="badge yellow">คืนชีพ</span></div>' : ''}
       ${s.runoff && p.alive && s.runoff.candidates.includes(p.id) ? '<div><span class="badge red">รอบตัดสิน</span></div>' : ''}
     </div>`;
@@ -376,15 +385,22 @@
     </div>`;
   }
 
+  function objectiveBadge(o) {
+    if (o.done) return o.forgiven ? '<span class="badge">ยกเลิก</span>' : '<span class="badge green">สำเร็จ</span>';
+    if (o.remainingHours <= 0) return '<span class="badge red">ครบกำหนด — ระบบพาไปทำ</span>';
+    return `<span class="badge ${o.remainingHours <= 1 ? 'red' : ''}">เหลือ ${o.remainingHours} ชม.</span>`;
+  }
+
   function dayIntroHtml(s) {
     const me = s.me;
     const alive = s.players.filter((p) => p.alive);
     const moved = alive.filter((p) => p.moved).length;
     return `<div class="card">
-      <div class="row"><h2>☀ วันที่ ${s.day}</h2><span class="spacer"></span><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span></div>
+      <div class="row"><h2>🕐 วันที่ ${s.day} · ชั่วโมงที่ ${s.hour}</h2><span class="spacer"></span><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span></div>
       <p class="muted">${esc(s.location.description)}</p>
-      ${me.isDesignated ? `<div class="clue culprit"><span class="ctag">🔪 วันนี้เกมเลือกคุณเป็น "ฆาตกร" (มีแค่คุณที่รู้)</span>จะลงมือหรือไม่ก็ได้ — ถ้าลงมือวันนี้โอกาสสำเร็จสูงขึ้น ดูรายละเอียดในสมุดบันทึก ถ้าคนอื่นลงมือก่อน คุณจะเป็นแค่คนที่อยู่ในเหตุการณ์</div>` : ''}
-      ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (ทำไม่ทันมีผลถึงชีวิต)</span>${esc(o.text)} ${o.deadlineDay <= s.day ? '<span class="badge red">วันนี้วันสุดท้าย!</span>' : `<span class="badge">เหลือ ${o.deadlineDay - s.day} วัน</span>`}</div>`).join('')}
+      ${me.isDesignated ? `<div class="clue culprit"><span class="ctag">🔪 วันนี้เกมเลือกคุณเป็น "ฆาตกร" (มีแค่คุณที่รู้)</span>จะลงมือหรือไม่ก็ได้ — ถ้าลงมือในวันนี้โอกาสสำเร็จสูงขึ้น ดูรายละเอียดในสมุดบันทึก ถ้าคนอื่นลงมือก่อน คุณจะเป็นแค่คนที่อยู่ในเหตุการณ์</div>` : ''}
+      ${me.forced ? `<div class="clue night-self"><span class="ctag">⏰ ภารกิจครบกำหนด</span>ชั่วโมงนี้ระบบพาคุณไปที่ <b>${esc(me.forced.zoneName)}</b>${me.forced.actionLabel ? ` และจะ${esc(me.forced.actionLabel)}ให้เอง` : ''} (เลือกห้องอื่นไม่ได้)</div>` : ''}
+      ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (กันแคมป์ — ครบกำหนดระบบพาไปทำ ไม่มีใครตาย)</span>${esc(o.text)} ${objectiveBadge(o)}</div>`).join('')}
       <p class="muted" style="font-size:.85rem">เลือกห้องจากแผนที่ด้านล่าง — ไม่มีใครเห็นว่าใครเลือกอะไร จนกว่าจะเข้าห้องแล้วเจอกัน</p>
     </div>`;
   }
@@ -411,14 +427,14 @@
             <div class="zname">${esc(z.name)}</div>
             <div class="ztags">${tags.join(' ')}</div>
             <div class="zdesc">${esc(z.description)}${z.isExit ? `<br><span class="muted">${esc(s.location.exitDescription)}</span>` : ''}</div>
-            ${mem ? `<div class="zmem">ครั้งล่าสุด (วันที่ ${mem.day}): ${mem.people?.length ? `คน: ${esc(mem.people.join(', '))}` : 'ไม่มีใคร'} · ${mem.items?.length ? `ของ: ${esc(mem.items.join(', '))}` : 'ไม่เห็นของ'}${mem.searched ? ' · สำรวจแล้ว' : ''}</div>` : '<div class="zmem muted">ยังไม่เคยเข้าไป (หรือของถูกจัดใหม่)</div>'}
+            ${mem ? `<div class="zmem">ครั้งล่าสุด (${esc(timeText(mem.day, mem.hour))}): ${mem.people?.length ? `คน: ${esc(mem.people.join(', '))}` : 'ไม่มีใคร'} · ${mem.items?.length ? `ของ: ${esc(mem.items.join(', '))}` : 'ไม่เห็นของ'}${mem.searched ? ' · สำรวจแล้ว' : ''}</div>` : '<div class="zmem muted">ยังไม่เคยเข้าไป (หรือของถูกจัดใหม่)</div>'}
             ${bodiesHere.length ? `<div class="zbody">☠ ศพ: ${esc(bodiesHere.map((b) => b.name).join(', '))}</div>` : ''}
           </div>`;
         })
         .join('')}</div>
       <div class="row" style="margin-top:.8rem">
         ${chosen
-          ? `<p class="status">คุณเลือกไป <b>${esc(zoneName(chosen))}</b> แล้ว รอคนอื่น (${moved}/${alive.length})</p>`
+          ? `<p class="status">${me.forced ? '⏰ ภารกิจพาคุณไป' : 'คุณเลือกไป'} <b>${esc(zoneName(chosen))}</b> แล้ว รอคนอื่น (${moved}/${alive.length})</p>`
           : `<button class="primary" data-action="confirm-move" ${sel ? '' : 'disabled'}>${sel ? `🚶 ไป${esc(zoneName(sel))}` : 'เลือกห้องก่อน'}</button><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span>`}
       </div>
     </div>`;
@@ -429,15 +445,16 @@
     const z = zoneById(me.zoneId);
     const mem = me.zoneMemory?.[me.zoneId] || {};
     const bodies = me.knownBodies.filter((b) => b.zoneName === z?.name);
+    const people = (me.zonePeople || []).map((p) => p.name);
     return `<div class="card zone-panel">
-      <div class="row"><h2>📍 ${esc(z?.name || '?')}</h2><span class="spacer"></span><span class="badge ${s.phase === 'investigation' ? 'red' : 'pink'}">${s.phase === 'investigation' ? 'เก็บหลักฐาน' : `วันที่ ${s.day}`}</span></div>
+      <div class="row"><h2>📍 ${esc(z?.name || '?')}</h2><span class="spacer"></span><span class="badge ${s.phase === 'investigation' ? 'red' : 'pink'}">${s.phase === 'investigation' ? 'เก็บหลักฐาน' : `วันที่ ${s.day} ชั่วโมงที่ ${s.hour}`}</span></div>
       <p class="muted">${esc(z?.description || '')}</p>
       <div class="zone-facts">
-        <div><b>คนที่อยู่ที่นี่:</b> ${me.zonePeople?.length ? esc(me.zonePeople.join(', ')) : '<span class="muted">ไม่มีใครนอกจากคุณ</span>'}</div>
+        <div><b>คนที่อยู่ที่นี่:</b> ${people.length ? esc(people.join(', ')) : '<span class="muted">ไม่มีใครนอกจากคุณ</span>'}</div>
         <div><b>ของที่เห็น:</b> ${mem.items?.length ? esc(mem.items.join(', ')) : '<span class="muted">ไม่เห็นของเป็นพิเศษ</span>'}</div>
         ${bodies.length ? `<div class="danger-text">☠ <b>ศพ:</b> ${esc(bodies.map((b) => b.name).join(', '))}</div>` : ''}
       </div>
-      ${todayLogHtml(s, 'สิ่งที่เกิดขึ้นตอนเข้ามา')}
+      ${recentLogHtml(s, 'สิ่งที่เกิดขึ้นตอนเข้ามา')}
     </div>`;
   }
 
@@ -455,7 +472,7 @@
     const alive = s.players.filter((p) => p.alive);
     const acted = alive.filter((p) => p.acted).length;
     if (me.actionChoice) {
-      return `<div class="card"><h3>คุณเลือกแล้ว</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น (${acted}/${alive.length})</p><p class="muted">ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ</p></div>`;
+      return `<div class="card"><h3>${me.actionChoice.forced ? '⏰ ภารกิจบังคับการกระทำของคุณชั่วโมงนี้' : 'คุณเลือกแล้ว'}</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น (${acted}/${alive.length})</p><p class="muted">ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ</p></div>`;
     }
     const list = me.availableActions || [];
     const selected = list.find((a) => actionKey(a) === ui.selectedAction) || null;
@@ -481,25 +498,43 @@
     </div>`;
   }
 
-  function todayLogHtml(s, title, phase = s.phase) {
-    const entries = (s.me.log || []).filter((l) => l.day === s.day && l.phase === phase);
+  // บันทึกของชั่วโมงปัจจุบัน
+  function recentLogHtml(s, title, phase = s.phase) {
+    const entries = (s.me.log || []).filter((l) => l.day === s.day && l.hour === s.hour && l.phase === phase);
     if (!entries.length) return '';
     return `<div class="todaylog"><div class="agtitle">${esc(title)}</div>${entries.map(logEntryHtml).join('')}</div>`;
   }
 
-  // ข้อความในบันทึกมีอีโมจินำอยู่แล้ว จึงไม่เติมไอคอนซ้ำ
   const logEntryHtml = (l) => `<div class="logent k-${esc(l.kind)}">${esc(l.text)}</div>`;
+
+  function giveHtml(s) {
+    const me = s.me;
+    const people = me.zonePeople || [];
+    if (!me.alive || !people.length) return `<p class="muted" style="font-size:.85rem">🎁 ให้ของได้เฉพาะคนที่อยู่ห้องเดียวกันตอนนี้${people.length ? '' : ' — ชั่วโมงนี้ไม่มีใครอยู่กับคุณ'}</p>`;
+    if (!me.inventory.length) return `<p class="muted" style="font-size:.85rem">🎁 คนในห้องนี้: ${esc(people.map((p) => p.name).join(', '))} — คุณไม่มีของให้</p>`;
+    return `<div class="give">
+      <div class="agtitle">🎁 ให้ของกับคนในห้องเดียวกัน (ก่อนเริ่มชั่วโมงถัดไป)</div>
+      <div class="row">
+        <select id="give-item">${me.inventory.map((i) => `<option value="${esc(i.id)}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}</option>`).join('')}</select>
+        <span>ให้</span>
+        <select id="give-to">${people.map((p) => `<option value="${esc(p.id)}" ${p.invFull ? 'disabled' : ''}>${esc(p.name)}${p.invFull ? ' (ถือเต็ม)' : ''}</option>`).join('')}</select>
+        <button data-action="give">ให้เลย</button>
+      </div>
+      <p class="muted" style="font-size:.8rem">คนอื่นในห้องจะเห็นว่าคุณยื่นของให้ (อาจไม่เห็นว่าเป็นอะไร) · ใช้ช่วยกันทำภารกิจ "หยิบของ" ได้</p>
+    </div>`;
+  }
 
   function reportHtml(s) {
     const me = s.me;
     const alive = s.players.filter((p) => p.alive);
     const ready = alive.filter((p) => p.ready).length;
-    const entries = (me.log || []).filter((l) => l.day === s.day && l.phase === 'day');
+    const entries = (me.log || []).filter((l) => l.day === s.day && l.hour === s.hour && l.phase === 'day');
     return `<div class="card">
-      <div class="row"><h2>📓 บันทึกวันที่ ${s.day}</h2><span class="spacer"></span><span class="muted">พร้อมแล้ว ${ready}/${alive.length}</span></div>
-      <p class="muted">สิ่งที่คุณเห็นและทำวันนี้ — มีแค่คุณที่รู้ จะเล่าให้ใครฟังหรือเก็บไว้ก็ได้</p>
+      <div class="row"><h2>📓 บันทึก วันที่ ${s.day} ชั่วโมงที่ ${s.hour}</h2><span class="spacer"></span><span class="muted">พร้อมแล้ว ${ready}/${alive.length}</span></div>
+      <p class="muted">สิ่งที่คุณเห็นและทำในชั่วโมงนี้ — มีแค่คุณที่รู้ จะเล่าให้ใครฟังหรือเก็บไว้ก็ได้</p>
       <div class="report-log">${entries.map(logEntryHtml).join('') || '<p class="muted">ไม่มีอะไรเกิดขึ้น</p>'}</div>
-      ${me.alive ? (me.ready ? `<p class="status">คุณพร้อมแล้ว รอคนอื่น (${ready}/${alive.length})</p>` : `<button class="primary" data-action="ready">พร้อมไปวันถัดไป</button>`) : ''}
+      ${giveHtml(s)}
+      ${me.alive ? (me.ready ? `<p class="status">คุณพร้อมแล้ว รอคนอื่น (${ready}/${alive.length})</p>` : `<button class="primary" data-action="ready">พร้อมไปชั่วโมงถัดไป</button>`) : ''}
     </div>`;
   }
 
@@ -524,7 +559,7 @@
       ${cases
         .map(
           (c) => `<div class="case ${c.judged ? 'judged' : ''}">
-          <div class="row"><b>${esc(c.title)}</b><span class="spacer"></span><span class="badge">พบที่ ${esc(c.zoneName)}</span><span class="badge">ตายวันที่ ${c.day}</span></div>
+          <div class="row"><b>${esc(c.title)}</b><span class="spacer"></span><span class="badge">พบที่ ${esc(c.zoneName)}</span><span class="badge">ตาย${esc(timeText(c.day, c.hour))}</span></div>
           <p><b>ผู้เสียชีวิต:</b> ${esc(c.victim.characterName)} (${esc(c.victim.playerName)})</p>
           <dl class="report"><dt>สภาพศพ (ที่ทุกคนเห็น)</dt><dd>${esc(c.bodyState)}</dd><dt>ความผิดปกติรอบศพ</dt><dd>${esc(c.sceneNotes)}</dd></dl>
         </div>`,
@@ -538,7 +573,7 @@
     const done = alive.filter((p) => p.voteConfirmed).length;
     return `<div class="card">
       <h2>⚖ การตัดสิน</h2>
-      <p>เล่าหลักฐานและสิ่งที่แต่ละคนเห็นในแชท แล้วโหวตทางขวา — <b>โหวตถูก</b> คนนั้นถูกประหาร · <b>โหวตผิด</b> คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · ถ้าเชื่อว่าศพไม่ใช่ฆาตกรรม หรือคนร้ายตายไปแล้ว เลือก <b>"ไม่มีคนร้ายให้ลงโทษ"</b></p>
+      <p>เล่าหลักฐานและสิ่งที่แต่ละคนเห็นในแชท แล้วโหวตทางขวา — <b>โหวตถูก</b> คนนั้นถูกประหาร · <b>โหวตผิด</b> คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · ถ้าเชื่อว่าคนร้ายตายไปแล้ว เลือก <b>"ไม่มีคนร้ายให้ลงโทษ"</b></p>
       <p class="muted">ยืนยันโหวตแล้ว ${done}/${alive.length}${s.runoff ? ` · <span class="badge red">รอบตัดสินครั้งที่ ${s.runoff.number}</span>` : ''}</p>
     </div>`;
   }
@@ -549,7 +584,7 @@
     const witness = (me.log || []).filter((l) => ['witness', 'evidence', 'culprit', 'danger', 'escape'].includes(l.kind));
     return `<div class="card clues">
       <h3>🧩 หลักฐานและสิ่งที่คุณรู้ (คนอื่นมองไม่เห็น — เอาไปเล่าในแชท)</h3>
-      ${ev.length ? `<ul class="obs">${ev.map((e) => `<li><b>${esc(e.zoneName)}</b> (วันที่ ${e.day}): ${esc(e.text)}</li>`).join('')}</ul>` : '<p class="muted">คุณยังไม่ได้เก็บหลักฐานจากการสำรวจเลย</p>'}
+      ${ev.length ? `<ul class="obs">${ev.map((e) => `<li><b>${esc(e.zoneName)}</b> (${esc(timeText(e.day, e.hour))}): ${esc(e.text)}</li>`).join('')}</ul>` : '<p class="muted">คุณยังไม่ได้เก็บหลักฐานจากการสำรวจเลย</p>'}
       ${witness.length ? `<div class="agtitle" style="margin-top:.6rem">จากสมุดบันทึก</div>${witness.slice(-12).map(logEntryHtml).join('')}` : ''}
     </div>`;
   }
@@ -562,7 +597,7 @@
     return `<div class="card result ${r.correct ? 'correct' : 'wrong'}">
       <div class="verdict">${r.correct ? '✔ โหวตถูกต้อง!' : '✘ โหวตผิด!'}</div>
       <p>เสียงส่วนใหญ่โหวต: <b>${esc(displayName(r.votedId))}</b>${r.randomTiebreak ? ' <span class="badge yellow">ยังเสมอหลังรอบตัดสิน จึงสุ่มตัดสิน</span>' : ''}</p>
-      <p>${r.correct ? (r.executedId ? `⛓ <b>${esc(displayName(r.executedId))}</b> ถูกประหาร` : r.cases.some((c) => c.killerName) ? '🕊 ไม่มีใครถูกประหาร — คนร้ายของคดีนี้ตายไปก่อนแล้ว จึงไม่มีใครให้ลงโทษ' : '🕊 ไม่มีใครถูกประหาร — ศพนั้นไม่ใช่ฆาตกรรม') : `☠ ทุกคนที่เหลือถูกประหาร${r.escaped?.length ? ` · 🏃 คนร้ายตัวจริง <b>${esc(r.escaped.map(displayName).join(', '))}</b> รอดไปได้` : ''}`}</p>
+      <p>${r.correct ? (r.executedId ? `⛓ <b>${esc(displayName(r.executedId))}</b> ถูกประหาร` : r.cases.some((c) => c.killerName) ? '🕊 ไม่มีใครถูกประหาร — คนร้ายของคดีนี้ตายไปก่อนแล้ว จึงไม่มีใครให้ลงโทษ' : '🕊 ไม่มีใครถูกประหาร — ไม่มีคนร้ายในคดีนี้') : `☠ ทุกคนที่เหลือถูกประหาร${r.escaped?.length ? ` · 🏃 คนร้ายตัวจริง <b>${esc(r.escaped.map(displayName).join(', '))}</b> รอดไปได้` : ''}`}</p>
       ${r.runoffs ? `<p class="muted">มีการโหวตรอบตัดสิน ${r.runoffs} ครั้ง</p>` : ''}
       <h3>ผลโหวต</h3>
       <div class="tally">${r.tally
@@ -575,8 +610,8 @@
           <div class="row"><b>${esc(c.title || 'คดี')}</b><span class="spacer"></span><span class="badge">${esc(c.causeLabel)}</span></div>
           <p>${esc(c.truthSummary)}</p>
           <ul class="obs">
-            <li>ผู้ตาย: <b>${esc(c.victimName)}</b> (${esc(c.victimPlayer)}) · ที่${esc(c.zoneName)} · วันที่ ${c.day}</li>
-            <li>คนร้าย: <b>${c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี (ไม่ใช่ฆาตกรรม)'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName && !c.killerAlive && !r.executedId ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : ''}</li>
+            <li>ผู้ตาย: <b>${esc(c.victimName)}</b> (${esc(c.victimPlayer)}) · ที่${esc(c.zoneName)} · ${esc(timeText(c.day, c.hour))}</li>
+            <li>คนร้าย: <b>${c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName && !c.killerAlive && !r.executedId ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : ''}</li>
             ${c.weaponName ? `<li>อาวุธ: ${esc(c.weaponName)}${c.messy ? ' · ลงมือแบบเลอะเทอะ' : ' · ลงมือเงียบเชียบ'}${c.moved ? ' · ศพถูกย้าย' : ''}</li>` : ''}
             ${c.witnesses?.length ? `<li>คนที่เห็นตอนลงมือ: ${esc(c.witnesses.join(', '))}</li>` : ''}
             ${c.present?.length ? `<li>คนที่อยู่ในห้องตอนนั้น: ${esc(c.present.join(', '))}</li>` : ''}
@@ -586,7 +621,7 @@
         )
         .join('')}
       ${r.stillOpen?.length ? `<p class="muted">คดีที่ยังไม่คลี่คลาย (คนร้ายยังลอยนวล): ${esc(r.stillOpen.join(', '))}</p>` : ''}
-      <details><summary>ใครไปไหนบ้างในแต่ละวัน และเกิดอะไรขึ้นจริง ๆ</summary>${timelineHtml(r.timeline)}</details>
+      <details><summary>ใครไปห้องไหนในแต่ละชั่วโมง และเกิดอะไรขึ้นจริง ๆ</summary>${timelineHtml(r.timeline)}</details>
     </div>`;
   }
 
@@ -594,7 +629,7 @@
     if (!tl?.length) return '';
     return tl
       .map(
-        (t) => `<div class="whereabouts"><h3>วันที่ ${t.day}${t.phase === 'investigation' ? ' (รอบเก็บหลักฐาน)' : ''}</h3>
+        (t) => `<div class="whereabouts"><h3>${esc(timeText(t.day, t.hour))}${t.phase === 'investigation' ? ' (รอบเก็บหลักฐาน)' : ''}</h3>
         <ul>${t.positions.map((p) => `<li><b>${esc(p.characterName)}</b> <span class="muted">(${esc(p.playerName)})</span> → ${esc(p.zoneName)}</li>`).join('')}</ul>
         ${t.events.length ? `<ul class="events">${t.events.map((e) => `<li class="truth">${esc(e)}</li>`).join('')}</ul>` : '<p class="muted">ไม่มีเหตุการณ์สำคัญ</p>'}
       </div>`,
@@ -611,24 +646,24 @@
     const me = playerById(s.me.id);
     const c = me?.character;
     if (!c) return `<div class="card mycard"><h3>ตัวละครของคุณ</h3><p class="muted">กำลังสุ่มตัวละครและ Ultimate...</p></div>`;
-    const unknown = c.ultimate === '???';
     const t = s.me.trait;
+    const shown = c.shownToOthers;
     return `<div class="card mycard">
       <h3>ตัวละครของคุณ</h3>
-      <div class="big">${esc(c.name)} <span class="muted" style="font-weight:300">(${esc(c.nickname)})</span></div>
-      <div class="muted">${esc(c.gender)} · อายุ ${c.age}</div>
+      <div class="phead">${avatarHtml(c, 'lg')}<div>
+        <div class="big">${esc(c.name)} <span class="muted" style="font-weight:300">(${esc(c.nickname)})</span></div>
+        <div class="muted">${esc(c.gender)} · อายุ ${c.age}</div>
+      </div></div>
       <p><b>รูปลักษณ์:</b> ${esc(c.appearance)}</p>
       <hr style="border-color:var(--line);border-style:solid none none">
-      <div class="ult ${unknown ? 'unknown' : ''}">${unknown ? '??? (ยังไม่รู้)' : esc(c.ultimate)}</div>
-      ${unknown
-        ? `<p class="muted">Ultimate ของคุณถูกซ่อนจากทุกคน รวมถึงตัวคุณเอง — แต่สัญชาตญาณยังใช้ได้</p>`
-        : `<p>${esc(c.ultimateDescription || '')}</p>
-           ${s.me.fakeRole
-             ? `<span class="badge purple">โรลปลอม</span>
-                <p class="muted" style="font-size:.85rem">คนอื่นเห็น Ultimate ของคุณเป็น <b>${esc(s.me.fakeUltimate?.title || '?')}</b> — มีแค่คุณที่รู้ของจริง</p>`
-             : s.me.ultimateIsHidden
-               ? `<span class="badge purple">ซ่อนจากคนอื่น (เห็นเป็น ???)</span>`
-               : `<span class="badge">ทุกคนเห็น</span>`}`}
+      ${shown
+        ? `<div class="rolebox">
+            <div class="rolerow"><span class="rlabel">คนอื่นเห็นคุณเป็น</span><span class="rval ${shown === '???' ? 'unknown' : ''}">${esc(shown)}</span></div>
+            <div class="rolerow"><span class="rlabel">โรลจริงของคุณ</span><span class="rval real">${esc(c.ultimate)}</span></div>
+            <p class="muted" style="font-size:.85rem;margin-top:.3rem">${shown === '???' ? 'คุณกำลัง "ปกปิดโรล" อยู่ — จะเปิดเผยเองในแชทหรือเก็บเป็นความลับก็ได้' : `คุณถือ "โรลปลอม" — คนอื่นเข้าใจว่าคุณคือ ${esc(shown)} (${esc(s.me.fakeUltimate?.description || '')}) มีแค่คุณที่รู้ของจริง`}</p>
+          </div>`
+        : `<div class="ult">${esc(c.ultimate)}</div><span class="badge">ทุกคนเห็นโรลนี้</span>`}
+      <p>${esc(c.ultimateDescription || '')}</p>
       ${t && t.key !== 'none' ? `<p style="margin-top:.5rem">${traitBadge(t.key)} <span class="muted" style="font-size:.85rem">${esc(t.description)}</span></p>` : '<p class="muted" style="font-size:.85rem">ไม่มี trait พิเศษ — ใช้แอ็กชันพื้นฐานได้ทุกอย่าง</p>'}
       ${!me.alive ? `<p><span class="badge red">${FATE_LABEL[me.fate] || 'เสียชีวิต'}</span></p>` : ''}
     </div>`;
@@ -638,12 +673,13 @@
     const me = s.me;
     if (!s.location) return '';
     const inv = me.inventory || [];
-    const objs = (me.objectives || []).filter((o) => !o.done || o.forgiven);
+    const objs = me.objectives || [];
     return `<div class="card inv">
       <h3>🎒 ของที่ถือ (${inv.length}/${s.config.inventoryMax})</h3>
       ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''}" title="${esc(i.description || '')}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
       ${s.config.objectives ? `<h3 style="margin-top:.7rem">📋 ภารกิจลับ</h3>
-      ${objs.length ? objs.map((o) => `<div class="objective ${o.done ? 'done' : o.deadlineDay <= s.day ? 'due' : ''}">${o.done ? '✅' : '•'} ${esc(o.text)}${!o.done ? ` <span class="badge ${o.deadlineDay <= s.day ? 'red' : ''}">${o.deadlineDay <= s.day ? 'วันนี้!' : `เหลือ ${o.deadlineDay - s.day} วัน`}</span>` : ''}</div>`).join('') : '<p class="muted">ไม่มีภารกิจค้าง</p>'}` : ''}
+      ${objs.length ? objs.map((o) => `<div class="objective ${o.done ? 'done' : o.remainingHours <= 1 ? 'due' : ''}">${o.done ? (o.forgiven ? '➖' : '✅') : '•'} ${esc(o.text)} ${objectiveBadge(o)}</div>`).join('') : '<p class="muted">ไม่มีภารกิจค้าง</p>'}
+      <p class="muted" style="font-size:.78rem">ภารกิจมีไว้กันแคมป์ — ครบกำหนดแล้วระบบพาไปทำเอง ไม่มีใครตายเพราะภารกิจ</p>` : ''}
       ${me.isDesignated ? '<p style="margin-top:.5rem"><span class="badge red">🔪 วันนี้เกมเลือกคุณเป็นฆาตกร</span></p>' : ''}
     </div>`;
   }
@@ -659,7 +695,7 @@
         if (!s.step) body += '<p class="status">กำลังประมวลผล...</p>';
         else if (s.step === 'move') {
           const n = alive.filter((p) => p.moved).length;
-          body += me.alive ? `<p class="status">${me.moveChoice ? `เลือกไป ${esc(zoneName(me.moveChoice))} แล้ว` : 'เลือกห้องจากแผนที่ตรงกลาง'} (${n}/${alive.length})</p>` : `<p class="status">รอทุกคนเลือกห้อง (${n}/${alive.length})</p>`;
+          body += me.alive ? `<p class="status">${me.moveChoice ? `${me.forced ? 'ภารกิจพาไป' : 'เลือกไป'} ${esc(zoneName(me.moveChoice))} แล้ว` : 'เลือกห้องจากแผนที่ตรงกลาง'} (${n}/${alive.length})</p>` : `<p class="status">รอทุกคนเลือกห้อง (${n}/${alive.length})</p>`;
           body += hostForce('บังคับไปต่อ (คนที่ยังไม่เลือกจะอยู่ที่เดิม)');
         } else if (s.step === 'act') {
           const n = alive.filter((p) => p.acted).length;
@@ -667,8 +703,8 @@
           body += hostForce('บังคับไปต่อ (คนที่ยังไม่เลือกจะอยู่เฉย ๆ)');
         } else {
           const n = alive.filter((p) => p.ready).length;
-          body += me.alive ? (me.ready ? `<p class="status">พร้อมแล้ว รอคนอื่น (${n}/${alive.length})</p>` : `<button class="primary" data-action="ready">พร้อมไปวันถัดไป</button><p class="status">พร้อมแล้ว ${n}/${alive.length}</p>`) : `<p class="status">รอทุกคน (${n}/${alive.length})</p>`;
-          body += hostForce('บังคับไปวันถัดไป');
+          body += me.alive ? (me.ready ? `<p class="status">พร้อมแล้ว รอคนอื่น (${n}/${alive.length})</p>` : `<button class="primary" data-action="ready">พร้อมไปชั่วโมงถัดไป</button><p class="status">พร้อมแล้ว ${n}/${alive.length}</p>`) : `<p class="status">รอทุกคน (${n}/${alive.length})</p>`;
+          body += hostForce('บังคับไปชั่วโมงถัดไป');
         }
         break;
       }
@@ -681,7 +717,7 @@
             body += `${s.runoff ? `<p><span class="badge red">รอบตัดสินครั้งที่ ${s.runoff.number}</span> คะแนนเสมอ โหวตได้เฉพาะตัวเลือกที่เสมอกัน</p>` : '<p>โหวตคนร้าย:</p>'}<div class="votelist">${cands
               .map((id) => {
                 const p = playerById(id);
-                return `<button data-action="vote" data-id="${esc(id)}" class="${me.myVote === id ? 'selected' : ''} ${id === 'none' ? 'none-vote' : ''}">${id === 'none' ? '🕊 ไม่มีคนร้ายให้ลงโทษ (ไม่ใช่ฆาตกรรม หรือคนร้ายตายไปแล้ว)' : `${esc(p?.character?.name || p?.name || '?')} <span class="muted">(${esc(p?.name || '')})</span>`}</button>`;
+                return `<button data-action="vote" data-id="${esc(id)}" class="${me.myVote === id ? 'selected' : ''} ${id === 'none' ? 'none-vote' : ''}">${id === 'none' ? '🕊 ไม่มีคนร้ายให้ลงโทษ (คนร้ายตายไปแล้ว)' : `${esc(p?.character?.name || p?.name || '?')} <span class="muted">(${esc(p?.name || '')})</span>`}</button>`;
               })
               .join('')}</div>
               <button class="primary" data-action="confirm-vote" ${me.myVote ? '' : 'disabled'}>ยืนยันโหวต</button>
@@ -692,7 +728,7 @@
         break;
       }
       case 'trial_result':
-        body += me.isHost ? `<button class="primary" data-action="next-round">☀ ไปวันถัดไป</button>` : `<p class="status">รอหัวห้องไปต่อ...</p>`;
+        body += me.isHost ? `<button class="primary" data-action="next-round">☀ ขึ้นวันใหม่ (วันที่ ${s.day + 1})</button>` : `<p class="status">รอหัวห้องขึ้นวันใหม่...</p>`;
         break;
       default:
         body += `<p class="status">กรุณารอสักครู่...</p>`;
@@ -703,18 +739,18 @@
   function notebookHtml(s) {
     const log = s.me.log || [];
     if (!log.length) return '';
-    const byDay = new Map();
+    const groups = new Map();
     for (const l of log) {
-      const key = `${l.day}-${l.phase}`;
-      if (!byDay.has(key)) byDay.set(key, { day: l.day, phase: l.phase, entries: [] });
-      byDay.get(key).entries.push(l);
+      const key = `${l.day}-${l.hour}-${l.phase}`;
+      if (!groups.has(key)) groups.set(key, { day: l.day, hour: l.hour, phase: l.phase, entries: [] });
+      groups.get(key).entries.push(l);
     }
-    const groups = [...byDay.values()].reverse();
+    const list = [...groups.values()].reverse();
     return `<div class="card notebook">
       <div class="row"><h3>📓 สมุดบันทึก</h3><span class="spacer"></span><button class="small ghost" data-action="toggle-notebook">${ui.notebookOpen ? 'ซ่อน' : 'แสดง'} (${log.length})</button></div>
       ${ui.notebookOpen
-        ? groups
-            .map((g) => `<div class="nbday"><div class="agtitle">วันที่ ${g.day}${g.phase === 'investigation' ? ' · เก็บหลักฐาน' : ''}</div>${g.entries.map(logEntryHtml).join('')}</div>`)
+        ? list
+            .map((g) => `<div class="nbday"><div class="agtitle">${esc(timeText(g.day, g.hour))}${g.phase === 'investigation' ? ' · เก็บหลักฐาน' : ''}</div>${g.entries.map(logEntryHtml).join('')}</div>`)
             .join('')
         : '<p class="muted" style="font-size:.85rem">ทุกอย่างที่คุณเห็นและทำ มีแค่คุณที่รู้</p>'}
     </div>`;
@@ -731,7 +767,7 @@
   function historyHtml(s) {
     if (!s.history?.length) return '';
     return `<div class="card history"><h3>การตัดสินที่ผ่านมา</h3><ol>${s.history
-      .map((h) => `<li><b>วันที่ ${h.day}</b> ผู้ตาย: ${esc(h.victims.join(', ') || '-')}<br>โหวต: ${esc(h.votedName)} <span class="${h.correct ? 'ok' : 'bad'}">${h.correct ? '(ถูก)' : '(ผิด)'}</span>${h.culprits.length ? ` · คนร้าย: ${esc(h.culprits.join(', '))}` : ' · ไม่มีคนร้าย'}</li>`)
+      .map((h) => `<li><b>${esc(timeText(h.day, h.hour))}</b> ผู้ตาย: ${esc(h.victims.join(', ') || '-')}<br>โหวต: ${esc(h.votedName)} <span class="${h.correct ? 'ok' : 'bad'}">${h.correct ? '(ถูก)' : '(ผิด)'}</span>${h.culprits.length ? ` · คนร้าย: ${esc(h.culprits.join(', '))}` : ' · ไม่มีคนร้าย'}</li>`)
       .join('')}</ol></div>`;
   }
 
@@ -782,17 +818,17 @@
       </div>`,
     );
     const row = (r) => `<li class="${r.playerId === s.me.id ? 'me' : ''}">
-        <span class="oicon">${FATE_ICON[r.fate] || ''}</span>
+        <span class="oicon">${r.portrait ? `<img class="avatar sm" src="${esc(r.portrait)}" alt="">` : FATE_ICON[r.fate] || ''}</span>
         <span><b>${esc(r.name)}</b>${r.isBot ? ' <span class="badge">บอท</span>' : ''}${r.playerId === s.me.id ? ' <span class="badge cyan">คุณ</span>' : ''}<br><span class="muted">${esc(r.characterName || '-')} · ${esc(r.ultimate || '-')} ${traitBadge(r.trait)}${r.fakeRole ? ` <span class="badge purple">โรลปลอม: ${esc(r.fakeUltimate || '?')}</span>` : ''}${r.kills ? ` <span class="badge red">ฆ่า ${r.kills}</span>` : ''}</span></span>
-        <span style="text-align:right"><span class="badge ${FATE_CLASS[r.fate] || ''}">${FATE_LABEL[r.fate] || '-'}</span>${r.deathCauseLabel && r.fate !== 'executed' && r.fate !== 'punished' ? `<br><span class="muted">${esc(r.deathCauseLabel)}</span>` : ''}${r.eliminatedDay ? `<br><span class="muted">วันที่ ${r.eliminatedDay}</span>` : ''}${r.revived ? '<br><span class="badge yellow">เคยคืนชีพ</span>' : ''}</span>
+        <span style="text-align:right"><span class="badge ${FATE_CLASS[r.fate] || ''}">${FATE_ICON[r.fate] || ''} ${FATE_LABEL[r.fate] || '-'}</span>${r.deathCauseLabel && r.fate !== 'executed' && r.fate !== 'punished' ? `<br><span class="muted">${esc(r.deathCauseLabel)}</span>` : ''}${r.eliminatedDay ? `<br><span class="muted">${esc(timeText(r.eliminatedDay, r.eliminatedHour))}</span>` : ''}${r.revived ? '<br><span class="badge yellow">เคยคืนชีพ</span>' : ''}</span>
       </li>`;
     const o = s.outcome || { survived: [], died: [], unsolved: [] };
     $('#end-rank').innerHTML = `<div class="outcome">
       <div><h3 style="color:var(--green)">รอดชีวิต (${o.survived.length})</h3><ul>${o.survived.map(row).join('') || '<li class="muted">ไม่มีใครรอด</li>'}</ul></div>
       <div><h3 style="color:var(--red)">ไม่รอด (${o.died.length})</h3><ul>${o.died.map(row).join('') || '<li class="muted">ไม่มีใครตาย</li>'}</ul></div>
     </div>
-    <p class="muted" style="margin-top:.6rem">ของหนีถูกพบ ${o.escapeFound}/${o.escapeTotal} ชิ้น · ${esc(END_LABEL[s.endReason] || '')}</p>
-    ${o.unsolved?.length ? `<h3 style="margin-top:.8rem">คดีที่ไม่เคยถูกตัดสิน</h3>${o.unsolved.map((c) => `<div class="case"><b>${esc(c.victimName)}</b> — ${esc(c.causeLabel)}${c.killerName ? ` โดย <b>${esc(c.killerName)}</b>` : ''} ที่${esc(c.zoneName)} วันที่ ${c.day}${c.truthSummary ? `<br><span class="muted">${esc(c.truthSummary)}</span>` : ''}</div>`).join('')}` : ''}`;
+    <p class="muted" style="margin-top:.6rem">เล่นไป ${o.days} วัน ${o.hours} ชั่วโมง · ของหนีถูกพบ ${o.escapeFound}/${o.escapeTotal} ชิ้น · ${esc(END_LABEL[s.endReason] || '')}</p>
+    ${o.unsolved?.length ? `<h3 style="margin-top:.8rem">คดีที่ไม่เคยถูกตัดสิน</h3>${o.unsolved.map((c) => `<div class="case"><b>${esc(c.victimName)}</b> — ${esc(c.causeLabel)}${c.killerName ? ` โดย <b>${esc(c.killerName)}</b>` : ''} ที่${esc(c.zoneName)} ${esc(timeText(c.day, c.hour))}${c.truthSummary ? `<br><span class="muted">${esc(c.truthSummary)}</span>` : ''}</div>`).join('')}` : ''}`;
     $('#end-truth').innerHTML = s.lastResult ? resultHtml(s) : '';
     $('#end-controls').innerHTML = s.me.isHost
       ? `<button class="primary" data-action="restart">เล่นอีกครั้งกับคนเดิม</button> <button class="ghost" data-action="leave">ออกจากห้อง</button>`
@@ -884,6 +920,13 @@
         if (a.needsZone) payload.toZoneId = $('#move-body-to')?.value || '';
         if (a.danger && !(await confirmDialog(`ยืนยัน "${a.label}"? เลือกแล้วเปลี่ยนไม่ได้`))) break;
         await act('day:act', payload);
+        break;
+      }
+      case 'give': {
+        const itemId = $('#give-item')?.value;
+        const targetId = $('#give-to')?.value;
+        if (!itemId || !targetId) break;
+        if (await act('day:give', { targetId, itemId })) toast('ให้ของเรียบร้อย');
         break;
       }
       case 'ready':

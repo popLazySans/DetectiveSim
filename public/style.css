@@ -355,3 +355,21 @@ button.act.danger.selected { border-color: var(--red); background: rgba(255, 77,
 .events li { margin: 0.15rem 0; }
 .whereabouts .truth { color: var(--yellow, #ffd166); }
 .modal .case { margin-top: 0.4rem; }
+
+/* ---------- v2.1: avatars / roles / give ---------- */
+.phead { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.phead > div { min-width: 0; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid var(--line); background: var(--panel-2); }
+.avatar.lg { width: 64px; height: 64px; }
+.avatar.initial { display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-head); font-weight: 700; color: #fff; background: hsl(var(--hue, 200) 55% 42%); border-color: hsl(var(--hue, 200) 60% 60%); }
+.avatar.lg.initial { font-size: 1.6rem; }
+.pcard .ult .unknown { color: var(--purple); letter-spacing: 0.2em; }
+.pcard .ult .real { color: var(--text); font-family: var(--font-body); font-size: 0.82rem; }
+.rolebox { background: var(--panel-2); border: 1px solid var(--purple); border-radius: 8px; padding: 0.5rem 0.7rem; margin: 0.3rem 0; }
+.rolerow { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; padding: 0.15rem 0; }
+.rolerow .rlabel { color: var(--muted); font-size: 0.82rem; }
+.rolerow .rval { font-family: var(--font-head); font-weight: 600; text-align: right; }
+.rolerow .rval.unknown { color: var(--purple); letter-spacing: 0.2em; }
+.rolerow .rval.real { color: var(--pink); }
+.give { margin-top: 0.7rem; padding: 0.6rem 0.75rem; background: var(--panel-2); border: 1px dashed var(--yellow); border-radius: 8px; }
+.give select { max-width: 220px; }
