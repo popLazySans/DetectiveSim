@@ -276,7 +276,7 @@ export class Game {
 
   // ถือกุญแจที่ไขห้องนี้ได้ไหม (กุญแจประจำห้อง หรือกุญแจผู้ดูแลที่ไขได้ทุกห้อง)
   hasKeyFor(p, zoneId) {
-    return p.inventory.some((i) => i.kind === 'key' && i.unlocksZoneId === zoneId);
+    return p.inventory.some((i) => i.kind === 'key' && i.unlocksZoneIds?.includes(zoneId));
   }
 
   // คดีฆาตกรรมที่ศพยังไม่ถูกพบ/ประกาศ — คนที่ไม่ใช่คนร้ายของคดีเหล่านั้นลงมือซ้อนไม่ได้
@@ -545,14 +545,36 @@ export class Game {
     const want = CONFIG.LOCKED_ZONES >= 0 ? CONFIG.LOCKED_ZONES : explore.length <= 6 ? LOCKS.LOCKED_ZONES_SMALL : LOCKS.LOCKED_ZONES_LARGE;
     const toLock = shuffle(explore).slice(0, Math.min(want, Math.max(0, explore.length - 2)));
     for (const z of toLock) z.locked = true;
-    // กุญแจประจำห้อง: ทุกห้องที่ล็อกได้มีกุญแจดอกเดียว (LOCKS.KEYS_PER_ROOM) วางให้เห็นในห้องอื่นที่ไม่ได้ล็อกตั้งแต่เริ่ม เพื่อไม่ให้ติดตาย
+    // กุญแจ: ทั้งเกมมี 1–2 ดอก (LOCKS.MAX_KEYS) ดอกหนึ่งไขได้ 1–3 ห้อง (LOCKS.ROOMS_PER_KEY) แต่ละห้องมีกุญแจที่ไขได้ไม่เกินดอกเดียว
+    // ห้องที่ล็อกตั้งแต่เริ่มมีกุญแจเสมอ ห้องอื่นบางห้องไม่มีกุญแจเลย (ล็อกไม่ได้ เข้าได้เสมอ) · กุญแจวางให้เห็นในห้องที่ไม่ได้ล็อกและไม่ใช่ห้องที่มันไข
     const openZones = explore.filter((o) => !o.locked);
-    for (const z of explore) {
-      const spot = pick(openZones.filter((o) => o.id !== z.id)) || this.zones.get(loc.sleepZoneId);
-      const key = { id: `key_${z.id}`, name: `กุญแจ${z.name}`, description: `กุญแจเหล็กมีป้ายเขียนว่า "${z.name}" — ดอกเดียวในที่นี้ที่ใช้ล็อกและปลดล็อกประตูห้องนั้นได้`, kind: 'key', portable: true, hidden: false, isPart: false, unlocksZoneId: z.id, originZoneId: spot.id };
+    const keyCount = Math.max(1, Math.min(randInt(1, LOCKS.MAX_KEYS), explore.length));
+    const [minRooms, maxRooms] = LOCKS.ROOMS_PER_KEY;
+    const startLocked = shuffle(explore.filter((z) => z.locked));
+    const rest = shuffle(explore.filter((z) => !z.locked));
+    const low = Math.max(keyCount * minRooms, startLocked.length);
+    const high = Math.max(low, Math.min(keyCount * maxRooms, explore.length - 1)); // เหลืออย่างน้อย 1 ห้องที่ไม่มีกุญแจถ้าทำได้
+    const covered = [...startLocked, ...rest].slice(0, randInt(low, high));
+    const groups = Array.from({ length: keyCount }, () => []);
+    covered.forEach((z, i) => (i < keyCount ? groups[i] : pick(groups.filter((g) => g.length < maxRooms)) || groups[i % keyCount]).push(z));
+    groups.forEach((group, i) => {
+      if (!group.length) return;
+      const names = group.map((z) => z.name);
+      const spot = pick(openZones.filter((o) => !group.includes(o))) || this.zones.get(loc.sleepZoneId);
+      const key = {
+        id: `key_${i + 1}`,
+        name: group.length === 1 ? `กุญแจ${names[0]}` : `พวงกุญแจ ${group.length} ดอก`,
+        description: `กุญแจเหล็ก${group.length > 1 ? ` ${group.length} ดอกร้อยพวงเดียวกัน` : ''} มีป้ายเขียนว่า "${names.join(' / ')}" — ชุดเดียวในที่นี้ที่ใช้ล็อกและปลดล็อกประตูห้องเหล่านั้นได้`,
+        kind: 'key',
+        portable: true,
+        hidden: false,
+        isPart: false,
+        unlocksZoneIds: group.map((z) => z.id),
+        originZoneId: spot.id,
+      };
       spot.items.push(key);
-      z.keyItemId = key.id;
-    }
+      for (const z of group) z.keyItemId = key.id;
+    });
     // ที่สะเดาะกุญแจอย่างน้อย 1 ชิ้นต่อสถานที่ (ถ้าสถานที่ไม่ได้ให้มา)
     if (![...this.zones.values()].some((z) => z.items.some((i) => i.kind === 'lockpick'))) {
       const spot = pick(openZones) || this.zones.get(loc.sleepZoneId);
@@ -1065,7 +1087,7 @@ export class Game {
     const food = z.items.find((i) => i.kind === 'food');
     if (food) out.push({ type: 'eat', label: `🍞 กินอาหาร/ดื่มน้ำ (${food.name})`, desc: 'พักกินอะไรสักหน่อย — ใช้ทำภารกิจ "ไปกินอาหาร" ได้ · ระวัง ถ้ามีคนผสมยาพิษไว้คุณอาจไม่รู้ตัว' });
     if (z.lockable) {
-      const key = p.inventory.find((i) => i.kind === 'key' && (i.master || i.unlocksZoneId === z.id));
+      const key = p.inventory.find((i) => i.kind === 'key' && i.unlocksZoneIds?.includes(z.id));
       // ผู้เล่นรู้สถานะประตูตามที่สังเกตตอนต้นชั่วโมง (zoneMemory) ไม่ใช่สถานะจริงทันที — คนที่โดนล็อกใส่เงียบ ๆ จะเพิ่งได้ตัวเลือกปลดล็อกชั่วโมงถัดไป
       const knownLocked = p.zoneMemory[z.id]?.locked === true;
       if (key && !z.locked && !knownLocked) out.push({ type: 'lock', label: `🔒 ล็อกประตูห้องนี้ (ด้วย${key.name})`, desc: 'ชั่วโมงถัดไปคนที่ไม่มีกุญแจจะเข้าห้องนี้ไม่ได้ และคนข้างในที่ไม่มีกุญแจจะออกไม่ได้ (ถูกขัง) · คนในห้องตอนนี้จะยังไม่รู้ว่าถูกล็อกจนถึงชั่วโมงถัดไป · ผ่านได้แค่ด้วยกุญแจดอกนี้ ที่สะเดาะกุญแจ (2–3 ชม.) หรือนักสู้พังประตู (1–2 ชม.)' });
@@ -1497,7 +1519,7 @@ export class Game {
     const it = z.items.splice(idx, 1)[0];
     p.inventory.push(it);
     const who = this.who(p, z);
-    this.logTo(p, `🖐 คุณหยิบ${it.name}${it.isPart ? ' ⭐' : ''}มาไว้กับตัว${it.kind === 'key' && it.unlocksZoneId ? ` — ใช้ล็อก/ปลดล็อก${this.zoneName(it.unlocksZoneId)}ได้` : it.kind === 'key' && it.master ? ' — ไขประตูห้องได้ทุกห้อง' : ''}`, it.isPart ? 'escape' : 'action');
+    this.logTo(p, `🖐 คุณหยิบ${it.name}${it.isPart ? ' ⭐' : ''}มาไว้กับตัว${it.kind === 'key' && it.unlocksZoneIds?.length ? ` — ใช้ล็อก/ปลดล็อก${it.unlocksZoneIds.map((id) => this.zoneName(id)).join(', ')}ได้` : ''}`, it.isPart ? 'escape' : 'action');
     onObtainItem(this, p, it);
     this.recordEvent(`${this.nick(p)}หยิบ${it.name}จาก${this.zn(z)}`);
     for (const o of this.witnessesOf(p, z)) if (this.seen(p, 0.5)) this.logTo(o, `👀 คุณเห็น${who}หยิบ${it.name}ติดตัวไป`, 'witness');
@@ -1757,12 +1779,9 @@ export class Game {
     this.hour++;
     this.turn++;
     this.generating = 'มีคนพบศพ! กำลังประกาศ...';
-    const newly = [...this.bodies.values()].filter((b) => !b.judged && !b.announced && b.discoveredBy.size >= 1);
-    for (const b of newly) {
-      b.announced = true;
-      const c = this.caseOf(b.caseId);
-      if (c) c.announced = true;
-    }
+    // พบศพร่างเดียวก็พอ — ศพทุกร่างในสถานที่ถูกเปิดเผยพร้อมกัน (รวมร่างที่ยังไม่มีใครเคยเห็น) เพื่อให้ทุกคดีปิดในวันเดียวและไม่มีศพค้างข้ามวัน
+    const newly = [...this.bodies.values()].filter((b) => !b.judged && !b.announced);
+    const unseen = this.announceBodies(newly);
     for (const z of this.zones.values()) z.dark = false;
     for (const p of this.players.values()) {
       p.zoneMemory = {};
@@ -1772,7 +1791,8 @@ export class Game {
     await this.narrateCases();
     this.announcement = { day: this.day, hour: this.hour, turn: this.turn, caseIds: newly.map((b) => b.caseId) };
     const names = newly.map((b) => `${this.nick(this.players.get(b.victimId))} (ที่${this.zoneName(b.zoneId)})`).join(', ');
-    this.systemMessage(`🔔 ประกาศพบศพ! ${names} — ${this.timeLabel()}: รอบเก็บหลักฐาน ของในห้องถูกจัดใหม่ ทุกคนเลือกห้องที่จะไปสำรวจ 1 ห้องและทำได้ 1 อย่าง ก่อนเข้าสู่การตัดสิน (ภารกิจพักไว้ก่อน)`);
+    const extraNote = newly.length > 1 ? ` (ศพทุกร่างในสถานที่ถูกเปิดเผยพร้อมกัน${unseen.length ? ` รวมถึง ${unseen.length} ร่างที่ยังไม่มีใครเคยเห็น` : ''})` : '';
+    this.systemMessage(`🔔 ประกาศพบศพ! ${names}${extraNote} — ${this.timeLabel()}: รอบเก็บหลักฐาน ของในห้องถูกจัดใหม่ ทุกคนเลือกห้องที่จะไปสำรวจ 1 ห้องและทำได้ 1 อย่าง ก่อนเข้าสู่การตัดสิน (ภารกิจพักไว้ก่อน)`);
     this.generating = null;
     this.step = STEP.MOVE;
     this.moves = new Map();
@@ -1780,6 +1800,18 @@ export class Game {
     this.emit();
     this.armStepTimer();
     this.scheduleBots();
+  }
+
+  // ประกาศศพ: ทุกคนรู้ว่าใครตายและศพอยู่ห้องไหน (คืนรายชื่อร่างที่ยังไม่มีใครเคยเห็นมาก่อน)
+  announceBodies(list) {
+    const unseen = list.filter((b) => b.discoveredBy.size === 0);
+    for (const b of list) {
+      b.announced = true;
+      const c = this.caseOf(b.caseId);
+      if (c) c.announced = true;
+      for (const p of this.players.values()) p.knownBodies.add(b.victimId);
+    }
+    return unseen;
   }
 
   async narrateCases() {
@@ -1811,15 +1843,11 @@ export class Game {
     this.step = null;
     this.clearTimers();
     // ศพที่เพิ่งถูกพบระหว่างเก็บหลักฐานก็เข้าสู่การตัดสินด้วย
-    const extra = [...this.bodies.values()].filter((b) => !b.judged && !b.announced && b.discoveredBy.size >= 1);
+    const extra = [...this.bodies.values()].filter((b) => !b.judged && !b.announced);
     if (extra.length) {
       this.generating = 'พบศพเพิ่ม...';
       this.emit();
-      for (const b of extra) {
-        b.announced = true;
-        const c = this.caseOf(b.caseId);
-        if (c) c.announced = true;
-      }
+      this.announceBodies(extra);
       await this.narrateCases();
       this.systemMessage(`🔔 พบศพเพิ่มระหว่างเก็บหลักฐาน: ${extra.map((b) => this.nick(this.players.get(b.victimId))).join(', ')}`);
       this.generating = null;
@@ -1923,6 +1951,8 @@ export class Game {
         for (const c of murders) if (c.killerId === k.id) c.judged = true;
       }
       for (const c of open) if (!c.killerId || !this.players.get(c.killerId)?.alive) c.judged = true;
+      // คดีที่เหลือ (คนร้ายยังมีชีวิตแต่ไม่ได้ถูกโหวต) ปิดไปพร้อมกันโดยจับคนร้ายไม่ได้ — ศพทุกร่างถูกเก็บก่อนวันใหม่ ตัวตนคนร้ายไม่ถูกเปิดเผยจนกว่าเกมจบ
+      for (const c of open) if (!c.judged) { c.judged = true; c.unsolved = true; }
     } else {
       for (const c of murders) {
         const k = this.players.get(c.killerId);
@@ -1978,19 +2008,22 @@ export class Game {
       day: this.day,
       hour: this.hour,
       victims: judgedNow.map((c) => this.nick(this.players.get(c.victimId))),
-      culprits: judgedNow.filter((c) => c.killerId).map((c) => this.nick(this.players.get(c.killerId))),
+      culprits: judgedNow.filter((c) => c.killerId && !c.unsolved).map((c) => this.nick(this.players.get(c.killerId))),
+      unsolved: judgedNow.filter((c) => c.unsolved).map((c) => this.nick(this.players.get(c.victimId))),
       votedName: votedId === NONE_VOTE ? 'ไม่มีคนร้ายให้ลงโทษ' : this.nick(this.players.get(votedId)),
       correct,
     });
     this.lastTrialTurn = this.turn;
     this.runoff = null;
     if (correct) {
+      const unsolvedNames = judgedNow.filter((c) => c.unsolved).map((c) => this.nick(this.players.get(c.victimId)));
       this.systemMessage(
-        votedId === NONE_VOTE
-          ? judgedNow.some((c) => c.killerId)
+        (votedId === NONE_VOTE
+          ? judgedNow.some((c) => c.killerId && !c.unsolved)
             ? `โหวตถูกต้อง! คนร้ายของคดีนี้ตายไปก่อนแล้ว จึงไม่มีใครให้ลงโทษ`
             : `โหวตถูกต้อง! ไม่มีคนร้ายในคดีนี้ — ไม่มีใครถูกประหาร`
-          : `โหวตถูกต้อง! คนร้ายคือ ${this.nick(this.players.get(votedId))} (${this.players.get(votedId).name}) และถูกประหาร`,
+          : `โหวตถูกต้อง! คนร้ายคือ ${this.nick(this.players.get(votedId))} (${this.players.get(votedId).name}) และถูกประหาร`) +
+          (unsolvedNames.length ? ` · คดีของ ${unsolvedNames.join(', ')} ถูกปิดโดยจับคนร้ายไม่ได้` : ''),
       );
       this.phase = PHASE.TRIAL_RESULT;
       this.emit();
@@ -2000,12 +2033,14 @@ export class Game {
     }
   }
 
-  caseReveal(c) {
+  caseReveal(c, full = false) {
     const v = this.players.get(c.victimId);
-    const k = c.killerId ? this.players.get(c.killerId) : null;
-    const d = c.designatedId ? this.players.get(c.designatedId) : null;
+    const hide = !!c.unsolved && !full; // คดีที่ปิดโดยจับคนร้ายไม่ได้: ไม่เปิดเผยตัวคนร้ายจนกว่าเกมจบ
+    const k = c.killerId && !hide ? this.players.get(c.killerId) : null;
+    const d = c.designatedId && !hide ? this.players.get(c.designatedId) : null;
     return {
       id: c.id,
+      unsolved: !!c.unsolved,
       day: c.day,
       hour: c.hour,
       victimName: this.charOf(v)?.name || v.name,
@@ -2027,7 +2062,7 @@ export class Game {
       designatedName: d ? this.nick(d) : null,
       designatedHeard: !!c.designatedHeard,
       title: c.narrative?.title || '',
-      truthSummary: c.narrative?.truthSummary || '',
+      truthSummary: hide ? 'คดีนี้ถูกปิดโดยที่ยังจับคนร้ายไม่ได้ — คนร้ายยังลอยนวลอยู่' : c.narrative?.truthSummary || '',
     };
   }
 
@@ -2100,7 +2135,7 @@ export class Game {
 
   // วันใหม่หลังตัดสิน: ทุกอย่างที่เกี่ยวกับคดีที่ตัดสินแล้วหายไปเหมือนไม่เคยเกิดขึ้น (ศพ หลักฐาน รอยเปื้อน ความจำเรื่องศพ)
   // ของของผู้ตายยังตกอยู่ตรงจุดที่ตาย (ถูกวางไว้ตั้งแต่ตอนตาย) ของในมือคนเป็นยังอยู่ ทุกคนกลับไปเริ่มที่ห้องนอนรวม
-  // ศพที่ยังไม่ถูกพบ (คดีที่ยังไม่ตัดสิน) ยังอยู่ที่เดิมพร้อมหลักฐานของมัน · อาหารที่ยังมีพิษและประตูที่พังคงอยู่
+  // ศพทุกร่างถูกเปิดเผยพร้อมกันตอนประกาศและทุกคดีปิดตอนตัดสิน จึงไม่มีศพเหลือข้ามวัน · อาหารที่ยังมีพิษและประตูที่พังคงอยู่
   resetAfterTrial() {
     const removed = [...this.bodies.values()].filter((b) => b.judged);
     for (const b of removed) this.bodies.delete(b.victimId);
@@ -2220,7 +2255,7 @@ export class Game {
         .filter((p) => DEAD_FATES.includes(p.fate))
         .sort((a, b) => (a.eliminatedDay || 0) * 1000 + (a.eliminatedHour || 0) - ((b.eliminatedDay || 0) * 1000 + (b.eliminatedHour || 0)))
         .map(row),
-      unsolved: this.cases.filter((c) => !c.judged).map((c) => this.caseReveal(c)),
+      unsolved: this.cases.filter((c) => !c.judged || c.unsolved).map((c) => this.caseReveal(c, true)),
       exits: exits.map((x) => ({ name: x.name, zoneName: this.zoneName(x.zoneId), route: x.route, discovered: x.discoveredBy.size, open: x.open, openedBy: x.openedBy.map((id) => this.nick(this.players.get(id))) })),
       days: this.day,
       hours: this.turn,
@@ -2413,7 +2448,7 @@ export class Game {
   }
 
   itemView(i) {
-    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, description: i.description, trapType: i.trapType || null, unlocksZoneName: i.unlocksZoneId ? this.zoneName(i.unlocksZoneId) : null, master: !!i.master, exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
+    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, description: i.description, trapType: i.trapType || null, unlocksZoneNames: (i.unlocksZoneIds || []).map((id) => this.zoneName(id)), exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
   }
 
   viewFor(playerId) {

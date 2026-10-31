@@ -259,7 +259,7 @@
           <label>จำนวนบอท <select id="bot-count">${range(0, maxBots).map((n) => `<option value="${n}" ${n === bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
           <span class="muted">ผู้เล่นทั้งหมด ${s.players.length}/${s.config.maxPlayers} (ขั้นต่ำ ${s.config.minPlayers})</span>
         </div>
-        <p class="muted">บอทจะเดินสำรวจ ทำภารกิจ และโหวตเอง (บางครั้งก็ลงมือฆ่า) · ไม่มีเวลาจำกัด · ประกาศศพเมื่อมีคนพบ ${s.config.bodyDiscoverers} คน · ภารกิจมีเวลา ${s.config.objectiveHours} ชั่วโมง</p>
+        <p class="muted">บอทจะเดินสำรวจ ทำภารกิจ และโหวตเอง (บางครั้งก็ลงมือฆ่า) · ไม่มีเวลาจำกัด · ประกาศศพเมื่อมีคนพบ ${s.config.bodyDiscoverers} คน · ภารกิจมีเวลา 3–5 ชั่วโมง</p>
         <p class="muted">ชวนเพื่อน: ส่งลิงก์ <code>${esc(inviteLink(s.code))}</code> หรือรหัส <b>${esc(s.code)}</b> ${isLocalHost() ? '<br><span class="warn">⚠ ลิงก์นี้เป็น localhost เพื่อนเครื่องอื่นเปิดไม่ได้ — เปิดเว็บผ่าน IP ในวง Wi-Fi หรือ URL จาก npm run share แล้วค่อยคัดลอกลิงก์ (ดู README หัวข้อ "เล่นกับเพื่อน")</span>' : ''}</p>
         <button class="primary" data-action="start" ${s.players.length < s.config.minPlayers ? 'disabled' : ''}>เริ่มเกม</button>`
       : `<h3>รอหัวห้องเริ่มเกม</h3><p class="muted">ผู้เล่น ${s.players.length}/${s.config.maxPlayers} · ชวนเพื่อนเพิ่มด้วยลิงก์ <code>${esc(inviteLink(s.code))}</code> หรือรหัส <b>${esc(s.code)}</b></p>`);
@@ -429,7 +429,7 @@
           for (const x of exitsHere) tags.push(`<span class="badge yellow" title="${esc(x.requirement)}">🚪 ${esc(x.name)}${x.open ? ' (เปิดแล้ว)' : ''}</span>`);
           if (mem?.broken) tags.push('<span class="badge" title="ประตูถูกพังแล้ว ล็อกไม่ได้อีก">🚪 ประตูพัง</span>');
           else if (mem?.locked) {
-            const hasKey = me.inventory.some((i) => i.kind === 'key' && i.unlocksZoneName === z.name);
+            const hasKey = me.inventory.some((i) => i.kind === 'key' && (i.unlocksZoneNames || []).includes(z.name));
             const hint = hasKey ? 'คุณมีกุญแจ' : me.door?.means ? me.door.means.label : 'ต้องมีกุญแจหรือที่สะเดาะกุญแจ';
             tags.push(`<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูล็อกอยู่ (อาจเปลี่ยนไปแล้ว) · ${esc(hint)}">🔒 ล็อกอยู่ · ${esc(hint)}</span>`);
           }
@@ -643,7 +643,7 @@
           <p>${esc(c.truthSummary)}</p>
           <ul class="obs">
             <li>ผู้ตาย: <b>${esc(c.victimName)}</b> (${esc(c.victimPlayer)}) · ที่${esc(c.zoneName)} · ${esc(timeText(c.day, c.hour))}</li>
-            <li>คนร้าย: <b>${c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName && !c.killerAlive && !r.executedId ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : ''}</li>
+            <li>คนร้าย: <b>${c.unsolved ? 'ยังจับไม่ได้ — คนร้ายยังลอยนวล' : c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName && !c.killerAlive && !r.executedId ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : ''}</li>
             ${c.weaponName ? `<li>อาวุธ: ${esc(c.weaponName)}${c.messy ? ' · ลงมือแบบเลอะเทอะ' : ' · ลงมือเงียบเชียบ'}${c.moved ? ' · ศพถูกย้าย' : ''}</li>` : ''}
             ${c.witnesses?.length ? `<li>คนที่เห็นตอนลงมือ: ${esc(c.witnesses.join(', '))}</li>` : ''}
             ${c.present?.length ? `<li>คนที่อยู่ในห้องตอนนั้น: ${esc(c.present.join(', '))}</li>` : ''}
@@ -708,7 +708,7 @@
     const objs = me.objectives || [];
     return `<div class="card inv">
       <h3>🎒 ของที่ถือ (${inv.length}/${s.config.inventoryMax})</h3>
-      ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''} ${i.kind === 'trap' ? 'trap' : ''}" title="${esc(i.description || '')}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}${i.unlocksZoneName ? ` <small>(ไข${esc(i.unlocksZoneName)})</small>` : i.master ? ' <small>(ไขได้ทุกห้อง)</small>' : i.exitName ? ` <small>(${esc(i.exitName)})</small>` : ''}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
+      ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''} ${i.kind === 'trap' ? 'trap' : ''}" title="${esc(i.description || '')}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}${i.unlocksZoneNames?.length ? ` <small>(ไข${esc(i.unlocksZoneNames.join(', '))})</small>` : i.exitName ? ` <small>(${esc(i.exitName)})</small>` : ''}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
       ${exitsHtml(s)}
       ${s.config.objectives ? `<h3 style="margin-top:.7rem">📋 ภารกิจลับ</h3>
       ${objs.length ? objs.map((o) => `<div class="objective ${o.done ? 'done' : o.remainingHours <= 1 ? 'due' : ''}">${o.done ? (o.forgiven ? '➖' : '✅') : '•'} ${esc(o.text)} ${objectiveBadge(o)}</div>`).join('') : '<p class="muted">ไม่มีภารกิจค้าง</p>'}
@@ -884,7 +884,7 @@
     </div>
     <p class="muted" style="margin-top:.6rem">เล่นไป ${o.days} วัน ${o.hours} ชั่วโมง · ${esc(END_LABEL[s.endReason] || '')}</p>
     ${o.exits?.length ? `<h3 style="margin-top:.8rem">ทางออกของสถานที่นี้</h3>${o.exits.map((x) => `<div class="case">${ROUTE_ICON[x.route] || '🚪'} <b>${esc(x.name)}</b> ที่${esc(x.zoneName)} — ${x.open ? `<span class="badge green">เปิดสำเร็จโดย ${esc(x.openedBy.join(', '))}</span>` : `<span class="badge">มีคนค้นพบ ${x.discovered} คน ไม่ได้เปิด</span>`}</div>`).join('')}` : ''}
-    ${o.unsolved?.length ? `<h3 style="margin-top:.8rem">คดีที่ไม่เคยถูกตัดสิน</h3>${o.unsolved.map((c) => `<div class="case"><b>${esc(c.victimName)}</b> — ${esc(c.causeLabel)}${c.killerName ? ` โดย <b>${esc(c.killerName)}</b>` : ''} ที่${esc(c.zoneName)} ${esc(timeText(c.day, c.hour))}${c.truthSummary ? `<br><span class="muted">${esc(c.truthSummary)}</span>` : ''}</div>`).join('')}` : ''}`;
+    ${o.unsolved?.length ? `<h3 style="margin-top:.8rem">คดีที่ไม่เคยจับคนร้ายได้</h3>${o.unsolved.map((c) => `<div class="case"><b>${esc(c.victimName)}</b> — ${esc(c.causeLabel)}${c.killerName ? ` โดย <b>${esc(c.killerName)}</b>` : ''} ที่${esc(c.zoneName)} ${esc(timeText(c.day, c.hour))}${c.truthSummary ? `<br><span class="muted">${esc(c.truthSummary)}</span>` : ''}</div>`).join('')}` : ''}`;
     $('#end-truth').innerHTML = s.lastResult ? resultHtml(s) : '';
     $('#end-controls').innerHTML = s.me.isHost
       ? `<button class="primary" data-action="restart">เล่นอีกครั้งกับคนเดิม</button> <button class="ghost" data-action="leave">ออกจากห้อง</button>`

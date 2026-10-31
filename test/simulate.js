@@ -3,7 +3,7 @@
 // รัน: npm test
 import { Game, PHASE, STEP, CONFIG, NONE_VOTE, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap, MURDER_CAUSES } from '../server/game.js';
 import { createAI } from '../server/ai.js';
-import { RECIPES, OBJECTIVE_HOURS } from '../server/rules.js';
+import { RECIPES, OBJECTIVE_HOURS, LOCKS } from '../server/rules.js';
 
 CONFIG.BOT_DELAY_SCALE = 0.02;
 CONFIG.STEP_TIMEOUT_MS = 0;
@@ -11,6 +11,30 @@ CONFIG.STEP_TIMEOUT_MS = 0;
 CONFIG.MAX_HOURS = 36;
 
 const quietLog = { info() {}, warn() {}, error: (...a) => console.error(...a), log() {} };
+
+// ผังกุญแจ: 1–2 ดอกทั้งเกม ดอกละ 1–3 ห้อง ห้องหนึ่งมีกุญแจที่ไขได้ไม่เกินดอกเดียว บางห้องไม่มีกุญแจ · ตอนเริ่ม: ห้องที่ล็อกมีกุญแจเสมอ และกุญแจวางในห้องเปิดที่มันไม่ได้ไข
+function assertKeyLayout(game, atStart) {
+  const zones = [...game.zones.values()];
+  const allItems = zones.flatMap((z) => z.items);
+  const keys = allItems.filter((i) => i.kind === 'key' && i.unlocksZoneIds);
+  assert(!allItems.some((i) => i.master), 'no master keys exist');
+  assert(keys.length >= 1 && keys.length <= LOCKS.MAX_KEYS, `1–${LOCKS.MAX_KEYS} room keys exist (${keys.length})`);
+  for (const k of keys) assert(k.unlocksZoneIds.length >= LOCKS.ROOMS_PER_KEY[0] && k.unlocksZoneIds.length <= LOCKS.ROOMS_PER_KEY[1], `key opens ${LOCKS.ROOMS_PER_KEY.join('–')} rooms (${k.unlocksZoneIds.length})`);
+  for (const z of zones) {
+    const openers = keys.filter((k) => k.unlocksZoneIds.includes(z.id));
+    assert(openers.length <= 1, `at most one key opens ${z.name}`);
+    assert((z.keyItemId || null) === (openers[0]?.id || null), `keyItemId matches the key for ${z.name}`);
+    if (!z.lockable) assert(openers.length === 0, 'the sleep zone has no key');
+    if (atStart && z.locked) assert(openers.length === 1, `start-locked ${z.name} has a key`);
+  }
+  assert(zones.some((z) => z.lockable && !z.keyItemId), 'at least one room has no key at all');
+  if (atStart) {
+    for (const k of keys) {
+      const spot = zones.find((z) => z.items.includes(k));
+      assert(spot && !spot.locked && (!k.unlocksZoneIds.includes(spot.id) || spot.id === game.location.sleepZoneId), `${k.name} placed visible in an unlocked room it does not open`);
+    }
+  }
+}
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const chance = (p) => Math.random() < p;
 
@@ -159,8 +183,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     if (strategy === 'camp') return campZone();
     if (strategy === 'locks') {
       // คนที่มีกุญแจไปห้องของกุญแจนั้น คนอื่นพยายามเข้าห้องที่ล็อก (ทดสอบการชนประตู)
-      const key = p.inventory.find((i) => i.kind === 'key' && i.unlocksZoneId);
-      if (key && chance(0.7)) return key.unlocksZoneId;
+      const key = p.inventory.find((i) => i.kind === 'key' && i.unlocksZoneIds?.length);
+      if (key && chance(0.7)) return pick(key.unlocksZoneIds);
       const locked = [...game.zones.values()].filter((z) => z.locked);
       if (locked.length && chance(0.5)) return pick(locked).id;
     }
@@ -384,6 +408,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
           switch (game.phase) {
             case PHASE.DAY:
             case PHASE.INVESTIGATION: {
+              if (game.phase === PHASE.INVESTIGATION) assert([...game.bodies.values()].every((b) => b.announced), 'all bodies are announced together once one is found');
               if (!rolesChecked && game.characters.length) {
                 rolesChecked = true;
                 const n = game.characters.length;
@@ -412,8 +437,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   assert(keyZone && !keyZone.locked && keyZone.id !== z.id, `key for ${z.name} placed in an unlocked other zone`);
                 }
                 const allItems = [...game.zones.values()].flatMap((z) => z.items);
-                assert(!allItems.some((i) => i.master), 'no master keys exist');
-                for (const z of game.zones.values()) if (z.lockable) assert(allItems.filter((i) => i.kind === 'key' && i.unlocksZoneId === z.id).length === 1, `exactly one key for ${z.name}`);
+                assertKeyLayout(game, true);
                 assert(allItems.some((i) => i.kind === 'lockpick'), 'a lockpick exists somewhere');
                 assert([...game.zones.values()].some((z) => z.items.some((i) => i.kind === 'food')), 'location has food');
                 assert(game.day === 1 && game.hour === 1 && game.turn === 1, 'game starts at day 1 hour 1');
@@ -495,6 +519,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               break;
             }
             case PHASE.TRIAL: {
+              assert([...game.bodies.values()].every((b) => b.announced), 'every body is part of the trial');
               if (game.runoff && game.runoff.number > stats.runoffs) stats.runoffs = game.runoff.number;
               const pendingVote = humansAlive().filter((p) => !game.confirmedVotes.has(p.id));
               for (const p of pendingVote) {
@@ -508,7 +533,9 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               const r = game.lastResult;
               assert(r && Array.isArray(r.cases) && r.cases.length >= 1, 'result has judged cases');
               assert(Array.isArray(r.timeline) && r.timeline.length >= 1 && r.timeline.every((t) => t.positions.length && t.positions.every((x) => x.zoneName) && t.hour >= 1), 'result has timeline positions with hours');
-              for (const c of r.cases) assert(c.victimName && c.zoneName && c.causeLabel && c.killerName && c.hour >= 1, 'case reveal complete');
+              for (const c of r.cases) assert(c.victimName && c.zoneName && c.causeLabel && (c.killerName || c.unsolved) && c.hour >= 1, 'case reveal complete');
+              for (const c of r.cases) if (c.unsolved) assert(!c.killerName && !c.killerPlayer && !c.designatedName && game.players.get(game.caseOf(c.id).killerId)?.alive, 'an unsolved case hides its still-living culprit');
+              assert(!r.stillOpen?.length && game.cases.filter((c) => c.announced).every((c) => c.judged), 'every announced case is closed by the trial');
               if (r.votedId === NONE_VOTE) stats.noneVotes++;
               if (r.correct && r.executedId) assert(game.players.get(r.executedId).fate === 'executed', 'executed fate');
               const rv = game.viewFor(ids[0]);
@@ -520,7 +547,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               for (const p of game.players.values()) if (p.revived && p.revivedDay === game.day) objectiveSeen.delete(p.id);
               if (game.phase !== PHASE.ENDED) {
                 assert(game.day === dayBefore + 1 && game.hour === 1, 'trial ends the day; new day starts at hour 1');
-                assert([...game.bodies.values()].every((b) => !b.judged), 'judged bodies are removed after the trial');
+                assert(game.bodies.size === 0, 'no bodies remain after the trial (all announced and judged together)');
                 for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of judged cases is wiped');
                 for (const p of game.alivePlayers()) {
                   assert(p.zoneId === game.location.sleepZoneId, 'everyone restarts the day in the sleep zone');
@@ -586,7 +613,10 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   if (game.endReason === 'wrong_vote') {
     assert(all.every((p) => !p.alive), 'wrong vote kills everyone');
     // only culprits of cases that reached a trial escape; a killer whose body was never found is punished with everyone else
-    for (const c of game.cases.filter((x) => x.killerId && x.announced)) assert(['escaped', 'executed', 'victim'].includes(game.players.get(c.killerId).fate), `killer fate after wrong vote (${game.players.get(c.killerId).fate})`);
+    for (const c of game.cases.filter((x) => x.killerId && x.announced && !x.unsolved)) {
+      const k = game.players.get(c.killerId);
+      assert(['escaped', 'executed', 'victim'].includes(k.fate) || k.revived, `killer fate after wrong vote (${k.fate})`);
+    }
   }
   if (game.endReason === 'last_one') assert(all.filter((p) => p.alive).length <= 1, 'last_one leaves ≤1 alive');
   if (game.endReason === 'escape') assert([...game.exits.values()].some((x) => x.open) && all.filter((p) => p.fate === 'survivor').length >= 1, 'escape ends with an open exit and survivors');
@@ -671,16 +701,21 @@ async function unitTests() {
   game.resolveMoves();
   Math.random = realRandom;
   assert(!c.alive && c.deathCause === 'trap' && game.cases.at(-1).trapType === 'blade' && game.cases.at(-1).killerId === a.id, 'entering a trapped room triggers the blade trap');
-  // 4) ล็อกห้อง: ไม่มีกุญแจเข้าไม่ได้ (เด้งกลับ) มีกุญแจเข้าได้ และคนข้างในที่ไม่มีกุญแจออกไม่ได้ (ถูกขัง) · กุญแจมีดอกเดียวต่อห้อง
+  // 4) ล็อกห้อง: ไม่มีกุญแจเข้าไม่ได้ (เด้งกลับ) มีกุญแจเข้าได้ และคนข้างในที่ไม่มีกุญแจออกไม่ได้ (ถูกขัง) · กุญแจทั้งเกม ≤2 ดอก ห้องละไม่เกินดอกเดียว
   game.bodies = new Map(); // ล้างศพจากข้อก่อน ไม่ให้ประกาศพบศพมารบกวน
   game.cases = [];
   const allItems = zones.flatMap((z) => z.items);
-  assert(!allItems.some((i) => i.master), 'no master keys exist');
-  for (const z of zones) if (z.lockable) assert(allItems.filter((i) => i.kind === 'key' && i.unlocksZoneId === z.id).length === 1, `exactly one key for ${z.name}`);
+  assertKeyLayout(game, false);
   assert(allItems.some((i) => i.kind === 'lockpick'), 'a lockpick exists in the world');
-  const locked = zones.find((z) => z.locked);
+  let locked = zones.find((z) => z.locked && z.keyItemId);
+  if (!locked) {
+    locked = zones.find((z) => z.lockable && z.keyItemId);
+    locked.locked = true;
+  }
   const key = allItems.find((i) => i.id === locked.keyItemId);
-  assert(locked && key, 'a locked zone with its key exists');
+  assert(locked && key && key.unlocksZoneIds.includes(locked.id), 'a locked zone with its key exists');
+  const keyless = zones.find((z) => z.lockable && !z.keyItemId);
+  assert(keyless && !game.hasKeyFor({ inventory: [key] }, keyless.id), 'a room without a key cannot be opened by the existing key');
   a.alive = true;
   b.alive = true;
   a.inventory = [];
@@ -727,6 +762,8 @@ async function unitTests() {
   // a ไม่มีกุญแจแล้วและรู้ว่าล็อก → ถูกขัง: เลือกห้องอื่นไม่ได้ และถ้าหลุดไปถึง resolve ก็ยังอยู่ที่เดิม
   game.step = STEP.MOVE;
   game.moves = new Map();
+  const aTrait0 = game.charOf(a).ultimate.trait;
+  game.charOf(a).ultimate.trait = 'none'; // a combat trait could break out of the room; the lock-in check needs a player with no way out
   let stuck = false;
   try { game.chooseMove(a.id, from.id); } catch (e) { stuck = /ถูกล็อกอยู่ใน/.test(e.message); }
   assert(stuck && game.lockedIn(a) && !game.doorMeans(a) && !game.moves.has(a.id), 'a locked-in player without key or tools cannot choose another room');
@@ -787,7 +824,7 @@ async function unitTests() {
   assert(game.doorMeans(a)?.method === 'pick' && game.doorMeans(a).item === toolItem, 'tech uses any tool as a lockpick');
   aChar.ultimate.trait = 'none';
   assert(!game.doorMeans(a), 'ordinary people need a real lockpick');
-  aChar.ultimate.trait = realTrait;
+  aChar.ultimate.trait = aTrait0;
   a.inventory = [];
   b.inventory = [];
   // 5) ทางออก: ไม่รู้จัก → ไม่มีแอ็กชัน, ค้นพบแล้วจึงมี, เส้นทางแบบกุญแจเปิดได้เมื่อถือกุญแจ
@@ -892,8 +929,56 @@ async function unitTests() {
     assert(yItems.every((i) => scene.items.includes(i)) && x.inventory.map((i) => i.id).join(',') === xInv, 'dead player items stay where they died, survivors keep theirs');
     assert([x, w].every((p) => p.zoneId === g3.location.sleepZoneId), 'survivors restart at the sleep zone');
   }
+  // 8) พบศพร่างเดียว → เปิดเผยทุกร่าง · การตัดสินปิดทุกคดี · คดีที่คนร้ายไม่ถูกโหวตปิดโดยไม่เฉลย · ไม่มีศพเหลือหลังวันใหม่
+  {
+    const g4 = new Game({ code: 'UNIT4', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids4 = ['m1-xxxxxxxx', 'm2-xxxxxxxx', 'm3-xxxxxxxx', 'm4-xxxxxxxx', 'm5-xxxxxxxx', 'm6-xxxxxxxx'];
+    for (const [i, id] of ids4.entries()) g4.addPlayer({ id, name: `หลายศพ ${i + 1}` });
+    g4.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g4.start(ids4[0]);
+    g4.clearTimers();
+    const [k1, v1, k2, v2, s1, s2] = ids4.map((id) => g4.players.get(id));
+    const rooms = [...g4.zones.values()].filter((z) => z.id !== g4.location.sleepZoneId);
+    k1.zoneId = v1.zoneId = rooms[0].id;
+    k2.zoneId = v2.zoneId = rooms[1].id;
+    s1.zoneId = s2.zoneId = rooms[2].id;
+    g4.phase = PHASE.DAY;
+    g4.step = STEP.ACT;
+    Math.random = () => 0;
+    g4.do_attack(k1, { targetId: v1.id });
+    g4.do_attack(k2, { targetId: v2.id });
+    Math.random = realRandom;
+    assert(!v1.alive && !v2.alive && g4.bodies.size === 2 && g4.cases.length === 2, 'two murders by two different killers');
+    // มีแค่ s1 ที่เดินมาเจอศพ v1 — ศพ v2 ยังไม่มีใครเห็น
+    g4.bodies.get(v1.id).discoveredBy.add(s1.id);
+    s1.knownBodies.add(v1.id);
+    await g4.startInvestigation();
+    assert(g4.phase === PHASE.INVESTIGATION && [...g4.bodies.values()].every((b) => b.announced) && g4.cases.every((c) => c.announced), 'finding one body announces every body');
+    assert([s1, s2, k1, k2].every((p) => p.knownBodies.has(v1.id) && p.knownBodies.has(v2.id)), 'everyone now knows where both bodies are');
+    const ann = g4.chat.at(-1).text;
+    assert(/ศพทุกร่างในสถานที่ถูกเปิดเผยพร้อมกัน/.test(ann) && /ยังไม่มีใครเคยเห็น/.test(ann), 'announcement mentions the never-seen body');
+    await g4.beginTrial();
+    for (const p of g4.alivePlayers()) {
+      g4.castVote(p.id, p.id === k1.id ? k2.id : k1.id); // โหวตตัวเองไม่ได้
+      g4.confirmVote(p.id);
+    }
+    assert(g4.phase === PHASE.TRIAL_RESULT && g4.lastResult.correct && k1.fate === 'executed' && k2.alive, 'voting one of two killers is correct; the other stays alive');
+    const c2 = g4.cases.find((c) => c.victimId === v2.id);
+    assert(c2.judged && c2.unsolved && g4.cases.every((c) => c.judged) && [...g4.bodies.values()].every((b) => b.judged), "every announced case closes; the unvoted killer's case is marked unsolved");
+    const r2 = g4.lastResult.cases.find((c) => c.id === c2.id);
+    assert(r2 && r2.unsolved && !r2.killerName && !r2.killerPlayer && !r2.designatedName && !r2.truthSummary.includes(g4.nick(k2)), 'the unsolved case hides its culprit');
+    assert(!g4.history.at(-1).culprits.includes(g4.nick(k2)) && g4.history.at(-1).unsolved.includes(g4.nick(v2)), 'history does not name the uncaught killer');
+    assert(g4.viewFor(s1.id).lastResult.cases.every((c) => c.killerPlayer !== k2.name), 'client view does not name the uncaught killer');
+    assert(/ถูกปิดโดยจับคนร้ายไม่ได้/.test(g4.chat.at(-1).text), 'verdict message says a case closed unsolved');
+    await g4.nextRound(ids4[0]);
+    assert(g4.phase === PHASE.DAY && g4.bodies.size === 0 && g4.day === 2, 'new day starts with no bodies left');
+    g4.endGame('timeout');
+    const un = g4.outcome.unsolved.find((c) => c.id === c2.id);
+    assert(un && un.killerPlayer === k2.name, 'game-over summary finally reveals the uncaught killer');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (one key per room, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / unsolved cases close');
 }
 
 try {
