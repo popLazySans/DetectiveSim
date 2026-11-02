@@ -618,7 +618,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     stats.forced += p.log.filter((l) => l.text.startsWith('⏰')).length;
     stats.objectivesDone += p.log.filter((l) => l.text.startsWith('✅')).length;
     stats.crafts += p.log.filter((l) => l.text.startsWith('🛠')).length;
-    stats.trapsPlaced += p.log.filter((l) => l.text.startsWith('🪤 คุณตั้ง')).length;
+    stats.trapsPlaced += p.log.filter((l) => l.text.startsWith('🪤 คุณตั้ง') || l.text.startsWith('🪤 คุณติดตั้ง')).length; // รวมกับดักประตู
     stats.poisonings += p.log.filter((l) => l.text.startsWith('☠ คุณผสม')).length;
     stats.locks += p.log.filter((l) => l.text.startsWith('🔒 คุณล็อก')).length;
     stats.breaks += p.log.filter((l) => l.text.startsWith('💥 คุณพังประตู')).length;

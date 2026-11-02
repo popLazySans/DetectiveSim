@@ -2456,7 +2456,15 @@ export class Game {
     if (inExplore && this.step === STEP.MOVE) {
       for (const b of bots) {
         this.setTimer(() => {
-          if ((this.phase === PHASE.DAY || this.phase === PHASE.INVESTIGATION) && this.step === STEP.MOVE && !this.moves.has(b.id) && b.alive) this.chooseMove(b.id, this.botPickZone(b));
+          if ((this.phase === PHASE.DAY || this.phase === PHASE.INVESTIGATION) && this.step === STEP.MOVE && !this.moves.has(b.id) && b.alive) {
+            // ความผิดพลาดใน timer ของบอทต้องไม่ทำให้เซิร์ฟเวอร์ล้ม — เลือกห้องพลาดให้อยู่ห้องเดิม
+            try {
+              this.chooseMove(b.id, this.botPickZone(b));
+            } catch (err) {
+              this.log.error(`[room ${this.code}] bot move failed`, err);
+              try { this.chooseMove(b.id, b.zoneId); } catch {}
+            }
+          }
         }, delay(1500, 3000));
       }
     }
