@@ -5,6 +5,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { mockUltimates, mockLocation, mockReviveEvent, mockNarrateCase, TRAIT_KEYS } from './mock.js';
+import { isConductive } from './rules.js';
 
 const UltimatesSchema = z.object({
   ultimates: z.array(
@@ -237,6 +238,7 @@ ${characters.map(fmtCharacter).join('\n')}
           // กันขาด: ของที่กลไกเกมต้องมี
           if (!all().some((i) => i.kind === 'food')) inject('food', 'ตู้เสบียงสำรอง', 'อาหารกระป๋อง ขนมปัง และน้ำดื่ม');
           if (!all().some((i) => i.kind === 'rope')) inject('rope', 'เชือกไนลอนม้วนใหญ่', 'เหนียวและยาวหลายเมตร');
+          if (all().some((i) => i.kind === 'power') && !all().some(isConductive)) inject('rope', 'สายไฟพ่วงยาว', 'ม้วนใหญ่ ฉนวนลอกบางช่วง'); // กับดักไฟช็อตต้องมีสายไฟจริง
           if (!all().some((i) => i.kind === 'power')) inject('power', 'ตู้เบรกเกอร์ไฟ', 'ควบคุมไฟของทั้งอาคาร');
           if (!all().some((i) => i.kind === 'tool')) inject('tool', 'ค้อนปอนด์', 'หนักและแข็ง');
           if (!all().some((i) => i.kind === 'lockpick')) inject('lockpick', 'ชุดไขควงและเหล็กงัดกลอน', 'ใช้สะเดาะกลอนประตูที่ล็อกได้');

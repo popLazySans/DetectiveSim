@@ -4,7 +4,8 @@
 import { Game, PHASE, STEP, CONFIG, NONE_VOTE, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap, MURDER_CAUSES } from '../server/game.js';
 import { createAI } from '../server/ai.js';
 import { resolveExits } from '../server/escape.js';
-import { RECIPES, OBJECTIVE_HOURS, LOCKS } from '../server/rules.js';
+import { RECIPES, OBJECTIVE_HOURS, LOCKS, woundOf, isConductive } from '../server/rules.js';
+import { LOCATIONS, mockNarrateCase } from '../server/mock.js';
 
 CONFIG.BOT_DELAY_SCALE = 0.02;
 CONFIG.STEP_TIMEOUT_MS = 0;
@@ -1167,8 +1168,78 @@ async function unitTests() {
     assert(g6.chat.some((m) => m.system && /ปิดใส่หน้า/.test(m.text) && m.text.includes(g6.nick(k6))), 'the announcement names the killer who was shut in');
     assert(k6.log.some((l) => l.kind === 'death' && /ปิดใส่หน้า/.test(l.text)), 'the killer is told the door shut on them');
   }
+  // 10) ความสมจริงของของผสม: ชื่อกับดักตามสูตร · อาวุธของคดีคือชิ้นที่ทำร้ายจริง · กับดักประตูเล่าคดีถูกสูตร · ร่องรอยบนศพตรงกันทั้งตอนตรวจและตอนเล่า · ไฟช็อตต้องใช้สายไฟจริง
+  {
+    const mk = (name, kind) => ({ id: `it_${name}_${kind}`, name, description: '', kind, portable: true, hidden: false, isPart: false });
+    assert(woundOf(mk('เชิงเทียนเล็ก', 'weapon')) === 'blunt' && woundOf(mk('เชิงเทียนทองเหลืองใหญ่', 'weapon')) === 'blunt', 'candlesticks are blunt weapons');
+    assert(woundOf(mk('ไขควงชุดใหญ่', 'tool')) === 'sharp' && woundOf(mk('ที่เปิดไวน์', 'tool')) === 'sharp', 'screwdriver and corkscrew stab');
+    assert(woundOf(mk('ผ้าห่มขนสัตว์', 'cloth')) === 'smother' && woundOf(mk('ผ้าห่มไฟฟ้า', 'cloth')) === 'ligature', 'cloth smothers, an electric blanket strangles with its cord');
+    assert(woundOf(mk('เชือกกระโดดยาว', 'rope')) === 'ligature' && woundOf(mk('ปืนลูกซองโบราณ', 'weapon')) === 'pierce' && woundOf(mk('ค้อนปอนด์', 'tool')) === 'blunt' && woundOf(mk('ยาเบื่อหนู', 'poison')) === 'poison' && woundOf(null) === 'hands', 'rope, gun, hammer, poison and bare hands classify as expected');
+    assert(isConductive(mk('สายไฟพ่วงยาว', 'rope')) && isConductive(mk('สายไฟเก่าม้วนใหญ่', 'rope')) && !isConductive(mk('เชือกกระโดดยาว', 'rope')) && !isConductive(mk('เทปพันท่อและสายไฟ', 'rope')) && !isConductive(mk('สายไฟพ่วงยาว', 'tool')), 'only real cables conduct; tape and plain rope do not');
+    for (const loc of LOCATIONS) {
+      const items = loc.zones.flatMap((z) => z.items.map(([name, description, kind]) => ({ name, description, kind })));
+      assert(!items.some((i) => i.kind === 'power') || items.some(isConductive), `mock location "${loc.name}" with a power panel has a real cable for the shock trap`);
+    }
+    const door = mockNarrateCase({ victim: { nickname: 'เหยื่อ' }, killer: { nickname: 'คนวาง' }, cause: 'trap', trapType: 'door', weapon: { name: 'ขวานดับเพลิง', kind: 'weapon' }, zone: { name: 'ห้องทดสอบ' }, day: 1, hour: 2, messy: false, moved: false, witnesses: [] });
+    assert(/กลไกบานประตู/.test(door.bodyState) && !/สะดุด/.test(door.bodyState) && door.bodyState.includes('ขวานดับเพลิง'), 'the mock narrator describes a door trap as a door mechanism, not a trip wire');
+    const direct = (weapon) => mockNarrateCase({ victim: { nickname: 'เหยื่อ' }, killer: { nickname: 'คนร้าย' }, cause: 'attack', trapType: null, weapon, zone: { name: 'ห้องทดสอบ' }, day: 1, hour: 2, messy: false, moved: false, witnesses: [] }).bodyState;
+    assert(/ท้ายทอย/.test(direct(mk('เชิงเทียนเล็ก', 'weapon'))) && /ชายโครง/.test(direct(mk('ไขควงชุดใหญ่', 'tool'))) && /ปากและจมูก/.test(direct(mk('ผ้าห่มขนสัตว์', 'cloth'))) && !/รอยรัด/.test(direct(mk('ผ้าห่มขนสัตว์', 'cloth'))) && /รอยรัด/.test(direct(mk('ผ้าห่มไฟฟ้า', 'cloth'))), 'narrated bodies match the wound classifier');
+
+    const g7 = new Game({ code: 'UNIT7', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids7 = ['w1-xxxxxxxx', 'w2-xxxxxxxx', 'w3-xxxxxxxx', 'w4-xxxxxxxx'];
+    for (const [i, id] of ids7.entries()) g7.addPlayer({ id, name: `ของผสม ${i + 1}` });
+    g7.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 1 });
+    await g7.start(ids7[0]);
+    g7.clearTimers();
+    const [a7, b7, c7, d7] = ids7.map((id) => g7.players.get(id));
+    const R7 = [...g7.zones.values()].find((z) => !z.locked && z.id !== g7.location.sleepZoneId && !z.items.some((i) => i.kind === 'power'));
+    const P7 = [...g7.zones.values()].find((z) => !z.locked && z.items.some((i) => i.kind === 'power'));
+    assert(R7 && P7, 'unit world has an open room without and one with a power panel');
+    for (const p of [a7, b7, c7, d7]) {
+      g7.charOf(p).ultimate.trait = 'none';
+      p.zoneId = R7.id;
+      p.outside = false;
+    }
+    g7.phase = PHASE.DAY;
+    g7.step = STEP.ACT;
+    // ชื่อกับดักตามสูตร + อาวุธของคดีคือชิ้นที่ทำร้ายจริง
+    const axe = mk('ขวานดับเพลิง', 'weapon');
+    const torch = mk('ไฟฉายเก่า', 'tool');
+    a7.inventory = [axe, torch];
+    g7.do_craft(a7, { recipeId: 'door', itemId: axe.id, itemId2: torch.id });
+    const doorTrap = a7.inventory.find((i) => i.kind === 'trap');
+    assert(doorTrap && doorTrap.name === 'ขวานดับเพลิงยึดกลไกประตูด้วยไฟฉายเก่า' && !/ผูก/.test(doorTrap.name) && doorTrap.weaponName === 'ขวานดับเพลิง', 'a door trap is named after its recipe, not "tied with"');
+    R7.traps.push({ setterId: a7.id, item: a7.inventory.splice(a7.inventory.indexOf(doorTrap), 1)[0], turn: g7.turn, side: 'inside' });
+    g7.triggerTrap(R7, R7.traps[0], d7);
+    assert(!d7.alive && g7.cases.at(-1).trapType === 'door' && g7.cases.at(-1).weapon.name === 'ขวานดับเพลิง', 'the case weapon is the striking item, not the whole trap name');
+    // กับดักไฟช็อต: ช่างเทคนิคกับเชือกธรรมดาประกอบไม่ได้ กับสายไฟจริงประกอบได้ และสายไฟคืออาวุธของคดี
+    g7.charOf(a7).ultimate.trait = 'tech';
+    const wrench = mk('ประแจเหล็กใหญ่', 'tool');
+    const jumpRope = mk('เชือกกระโดดยาว', 'rope');
+    const cable = mk('สายไฟพ่วงยาว', 'rope');
+    a7.inventory = [wrench, jumpRope];
+    const optsRope = g7.craftOptions(a7, P7);
+    assert(optsRope.some((o) => o.recipeId === 'fall') && !optsRope.some((o) => o.recipeId === 'shock'), 'a plain rope cannot become a shock trap');
+    a7.inventory = [wrench, cable];
+    const optsCable = g7.craftOptions(a7, P7);
+    assert(optsCable.some((o) => o.recipeId === 'shock') && optsCable.some((o) => o.recipeId === 'fall'), 'a real cable can become a shock trap (and still a trip wire)');
+    g7.do_craft(a7, { recipeId: 'shock', itemId: wrench.id, itemId2: cable.id });
+    const shock = a7.inventory.find((i) => i.kind === 'trap');
+    assert(shock && shock.trapType === 'shock' && shock.name === 'สายไฟพ่วงยาวปอกเปลือยด้วยประแจเหล็กใหญ่' && shock.weaponName === 'สายไฟพ่วงยาว', 'a shock trap is named after the cable and the cable is its weapon');
+    // ตรวจศพกับเล่าคดีใช้ตัวจำแนกเดียวกัน: เชิงเทียน = ของหนักทื่อ · ผ้าห่ม = อุดหายใจ
+    g7.charOf(a7).ultimate.trait = 'none';
+    const candle = mk('เชิงเทียนเล็ก', 'weapon');
+    g7.killPlayer(b7, { cause: 'attack', killerId: a7.id, weapon: candle, zoneId: R7.id, outside: false, messy: false, witnesses: [] });
+    g7.do_examine(a7, { victimId: b7.id });
+    assert(/ของหนักทื่อ/.test(a7.log.at(-1).text) && !/มีคม/.test(a7.log.at(-1).text), 'examining a candlestick victim reports a blunt wound');
+    const blanket = mk('ผ้าห่มขนสัตว์', 'cloth');
+    g7.killPlayer(c7, { cause: 'attack', killerId: a7.id, weapon: blanket, zoneId: R7.id, outside: false, messy: false, witnesses: [] });
+    g7.do_examine(a7, { victimId: c7.id });
+    assert(/อุดหายใจ/.test(a7.log.at(-1).text) && !/รอยรัด/.test(a7.log.at(-1).text), 'examining a smothered victim reports suffocation, not a ligature');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable)');
 }
 
 try {
