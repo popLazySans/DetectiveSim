@@ -221,7 +221,9 @@ const NON_PORTABLE = new Set(['fixture', 'power', 'food']);
 // คืนสถานที่ในรูปแบบที่ game.js ใช้: zones[].items[] มี kind/portable, sleepZoneId = ห้องแรก, exits = เทมเพลตทางออก
 export function mockLocation({ previousNames = [] } = {}) {
   const avail = LOCATIONS.filter((l) => !previousNames.includes(l.name));
-  const base = pick(avail.length ? avail : LOCATIONS);
+  // สำหรับเทสต์/เดโม: MOCK_LOCATION=<ส่วนหนึ่งของชื่อสถานที่> บังคับเลือกสถานที่นั้น (เช่น MOCK_LOCATION=คฤหาสน์)
+  const forced = process.env.MOCK_LOCATION ? LOCATIONS.find((l) => l.name.includes(process.env.MOCK_LOCATION)) : null;
+  const base = forced || pick(avail.length ? avail : LOCATIONS);
   return {
     name: base.name,
     description: base.description,
