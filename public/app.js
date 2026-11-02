@@ -17,9 +17,9 @@
     ended: 'จบเกม',
   };
   const STEP_LABEL = { move: 'เลือกห้องที่จะไป', act: 'เลือกสิ่งที่จะทำ', report: 'พักชั่วโมง — อ่านบันทึก / ให้ของ' };
-  const FATE_LABEL = { victim: 'ถูกฆ่า', executed: 'ถูกประหาร', punished: 'ถูกประหาร (โหวตผิด)', escaped: 'คนร้ายรอด', survivor: 'รอดชีวิต' };
-  const FATE_ICON = { victim: '☠', executed: '⛓', punished: '⚖', escaped: '🏃', survivor: '🏁' };
-  const FATE_CLASS = { victim: 'purple', executed: 'red', punished: 'red', escaped: 'yellow', survivor: 'green' };
+  const FATE_LABEL = { victim: 'ถูกฆ่า', executed: 'ถูกประหาร', punished: 'ถูกประหาร (โหวตผิด)', escaped: 'คนร้ายรอด', survivor: 'รอดชีวิต', left_behind: 'ถูกทิ้งไว้ (ฆาตกรหนีไม่ได้)' };
+  const FATE_ICON = { victim: '☠', executed: '⛓', punished: '⚖', escaped: '🏃', survivor: '🏁', left_behind: '🚫' };
+  const FATE_CLASS = { victim: 'purple', executed: 'red', punished: 'red', escaped: 'yellow', survivor: 'green', left_behind: 'red' };
   const END_LABEL = {
     escape: '🚪 หนีออกมาได้สำเร็จ',
     wrong_vote: '☠ โหวตผิด — คนร้ายชนะ',
@@ -197,9 +197,9 @@
         <div class="card rules">
           <h3>กติกาย่อ</h3>
           <ol>
-            <li><b>เป้าหมายหลัก:</b> ทุกคนถูกขังในสถานที่เดียวที่มีหลายห้อง ของสำหรับหนี 2–3 ชิ้นถูกสุ่มซ่อนไว้ตามห้อง หาให้เจอแล้วเอาไปรวมกันที่ห้องทางออก → ทุกคนที่ยังอยู่รอด</li>
+            <li><b>เป้าหมายหลัก:</b> ทุกคนถูกขังในสถานที่เดียวที่มีหลายห้อง ของสำหรับหนี 2–3 ชิ้นถูกสุ่มซ่อนไว้ตามห้อง หาให้เจอแล้วเอาไปรวมกันที่ห้องทางออก → ทุกคนที่ยังอยู่รอด — ยกเว้น<b>ฆาตกรที่ยังไม่ถูกจับ</b>: ประตูจะปิดใส่หน้าและนับว่าตายทันที</li>
             <li><b>เวลา:</b> ทุกครั้งที่เข้าห้อง = 1 ชั่วโมง (รวมรอบเก็บหลักฐาน) ตัดสินคดีเสร็จจึงขึ้นวันใหม่ ไม่มีเวลาจำกัดทั้งในเกมและเวลาจริง</li>
-            <li><b>แต่ละชั่วโมง:</b> ทุกคนเลือกห้องพร้อมกัน (ไม่มีใครรู้ว่าใครเลือกอะไร) → เห็นว่าใครอยู่ห้องเดียวกับคุณ เห็นของในห้อง → เลือกทำได้ 1 อย่าง: สำรวจ หยิบของ ซ่อนของ ลงมือฆ่า วางกับดัก ย้ายศพ ทำลายหลักฐาน ตรวจศพ… ทุกอย่างมีโอกาสสำเร็จ/พลาด/สำเร็จแบบเลอะเทอะ → พักชั่วโมง: อ่านบันทึก และ<b>ให้ของ</b>กับคนในห้องเดียวกันได้</li>
+            <li><b>แต่ละชั่วโมง:</b> ทุกคนเลือกห้องพร้อมกัน (ไม่มีใครรู้ว่าใครเลือกอะไร) → เห็นว่าใครอยู่ห้องเดียวกับคุณ เห็นของในห้อง → เลือกทำได้ 1 อย่าง: สำรวจ หยิบของ ซ่อนของ ลงมือฆ่า วางกับดัก ย้ายศพ ทำลายหลักฐาน ตรวจศพ… ทุกอย่างมีโอกาสสำเร็จ/พลาด/สำเร็จแบบเลอะเทอะ → พักชั่วโมง: อ่านบันทึก และ<b>ให้ของ</b>กับคนในห้องเดียวกันได้ · เดินไปเจอห้องที่ล็อก = <b>ยืนรอหน้าประตู (ข้างนอก)</b> ทำอะไรกับห้องไม่ได้ ทำได้แค่กับคนที่ยืนอยู่หน้าประตูด้วยกัน · <b>กับดักประตู</b> (อาวุธ+เครื่องมือ) วางข้างใน = คนที่เปิดประตูเข้ามาตาย วางข้างนอก = คนที่เปิดประตูออกมาตาย คนที่ปลดล็อกโดนก่อน</li>
             <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
             <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 5 ชั่วโมง ไม่มีใครตายเพราะภารกิจ — แต่ถ้าครบกำหนดแล้วยังไม่ทำ ระบบจะพาคุณไปทำเอง (ล็อกห้อง) มีไว้กันทุกคนแคมป์อยู่ห้องเดียวกัน</li>
             <li><b>ศพอยู่ที่ตาย:</b> จนกว่าจะมีคนย้าย เมื่อมีคนพบศพครบ 3 คน (ไม่นับคนฆ่า) จะประกาศและเข้าสู่รอบเก็บหลักฐาน 1 ชั่วโมง แล้วตัดสิน</li>
@@ -334,7 +334,7 @@
     }
     if (s.phase === 'trial' && p.alive) marks.push(`<span class="mark ${p.voteConfirmed ? 'ok' : ''}" title="โหวต">${p.voteConfirmed ? '🗳️' : '…'}</span>`);
     if (p.knownDead) marks.push(`<span class="mark" title="${FATE_LABEL[p.fate] || 'เสียชีวิต'}">${FATE_ICON[p.fate] || '✝'}</span>`);
-    const sameZone = !isMe && p.zoneId && me.alive && p.zoneId === me.zoneId && (s.step === 'act' || s.step === 'report');
+    const sameZone = !isMe && p.zoneId && me.alive && p.zoneId === me.zoneId && !!p.outside === !!me.outside && (s.step === 'act' || s.step === 'report');
     return `<div class="pcard ${p.knownDead ? 'dead' : ''} ${isMe ? 'me' : ''} ${clickable ? 'clickable' : ''} ${selected ? 'selected' : ''}"
         ${clickable ? `data-action="vote" data-id="${esc(p.id)}"` : ''} title="${c ? esc(`${c.appearance} — ${c.personality}`) : ''}">
       <div class="marks">${marks.join('')}</div>
@@ -343,7 +343,7 @@
         ${c ? `<div class="cname">${esc(c.name)} (${esc(c.nickname)})</div>` : ''}
       </div></div>
       ${ultimateLine(c, isMe)}
-      ${sameZone ? `<div><span class="badge green">อยู่ห้องเดียวกับคุณ</span></div>` : !isMe && p.zoneId && !me.alive ? `<div class="muted" style="font-size:.8rem">📍 ${esc(zoneName(p.zoneId))}</div>` : ''}
+      ${sameZone ? `<div><span class="badge green">${me.outside ? 'ยืนหน้าประตูด้วยกัน' : 'อยู่ห้องเดียวกับคุณ'}</span></div>` : !isMe && p.zoneId && !me.alive ? `<div class="muted" style="font-size:.8rem">📍 ${esc(zoneName(p.zoneId))}</div>` : ''}
       ${p.knownDead && p.fate ? `<div class="muted" style="font-size:.8rem">${FATE_LABEL[p.fate]} · ${esc(timeText(p.eliminatedDay, p.eliminatedHour))}</div>` : ''}
       ${p.alive && p.revived ? '<div><span class="badge yellow">คืนชีพ</span></div>' : ''}
       ${s.runoff && p.alive && s.runoff.candidates.includes(p.id) ? '<div><span class="badge red">รอบตัดสิน</span></div>' : ''}
@@ -402,6 +402,7 @@
       ${me.isDesignated ? `<div class="clue culprit"><span class="ctag">🔪 วันนี้เกมเลือกคุณเป็น "ฆาตกร" (มีแค่คุณที่รู้)</span>จะลงมือหรือไม่ก็ได้ — ถ้าลงมือในวันนี้โอกาสสำเร็จสูงขึ้น ดูรายละเอียดในสมุดบันทึก ถ้าคนอื่นลงมือก่อน คุณจะเป็นแค่คนที่อยู่ในเหตุการณ์</div>` : ''}
       ${me.forced ? `<div class="clue night-self"><span class="ctag">⏰ ภารกิจครบกำหนด</span>ชั่วโมงนี้ระบบพาคุณไปที่ <b>${esc(me.forced.zoneName)}</b>${me.forced.actionLabel ? ` และจะ${esc(me.forced.actionLabel)}ให้เอง` : ''} (เลือกห้องอื่นไม่ได้)</div>` : ''}
       ${me.door?.lockedIn ? `<div class="clue culprit"><span class="ctag">🔒 คุณถูกล็อกอยู่ใน${esc(me.zoneName || '')}</span>${me.door.means ? `ออกตามปกติไม่ได้ แต่คุณ${esc(me.door.means.label)} — เลือกห้องที่จะไป แล้วชั่วโมงนั้นจะหมดไปกับประตู (ใช้กี่ชั่วโมงแล้วแต่ดวง)${me.door.work ? ` · ทำไปแล้ว ${me.door.work.progress} ชม.` : ''}` : 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้ — เลือกได้แค่อยู่ห้องนี้ต่อ'}</div>` : ''}
+      ${me.outside ? `<div class="clue culprit"><span class="ctag">🚪 คุณยืนรออยู่หน้าประตู${esc(me.zoneName || '')} (ข้างนอก)</span>ประตูล็อกอยู่ เข้าไม่ได้ — ทำอะไรกับห้องไม่ได้ (ไม่มีสำรวจ/หยิบ/วาง) ทำได้เฉพาะกับคนที่ยืนอยู่หน้าประตูด้วยกัน${me.door?.means ? ` · คุณ${esc(me.door.means.label)} — เลือกห้องนี้อีกครั้งเพื่อทำต่อ` : ' · ต้องมีกุญแจหรือที่สะเดาะกุญแจ หรือรอให้ประตูเปิด'} · จะเดินไปห้องอื่นก็ได้</div>` : ''}
       ${me.door?.work && !me.door.lockedIn ? `<div class="clue night-self"><span class="ctag">${me.door.work.method === 'break' ? '💥' : '🪛'} งานค้างที่ประตู</span>คุณกำลัง${me.door.work.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน'}<b>${esc(me.door.work.zoneName)}</b> (ทำไปแล้ว ${me.door.work.progress} ชม.) — เลือกห้องนั้นอีกครั้งเพื่อทำต่อ เลือกห้องอื่นแล้วต้องเริ่มใหม่</div>` : ''}
       ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (กันแคมป์ — ครบกำหนดระบบพาไปทำ ไม่มีใครตาย)</span>${esc(o.text)} ${objectiveBadge(o)}</div>`).join('')}
       ${s.config.objectives && me.nextObjectiveIn != null && !me.objectives.some((o) => !o.done) ? `<p class="muted" style="font-size:.85rem">📋 ภารกิจถัดไปจะมาใน${me.nextObjectiveIn ? `อีก ${me.nextObjectiveIn} ชั่วโมง` : 'ชั่วโมงหน้า'}</p>` : ''}
@@ -434,14 +435,14 @@
             tags.push(`<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูล็อกอยู่ (อาจเปลี่ยนไปแล้ว) · ${esc(hint)}">🔒 ล็อกอยู่ · ${esc(hint)}</span>`);
           }
           if (mem?.food) tags.push('<span class="badge">🍞 มีอาหาร</span>');
-          if (here) tags.push('<span class="badge cyan">คุณอยู่ที่นี่ล่าสุด</span>');
+          if (here) tags.push(`<span class="badge cyan">${me.outside ? 'คุณยืนรออยู่หน้าประตู (ข้างนอก)' : 'คุณอยู่ที่นี่ล่าสุด'}</span>`);
           const bodiesHere = me.knownBodies.filter((b) => b.zoneName === z.name);
           return `<div class="zone ${sel === z.id ? 'selected' : ''} ${exitsHere.length ? 'exit' : ''} ${chosen ? 'locked' : ''} ${stuck && !here ? 'disabled' : ''}" data-action="pick-zone" data-id="${esc(z.id)}">
             <div class="zname">${esc(z.name)}</div>
             <div class="ztags">${tags.join(' ')}</div>
             <div class="zdesc">${esc(z.description)}</div>
-            ${mem && !mem.people ? `<div class="zmem muted">ยังไม่เคยเข้าไป — ${esc(timeText(mem.day, mem.hour))} เดินมาชนประตูที่ล็อกอยู่</div>` : mem ? `<div class="zmem">ครั้งล่าสุด (${esc(timeText(mem.day, mem.hour))}): ${mem.people?.length ? `คน: ${esc(mem.people.join(', '))}` : 'ไม่มีใคร'} · ${mem.items?.length ? `ของ: ${esc(mem.items.join(', '))}` : 'ไม่เห็นของ'}${mem.searched ? ' · สำรวจแล้ว' : ''}</div>` : '<div class="zmem muted">ยังไม่เคยเข้าไป (หรือของถูกจัดใหม่)</div>'}
-            ${bodiesHere.length ? `<div class="zbody">☠ ศพ: ${esc(bodiesHere.map((b) => b.name).join(', '))}</div>` : ''}
+            ${mem && !mem.people ? `<div class="zmem muted">ยังไม่เคยเข้าไป — ${esc(timeText(mem.day, mem.hour))} ยืนรอหน้าประตูที่ล็อกอยู่</div>` : mem ? `<div class="zmem">ครั้งล่าสุด (${esc(timeText(mem.day, mem.hour))}): ${mem.people?.length ? `คน: ${esc(mem.people.join(', '))}` : 'ไม่มีใคร'} · ${mem.items?.length ? `ของ: ${esc(mem.items.join(', '))}` : 'ไม่เห็นของ'}${mem.searched ? ' · สำรวจแล้ว' : ''}</div>` : '<div class="zmem muted">ยังไม่เคยเข้าไป (หรือของถูกจัดใหม่)</div>'}
+            ${bodiesHere.length ? `<div class="zbody">☠ ศพ: ${esc(bodiesHere.map((b) => `${b.name}${b.outside ? ' (หน้าประตู)' : ''}`).join(', '))}</div>` : ''}
           </div>`;
         })
         .join('')}</div>
@@ -460,11 +461,11 @@
     const bodies = me.knownBodies.filter((b) => b.zoneName === z?.name);
     const people = (me.zonePeople || []).map((p) => p.name);
     return `<div class="card zone-panel">
-      <div class="row"><h2>📍 ${esc(z?.name || '?')}</h2><span class="spacer"></span><span class="badge ${s.phase === 'investigation' ? 'red' : 'pink'}">${s.phase === 'investigation' ? 'เก็บหลักฐาน' : `วันที่ ${s.day} ชั่วโมงที่ ${s.hour}`}</span></div>
+      <div class="row"><h2>📍 ${me.outside ? 'หน้าประตู' : ''}${esc(z?.name || '?')}${me.outside ? ' <span class="badge red">ข้างนอก · ประตูล็อก</span>' : ''}</h2><span class="spacer"></span><span class="badge ${s.phase === 'investigation' ? 'red' : 'pink'}">${s.phase === 'investigation' ? 'เก็บหลักฐาน' : `วันที่ ${s.day} ชั่วโมงที่ ${s.hour}`}</span></div>
       <p class="muted">${esc(z?.description || '')}</p>
       <div class="zone-facts">
-        <div><b>คนที่อยู่ที่นี่:</b> ${people.length ? esc(people.join(', ')) : '<span class="muted">ไม่มีใครนอกจากคุณ</span>'}</div>
-        <div><b>ของที่เห็น:</b> ${mem.items?.length ? esc(mem.items.join(', ')) : '<span class="muted">ไม่เห็นของเป็นพิเศษ</span>'}</div>
+        <div><b>${me.outside ? 'คนที่ยืนหน้าประตูด้วย' : 'คนที่อยู่ที่นี่'}:</b> ${people.length ? esc(people.join(', ')) : '<span class="muted">ไม่มีใครนอกจากคุณ</span>'}</div>
+        <div><b>ของที่เห็น:</b> ${me.outside ? '<span class="muted">มองไม่เห็นข้างใน — ประตูล็อกอยู่</span>' : mem.items?.length ? esc(mem.items.join(', ')) : '<span class="muted">ไม่เห็นของเป็นพิเศษ</span>'}</div>
         ${bodies.length ? `<div class="danger-text">☠ <b>ศพ:</b> ${esc(bodies.map((b) => b.name).join(', '))}</div>` : ''}
       </div>
       ${recentLogHtml(s, 'สิ่งที่เกิดขึ้นตอนเข้ามา')}

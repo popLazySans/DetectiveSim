@@ -225,7 +225,7 @@ export function resolveExits(game, attempts) {
   for (const { p, a } of attempts) {
     if (!p.alive) continue;
     const x = game.exits.get(a.exitId);
-    if (!x || x.open || p.zoneId !== x.zoneId) continue;
+    if (!x || x.open || p.zoneId !== x.zoneId || p.outside) continue;
     if (!byExit.has(x.id)) byExit.set(x.id, []);
     byExit.get(x.id).push(p);
   }
@@ -278,8 +278,28 @@ export function resolveExits(game, attempts) {
     if (opened) {
       x.open = true;
       x.openedBy = people.map((p) => p.id);
-      for (const p of people) game.logTo(p, `🚪 ${x.name}เปิดออก! แสงจากข้างนอกสาดเข้ามา — ทุกคนที่ยังมีชีวิตหนีออกจากที่นี่ได้แล้ว`, 'escape');
-      game.systemMessage(`🚪 ${names} เปิด "${x.name}" ที่${game.zoneName(x.zoneId)}ได้สำเร็จ! ทุกคนที่ยังมีชีวิตหนีออกจาก "${game.location.name}" ได้`);
+      // ฆาตกรที่ยังไม่ถูกจับ (เป็นคนร้ายของคดีที่ยังไม่ได้ตัดสิน) ออกไปไม่ได้ — ที่นี่ปิดประตูใส่และนับว่าตายทันที
+      const shutIn = game.alivePlayers().filter((p) => game.cases.some((c) => c.killerId === p.id && !c.judged));
+      for (const k of shutIn) {
+        k.alive = false;
+        k.fate = 'left_behind';
+        k.deathCause = 'left_behind';
+        k.eliminatedDay = game.day;
+        k.eliminatedHour = game.hour;
+        const kz = game.zones.get(k.zoneId);
+        for (const it of k.inventory) {
+          it.hidden = false;
+          kz?.items.push(it);
+        }
+        k.inventory = [];
+        const kc = game.charOf(k);
+        if (kc) kc.ultimateRevealed = true;
+        game.logTo(k, `⛓ ${x.name}เปิดออก แต่ทันทีที่คุณจะก้าวตามคนอื่นไป ประตูก็ปิดใส่หน้าคุณ — ที่นี่ไม่ปล่อยคนที่มีเลือดติดมือออกไป คุณถูกทิ้งไว้ข้างใน...`, 'death');
+      }
+      const shutNames = shutIn.map((p) => game.nick(p)).join(', ');
+      for (const p of people) if (p.alive) game.logTo(p, `🚪 ${x.name}เปิดออก! แสงจากข้างนอกสาดเข้ามา — ทุกคนที่ยังมีชีวิตหนีออกจากที่นี่ได้แล้ว`, 'escape');
+      game.systemMessage(`🚪 ${names} เปิด "${x.name}" ที่${game.zoneName(x.zoneId)}ได้สำเร็จ! ${game.alivePlayers().length ? `ทุกคนที่ยังมีชีวิตหนีออกจาก "${game.location.name}" ได้` : 'แต่ไม่เหลือใครที่ออกไปได้'}${shutIn.length ? ` · ⛓ ${shutNames} เป็นฆาตกรที่ยังไม่ถูกจับ ประตูจึงปิดใส่หน้าและถูกทิ้งไว้ข้างใน — นับว่าตายทันที` : ''}`);
+      if (shutIn.length) game.recordEvent(`${shutNames} ถูกทิ้งไว้ข้างในตอนทางออกเปิด (ฆาตกรที่ยังไม่ถูกจับ)`);
       game.recordEvent(`${names} เปิดทางออก "${x.name}" สำเร็จ`);
       game.endGame('escape');
       return true;
