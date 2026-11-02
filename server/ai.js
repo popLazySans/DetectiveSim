@@ -5,7 +5,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { mockUltimates, mockLocation, mockReviveEvent, mockNarrateCase, TRAIT_KEYS } from './mock.js';
-import { isConductive } from './rules.js';
+import { isConductive, tagsOf } from './rules.js';
 
 const UltimatesSchema = z.object({
   ultimates: z.array(
@@ -217,7 +217,7 @@ ${characters.map(fmtCharacter).join('\n')}
 ข้อกำหนด:
 1. name: ชื่อสถานที่สั้น ๆ น่าสนใจ / description: บรรยากาศ 2-3 ประโยค บอกว่าทำไมออกไปไม่ได้ (ห้ามเอ่ยถึงทางออกที่ซ่อนอยู่)
 2. zones: ห้อง 8 ห้อง — ห้องแรกคือ "ที่นอนรวม" ที่ทุกคนนอน (มีของธรรมดา 1-2 ชิ้น เช่น ผ้า ไฟฉาย) ห้องที่ 2-8 คือห้องสำรวจ แต่ละห้องมีของ 2-3 ชิ้น
-3. ของในห้อง 2-8 รวมกันต้องมี: อาวุธ (weapon) อย่างน้อย 5 ชิ้น, ยา/สารพิษ (poison) 3 ชิ้น, เชือก/สายไฟ (rope) 3 ชิ้น, เครื่องมือ/ของหนัก (tool) 3 ชิ้น, แผงไฟหรือกล้อง (power) 2-3 ชิ้น, อาหารกลางห้อง (food) 2 ชิ้นในคนละห้อง, ที่สะเดาะกุญแจ (lockpick) 1 ชิ้น (ห้ามสร้างกุญแจ ระบบจะสร้างกุญแจประจำห้องให้เอง), ผ้า (cloth) 1-2 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน 2 ชิ้น ชื่อของห้ามซ้ำกัน
+3. ของในห้อง 2-8 รวมกันต้องมี: อาวุธ (weapon) อย่างน้อย 5 ชิ้น, ยา/สารพิษ (poison) 3 ชิ้น, เชือก/สายไฟ (rope) 3 ชิ้น, เครื่องมือ/ของหนัก (tool) 3 ชิ้น (อย่างน้อย 1 ชิ้นเป็นเครื่องมือช่าง เช่น ไขควง ประแจ ค้อน · ถ้ามีอาวุธปืนให้บอกจำนวนกระสุนในคำบรรยาย), แผงไฟหรือกล้อง (power) 2-3 ชิ้น, อาหารกลางห้อง (food) 2 ชิ้นในคนละห้อง, ที่สะเดาะกุญแจ (lockpick) 1 ชิ้น (ห้ามสร้างกุญแจ ระบบจะสร้างกุญแจประจำห้องให้เอง), ผ้า (cloth) 1-2 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน 2 ชิ้น ชื่อของห้ามซ้ำกัน
 4. exits: ทางออกที่เป็นไปได้ 5 ทาง route ครบทั้ง locked, code, repair, power, breach อย่างละ 1 แต่ละทาง "ซ่อน" อยู่ในห้องสำรวจคนละห้อง (zoneName ต้องตรงกับชื่อห้อง) ชื่อและคำบรรยายต้องสมเหตุสมผลกับสถานที่ และ itemNames ต้องสอดคล้องกับ route (ของพวกนี้ระบบจะซ่อนตามห้องเอง ไม่ต้องใส่ใน zones)
 5. ทุกอย่างสมจริง ของทุกชิ้นต้องมีเหตุผลว่าทำไมถึงอยู่ในห้องนั้น`;
           const loc = await callJson({ user, schema: LocationSchema, effort: 'medium', label: 'location' });
@@ -241,6 +241,7 @@ ${characters.map(fmtCharacter).join('\n')}
           if (all().some((i) => i.kind === 'power') && !all().some(isConductive)) inject('rope', 'สายไฟพ่วงยาว', 'ม้วนใหญ่ ฉนวนลอกบางช่วง'); // กับดักไฟช็อตต้องมีสายไฟจริง
           if (!all().some((i) => i.kind === 'power')) inject('power', 'ตู้เบรกเกอร์ไฟ', 'ควบคุมไฟของทั้งอาคาร');
           if (!all().some((i) => i.kind === 'tool')) inject('tool', 'ค้อนปอนด์', 'หนักและแข็ง');
+          if (!all().some((i) => i.kind === 'tool' && tagsOf(i).has('fastener'))) inject('tool', 'กล่องเครื่องมือช่าง', 'ไขควง คีม ประแจเล็ก และค้อน'); // กับดักประตู/ซ่อมทางออก/ช่างสะเดาะต้องมีเครื่องมือช่าง
           if (!all().some((i) => i.kind === 'lockpick')) inject('lockpick', 'ชุดไขควงและเหล็กงัดกลอน', 'ใช้สะเดาะกลอนประตูที่ล็อกได้');
           if (all().filter((i) => i.kind === 'weapon').length < 3) inject('weapon', 'ท่อนเหล็ก', 'ท่อนเหล็กยาวหนักมือ');
           const portableCount = all().filter((i) => i.portable).length;

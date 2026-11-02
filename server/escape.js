@@ -1,7 +1,7 @@
 // ระบบทางออก — ทางออก 2 ทางต่อเกม ซ่อนอยู่ในห้องธรรมดา (ไม่มีใครรู้ว่าอยู่ไหนจนกว่าจะ "สำรวจ" เจอ หรือเจอแผนผัง)
 // แต่ละทางมี "เส้นทาง" (route) ต่างกัน: ประตูล็อก / แป้นรหัส / ซ่อมเครื่อง / ประตูไฟฟ้า / ทุบงัด — ของที่ต้องใช้ถูกซ่อนตามห้องต่าง ๆ
 // ความรู้ว่าทางออกอยู่ไหนเป็นของแต่ละคน (discoveredBy) ส่วนความคืบหน้าของตัวประตู (powered/progress/open) เป็นของจริงที่ทุกคนใช้ร่วมกัน
-import { ESCAPE, ROUTES } from './rules.js';
+import { ESCAPE, ROUTES, tagsOf, canBreachWith } from './rules.js';
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const shuffle = (arr) => {
@@ -160,7 +160,7 @@ export function onObtainItem(game, p, item) {
   }
 }
 
-const holdsHeavy = (p) => p.inventory.some((i) => i.kind === 'weapon' || i.kind === 'tool');
+const holdsHeavy = (p) => p.inventory.some(canBreachWith); // ของหนักหรืออาวุธมีคม (ดูแท็ก) — ไขควง สมุด ไฟฉาย ใช้ทุบไม่ได้
 
 // แอ็กชันเกี่ยวกับทางออกที่ผู้เล่นทำได้ในห้องนี้
 export function exitActions(game, p, z) {
@@ -187,7 +187,7 @@ export function exitActions(game, p, z) {
         break;
       case 'breach': {
         const ok = holdsHeavy(p);
-        out.push({ ...base, label: `🔨 ทุบ/งัด${x.name} (${x.progress}/${x.progressNeeded})`, desc: req, disabled: !ok, reason: ok ? '' : 'ต้องถืออาวุธหนักหรือเครื่องมือ' });
+        out.push({ ...base, label: `🔨 ทุบ/งัด${x.name} (${x.progress}/${x.progressNeeded})`, desc: req, disabled: !ok, reason: ok ? '' : 'ต้องถือของหนักหรืออาวุธมีคม' });
         break;
       }
       default:
@@ -253,9 +253,9 @@ export function resolveExits(game, attempts) {
       case 'repair': {
         const parts = x.items.filter((i) => i.role === 'part');
         const missing = parts.filter((i) => !held.has(i.id));
-        const tool = people.some((p) => p.inventory.some((i) => i.kind === 'tool'));
+        const tool = people.some((p) => p.inventory.some((i) => tagsOf(i).has('fastener'))); // ต้องเป็นเครื่องมือช่างจริง (ไขควง/ประแจ/ค้อน/คีม)
         opened = !missing.length && tool;
-        failText = missing.length ? `ยังขาด: ${missing.map((m) => m.name).join(', ')}` : 'มีชิ้นส่วนครบแต่ไม่มีเครื่องมือสักชิ้น ประกอบไม่ได้';
+        failText = missing.length ? `ยังขาด: ${missing.map((m) => m.name).join(', ')}` : 'มีชิ้นส่วนครบแต่ไม่มีเครื่องมือช่าง (ไขควง/ประแจ/ค้อน) ประกอบไม่ได้';
         break;
       }
       case 'power':

@@ -4,7 +4,7 @@
 import { Game, PHASE, STEP, CONFIG, NONE_VOTE, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap, MURDER_CAUSES } from '../server/game.js';
 import { createAI } from '../server/ai.js';
 import { resolveExits } from '../server/escape.js';
-import { RECIPES, OBJECTIVE_HOURS, LOCKS, woundOf, isConductive } from '../server/rules.js';
+import { RECIPES, OBJECTIVE_HOURS, LOCKS, ATTACK, woundOf, isConductive, tagsOf, attackBaseOf, parseAmmo, poisonNoticeChance, canBreachWith } from '../server/rules.js';
 import { LOCATIONS, mockNarrateCase } from '../server/mock.js';
 
 CONFIG.BOT_DELAY_SCALE = 0.02;
@@ -175,8 +175,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
       const mine = p.inventory.filter((i) => i.exitId === x.id);
       if (x.route === 'locked' && mine.some((i) => i.role === 'key')) return x;
       if (x.route === 'power' && x.powered) return x;
-      if (x.route === 'breach' && p.inventory.some((i) => i.kind === 'weapon' || i.kind === 'tool')) return x;
-      if ((x.route === 'code' || x.route === 'repair') && mine.length >= x.items.length && (x.route !== 'repair' || p.inventory.some((i) => i.kind === 'tool'))) return x;
+      if (x.route === 'breach' && p.inventory.some(canBreachWith)) return x;
+      if ((x.route === 'code' || x.route === 'repair') && mine.length >= x.items.length && (x.route !== 'repair' || p.inventory.some((i) => tagsOf(i).has('fastener')))) return x;
     }
     return null;
   };
@@ -241,8 +241,9 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
         return it && (it.isPart || it.kind === 'clue' || it.kind === 'key');
       });
       if (routeTake) return routeTake;
-      const toolTake = take.find((a) => ['tool', 'weapon'].includes(z.items.find((i) => i.id === a.itemId)?.kind));
-      if (toolTake && !p.inventory.some((i) => i.kind === 'tool' || i.kind === 'weapon')) return toolTake;
+      const useful = (it) => !!it && (canBreachWith(it) || tagsOf(it).has('fastener'));
+      const toolTake = take.find((a) => useful(z.items.find((i) => i.id === a.itemId)));
+      if (toolTake && !p.inventory.some(useful)) return toolTake;
       if (p.inventory.length >= CONFIG.INVENTORY_MAX && byType('drop').length) {
         const junk = byType('drop').find((a) => !p.inventory.find((i) => i.id === a.itemId)?.isPart);
         if (junk) return junk;
@@ -682,8 +683,8 @@ async function unitTests() {
   }
   const poison = zones.flatMap((z) => z.items).find((i) => i.kind === 'poison');
   const rope = zones.flatMap((z) => z.items).find((i) => i.kind === 'rope');
-  const weapon = zones.flatMap((z) => z.items).find((i) => i.kind === 'weapon');
-  assert(foodZone && poison && rope && weapon, 'unit world has food, poison, rope and weapon');
+  const weapon = zones.flatMap((z) => z.items).find((i) => i.kind === 'weapon' && (tagsOf(i).has('sharp') || tagsOf(i).has('heavy')));
+  assert(foodZone && poison && rope && weapon, 'unit world has food, poison, rope and a sharp or heavy weapon');
   // 1) วางยาในอาหาร → คนกินตาย (บังคับไม่ให้สังเกตเห็น) และคดีเป็น trap/poison
   for (const p of [a, b, c]) p.zoneId = foodZone.id;
   a.inventory = [poison];
@@ -859,9 +860,11 @@ async function unitTests() {
   aChar.ultimate.trait = 'tech';
   a.inventory = [weapon];
   assert(!game.doorMeans(a), 'tech needs a tool, not a weapon');
-  const toolItem = allItems.find((i) => i.kind === 'tool');
+  const toolItem = allItems.find((i) => i.kind === 'tool' && tagsOf(i).has('fastener'));
   a.inventory = [toolItem];
-  assert(game.doorMeans(a)?.method === 'pick' && game.doorMeans(a).item === toolItem, 'tech uses any tool as a lockpick');
+  assert(toolItem && game.doorMeans(a)?.method === 'pick' && game.doorMeans(a).item === toolItem, 'tech uses a hand tool (screwdriver/wrench/hammer) as a lockpick');
+  a.inventory = [{ id: 'junk_tool', name: 'สมุดลงทะเบียนทดสอบ', description: '', kind: 'tool', portable: true, hidden: false }];
+  assert(!game.doorMeans(a), 'tech cannot pick a lock with a tool that is not a hand tool');
   aChar.ultimate.trait = 'none';
   assert(!game.doorMeans(a), 'ordinary people need a real lockpick');
   aChar.ultimate.trait = aTrait0;
@@ -880,7 +883,9 @@ async function unitTests() {
   if (lockedExit) {
     lockedExit.discoveredBy.add(a.id);
     a.zoneId = lockedExit.zoneId;
-    const keyItem = zones.flatMap((z) => z.items).find((i) => i.exitId === lockedExit.id && i.role === 'key');
+    // การสำรวจข้างบนหยิบของทางออกที่เจอเข้ากระเป๋าอัตโนมัติ กุญแจของทางออกนี้อาจอยู่ในมือ a แล้ว (ไม่งั้น inventory = [undefined] แล้วพังแบบสุ่ม)
+    const keyItem = [...zones.flatMap((z) => z.items), ...a.inventory].find((i) => i && i.exitId === lockedExit.id && i.role === 'key');
+    assert(keyItem, 'the locked exit has a key item somewhere');
     a.inventory = [keyItem];
     const act = game.availableActions(a).find((x) => x.type === 'exit' && x.exitId === lockedExit.id);
     assert(act && !act.disabled, 'exit action enabled when holding the exit key');
@@ -1205,11 +1210,11 @@ async function unitTests() {
     g7.step = STEP.ACT;
     // ชื่อกับดักตามสูตร + อาวุธของคดีคือชิ้นที่ทำร้ายจริง
     const axe = mk('ขวานดับเพลิง', 'weapon');
-    const torch = mk('ไฟฉายเก่า', 'tool');
-    a7.inventory = [axe, torch];
-    g7.do_craft(a7, { recipeId: 'door', itemId: axe.id, itemId2: torch.id });
+    const driver7 = { ...mk('ไขควงชุดใหญ่', 'tool'), description: 'ปลายแหลม' };
+    a7.inventory = [axe, driver7];
+    g7.do_craft(a7, { recipeId: 'door', itemId: axe.id, itemId2: driver7.id });
     const doorTrap = a7.inventory.find((i) => i.kind === 'trap');
-    assert(doorTrap && doorTrap.name === 'ขวานดับเพลิงยึดกลไกประตูด้วยไฟฉายเก่า' && !/ผูก/.test(doorTrap.name) && doorTrap.weaponName === 'ขวานดับเพลิง', 'a door trap is named after its recipe, not "tied with"');
+    assert(doorTrap && doorTrap.name === 'ขวานดับเพลิงยึดกลไกประตูด้วยไขควงชุดใหญ่' && !/ผูก/.test(doorTrap.name) && doorTrap.weaponName === 'ขวานดับเพลิง', 'a door trap is named after its recipe, not "tied with"');
     R7.traps.push({ setterId: a7.id, item: a7.inventory.splice(a7.inventory.indexOf(doorTrap), 1)[0], turn: g7.turn, side: 'inside' });
     g7.triggerTrap(R7, R7.traps[0], d7);
     assert(!d7.alive && g7.cases.at(-1).trapType === 'door' && g7.cases.at(-1).weapon.name === 'ขวานดับเพลิง', 'the case weapon is the striking item, not the whole trap name');
@@ -1238,8 +1243,122 @@ async function unitTests() {
     g7.do_examine(a7, { victimId: c7.id });
     assert(/อุดหายใจ/.test(a7.log.at(-1).text) && !/รอยรัด/.test(a7.log.at(-1).text), 'examining a smothered victim reports suffocation, not a ligature');
   }
+  // 11) แท็กย่อยของ: ของตัดสินจากสิ่งที่ทำได้จริง · ปืนมีกระสุนและเสียง · เข็มฉีดยาเป็นพาหะวางยา · ยาพิษฉุน/ไร้รส/เข้ากระแสเลือด · ทางออก/สะเดาะต้องใช้เครื่องมือจริง
+  {
+    const mk = (name, kind, description = '', extra = {}) => ({ id: `it_${name}_${kind}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false, ...extra });
+    const has = (item, ...tags) => tags.every((t) => tagsOf(item).has(t));
+    const none = (item) => tagsOf(item).size === 0;
+    assert(has(mk('ขวานดับเพลิง', 'weapon'), 'sharp', 'heavy') && has(mk('ไขควงชุดใหญ่', 'tool', 'ปลายแหลม'), 'sharp', 'fastener') && has(mk('ปืนลูกซองโบราณ', 'weapon', 'ยังมีกระสุนสองนัด'), 'firearm') && has(mk('เข็มฉีดยา', 'tool'), 'injector'), 'axe, screwdriver, shotgun and syringe get the right tags');
+    assert(none(mk('ไฟฉายเก่า', 'tool', 'แสงอ่อน ๆ แต่ยังใช้ได้')) && none(mk('สมุดลงทะเบียนผู้โดยสาร', 'tool', 'มีรายชื่อและเลขห้อง')) && none(mk('วิทยุภายในสถานี', 'tool')) && none(mk('กุญแจมือ', 'tool')) && none(mk('ไม้สกิมเมอร์ตักใบไม้', 'weapon', 'ด้ามอะลูมิเนียมยาว เบา')), 'flashlight, ledger, radio, handcuffs and a light pole carry no capability tags');
+    assert(has(mk('สายไฟพ่วงยาว', 'rope'), 'conductive', 'cord') && has(mk('เทปพันท่อและสายไฟ', 'rope'), 'cord') && !has(mk('เทปพันท่อและสายไฟ', 'rope'), 'conductive'), 'cables conduct, tape only ties');
+    assert(has(mk('น้ำยาฟอกขาว', 'poison'), 'pungent') && has(mk('น้ำยากันเยือกแข็ง', 'poison', 'รสหวาน ไม่มีสี'), 'tasteless') && has(mk('พิษแมงกะพรุนสกัด', 'poison'), 'bloodOnly'), 'poisons are tagged pungent / tasteless / blood-only');
+    assert(parseAmmo('ยังมีกระสุนสองนัด') === 2 && parseAmmo('มีลูกฉมวก 3 ดอก') === 3 && parseAmmo('') === 2, 'ammo is read from the description');
+    assert(attackBaseOf(mk('สมุดบันทึกเจ้าของบ้าน', 'tool'), 'none') === null && attackBaseOf(mk('ไม้สกิมเมอร์ตักใบไม้', 'weapon', 'ด้ามอะลูมิเนียมยาว เบา'), 'none').base === ATTACK.WEAPON_LIGHT && attackBaseOf(mk('ปืนลูกซองโบราณ', 'weapon', '', { ammo: 2 }), 'none').base === ATTACK.FIREARM && attackBaseOf(mk('ปืนลูกซองโบราณ', 'weapon', '', { ammo: 0 }), 'none').base === ATTACK.WEAPON_LIGHT && attackBaseOf(mk('ค้อนปอนด์', 'tool'), 'none').base === ATTACK.WEAPON_BASE.tool, 'attack odds follow the tags: junk cannot attack, light weapons 50%, loaded gun 85%, empty gun is a club');
+    const poisonItem = mk('ยาสลบสัตว์ทดลอง', 'poison');
+    assert(attackBaseOf(poisonItem, 'none', false) === null && attackBaseOf(poisonItem, 'none', true).base === ATTACK.POISON_INJECT && attackBaseOf(poisonItem, 'medical', false).base === ATTACK.POISON_MEDICAL, 'direct poisoning needs a syringe unless you are medical');
+    assert(poisonNoticeChance('none', ['pungent']) === 0.6 && poisonNoticeChance('medical', ['tasteless']) === 0.4 && poisonNoticeChance('none', []) === 0.15 && poisonNoticeChance('detective', ['pungent']) === 0.9, 'poison notice chance depends on the poison');
+    for (const loc of LOCATIONS) {
+      const items = loc.zones.flatMap((z) => z.items.map(([name, description, kind]) => ({ name, description, kind })));
+      assert(items.some((i) => i.kind === 'tool' && tagsOf(i).has('fastener')), `mock location "${loc.name}" has a hand tool for door traps, repairs and tech lockpicking`);
+      assert(items.some((i) => tagsOf(i).has('heavy')), `mock location "${loc.name}" has something heavy`);
+      assert(!items.some((i) => i.name === 'เครื่องตัดเนื้อ' && i.kind !== 'fixture'), 'the meat slicer is bolted down');
+    }
+    assert(/รอยเข็ม/.test(mockNarrateCase({ victim: { nickname: 'เหยื่อ' }, killer: { nickname: 'คนร้าย' }, cause: 'attack', trapType: null, weapon: { name: 'ยาสลบสัตว์ทดลอง (ฉีดด้วยเข็มฉีดยา)', kind: 'poison' }, zone: { name: 'ห้องทดสอบ' }, day: 1, hour: 1, messy: false, moved: false, witnesses: [] }).bodyState), 'an injected victim shows a needle mark');
+
+    const g8 = new Game({ code: 'UNIT8', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids8 = ['t1-xxxxxxxx', 't2-xxxxxxxx', 't3-xxxxxxxx', 't4-xxxxxxxx', 't5-xxxxxxxx'];
+    for (const [i, id] of ids8.entries()) g8.addPlayer({ id, name: `แท็ก ${i + 1}` });
+    g8.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 1 });
+    await g8.start(ids8[0]);
+    g8.clearTimers();
+    const [a8, b8, c8, d8, e8] = ids8.map((id) => g8.players.get(id));
+    const zones8 = [...g8.zones.values()];
+    let F8 = zones8.find((z) => !z.locked && z.items.some((i) => i.kind === 'food'));
+    if (!F8) {
+      F8 = zones8.find((z) => z.items.some((i) => i.kind === 'food'));
+      F8.locked = false;
+    }
+    const open8 = zones8.filter((z) => !z.locked && z.id !== g8.location.sleepZoneId && z.id !== F8.id);
+    const R8 = open8.find((z) => !z.items.some((i) => i.kind === 'power')) || open8[0];
+    const far8 = open8.find((z) => z.id !== R8.id) || g8.zones.get(g8.location.sleepZoneId);
+    assert(R8 && F8 && far8 && far8.id !== R8.id, 'unit world has an open room, a food room and a third room');
+    for (const p of [a8, b8, c8, d8, e8]) {
+      g8.charOf(p).ultimate.trait = 'none';
+      p.zoneId = R8.id;
+      p.outside = false;
+    }
+    e8.zoneId = far8.id;
+    g8.phase = PHASE.DAY;
+    g8.step = STEP.ACT;
+    const gunsInWorld = zones8.flatMap((z) => z.items).filter((i) => tagsOf(i).has('firearm'));
+    assert(gunsInWorld.every((i) => Number.isInteger(i.ammo) && i.ammo > 0), 'every firearm starts with ammo');
+    // สูตรดูแท็ก ไม่ใช่แค่ชนิด
+    const notebook = mk('สมุดบันทึกเจ้าของบ้าน', 'tool');
+    const rope8 = mk('เชือกปีนเขา', 'rope');
+    const ball = mk('ลูกบอลโบว์ลิ่งเก่า', 'weapon', 'หนักมาก');
+    const driver = mk('ไขควงชุดใหญ่', 'tool', 'ปลายแหลม');
+    const torch8 = mk('ไฟฉายเก่า', 'tool');
+    const skimmer = mk('ไม้สกิมเมอร์ตักใบไม้', 'weapon', 'ด้ามอะลูมิเนียมยาว เบา');
+    const gun = mk('ปืนลูกซองโบราณ', 'weapon', 'ยังมีกระสุนสองนัด', { ammo: 2 });
+    const recipes = (inv) => {
+      a8.inventory = inv;
+      return g8.craftOptions(a8, R8).map((o) => o.recipeId);
+    };
+    assert(recipes([notebook, rope8]).length === 0, 'a notebook and a rope make nothing');
+    assert(recipes([ball, rope8]).includes('blade') && recipes([ball, rope8]).includes('fall'), 'a bowling ball and a rope can swing or drop');
+    assert(recipes([gun, driver]).includes('door') && recipes([gun, rope8]).length === 0, 'a loaded gun can be rigged to a door but not swung on a rope');
+    assert(recipes([mk('ปืนลูกซองโบราณ', 'weapon', '', { ammo: 0 }), driver]).length === 0, 'an empty gun cannot be rigged');
+    assert(recipes([skimmer, driver]).length === 0 && recipes([ball, torch8]).length === 0, 'a light pole or a flashlight cannot make a door trap');
+    // กับดักประตูด้วยปืน: ลั่นใส่คนเปิด อาวุธของคดีมีแท็กปืน ตรวจศพบอกว่าถูกยิง
+    a8.inventory = [gun, driver];
+    g8.do_craft(a8, { recipeId: 'door', itemId: gun.id, itemId2: driver.id });
+    const gunTrap = a8.inventory.find((i) => i.kind === 'trap');
+    assert(gunTrap && gunTrap.wound === 'pierce' && gunTrap.strikerTags.includes('firearm') && gunTrap.weaponName === gun.name, 'a gun door trap remembers that it shoots');
+    R8.traps.push({ setterId: a8.id, item: a8.inventory.splice(a8.inventory.indexOf(gunTrap), 1)[0], turn: g8.turn, side: 'inside' });
+    g8.triggerTrap(R8, R8.traps[0], d8);
+    assert(!d8.alive && /ลั่น/.test(d8.log.at(-1).text) && g8.cases.at(-1).weapon.tags.includes('firearm'), 'the gun trap fires at the victim');
+    g8.do_examine(a8, { victimId: d8.id });
+    assert(/ยิง/.test(a8.log.at(-1).text), 'examining the victim of a gun trap reports a gunshot');
+    // ลงมือด้วยปืน: กระสุนลดทุกครั้ง และคนห้องอื่นได้ยิน (บังคับให้พลาด จะได้ไม่มีใครตาย)
+    const gun2 = mk('ปืนลูกซองสำรอง', 'weapon', '', { ammo: 2 });
+    a8.inventory = [gun2];
+    assert(g8.bestWeapon(a8) === gun2 && g8.attackBreakdown(a8, b8, gun2, 0, R8).parts[0].value === ATTACK.FIREARM, 'a loaded gun is the best weapon at 85%');
+    const e8Logs = e8.log.length;
+    const rr8 = Math.random;
+    Math.random = () => 0.99;
+    g8.do_attack(a8, { targetId: b8.id });
+    Math.random = rr8;
+    assert(a8.alive && b8.alive && gun2.ammo === 1 && e8.log.length > e8Logs && /เสียงปืน/.test(e8.log.at(-1).text), 'a shot spends a round and is heard in other rooms');
+    // ยาพิษ: ไม่มีเข็ม = ลงมือตรงไม่ได้ · มีเข็ม = ฉีด
+    const sleep8 = mk('ยาสลบสัตว์ทดลอง', 'poison');
+    const needle = mk('เข็มฉีดยา', 'tool');
+    a8.inventory = [sleep8];
+    assert(g8.bestWeapon(a8) === null, 'without a syringe an ordinary player cannot poison someone directly');
+    a8.inventory = [sleep8, needle];
+    assert(g8.bestWeapon(a8) === sleep8 && /ฉีด/.test(g8.attackBreakdown(a8, c8, sleep8, 0, R8).parts[0].label), 'with a syringe the poison is injected');
+    g8.killPlayer(c8, { cause: 'attack', killerId: a8.id, weapon: { name: 'ยาสลบสัตว์ทดลอง (ฉีดด้วยเข็มฉีดยา)', kind: 'poison' }, zoneId: R8.id, outside: false, messy: false, witnesses: [] });
+    g8.do_examine(a8, { victimId: c8.id });
+    assert(/รอยเข็ม/.test(a8.log.at(-1).text), 'examining an injected victim shows the needle mark');
+    // อาหาร: พิษที่ต้องเข้ากระแสเลือดผสมไม่ได้ · ยาฉุนผสมได้แต่สังเกตง่าย
+    a8.zoneId = F8.id;
+    a8.inventory = [mk('พิษแมงกะพรุนสกัด', 'poison')];
+    assert(!g8.availableActions(a8).some((x) => x.type === 'poisonFood'), 'blood-only venom cannot be mixed into food');
+    a8.inventory = [mk('น้ำยาฟอกขาว', 'poison')];
+    const bleachOpt = g8.availableActions(a8).find((x) => x.type === 'poisonFood');
+    assert(bleachOpt && /60%/.test(bleachOpt.desc), 'bleach can be mixed but the option warns it is easy to notice');
+    g8.do_poisonFood(a8, { itemId: a8.inventory[0].id });
+    assert(F8.items.find((i) => i.kind === 'food')?.poisoned?.poisonTags?.includes('pungent'), 'the poisoned food remembers the poison tags');
+    // สะเดาะด้วยเครื่องมือ (ช่างเทคนิค) ต้องเป็นเครื่องมือช่าง · ทางออก: ทุบต้องของหนัก/อาวุธมีคม
+    g8.charOf(a8).ultimate.trait = 'tech';
+    a8.inventory = [notebook];
+    assert(!g8.doorMeans(a8), 'a tech cannot pick a lock with a notebook');
+    a8.inventory = [driver];
+    assert(g8.doorMeans(a8)?.method === 'pick', 'a tech picks a lock with a screwdriver');
+    assert(canBreachWith(ball) && canBreachWith(mk('ขวานดับเพลิง', 'weapon')) && !canBreachWith(notebook) && !canBreachWith(driver) && !canBreachWith(skimmer), 'only heavy things or sharp weapons can breach an exit');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools)');
 }
 
 try {

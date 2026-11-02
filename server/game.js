@@ -4,7 +4,7 @@
 import { CHARACTERS } from './characters.js';
 import { ULTIMATE_POOL, TRAITS } from './mock.js';
 import { makeObjective, objectiveOutcome, objectiveTargetZone, hasFood } from './objectives.js';
-import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, isConductive } from './rules.js';
+import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, tagsOf, attackBaseOf, partMatches, trapTexts, poisonNoticeChance, ammoOf, canBreachWith, TAG_LABEL } from './rules.js';
 import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView } from './escape.js';
 
 export const PHASE = {
@@ -313,10 +313,10 @@ export class Game {
   }
 
   // คดีฆาตกรรมที่ศพยังไม่ถูกพบ/ประกาศ — คนที่ไม่ใช่คนร้ายของคดีเหล่านั้นลงมือซ้อนไม่ได้
-  // วิธีผ่านประตูที่ล็อกโดยไม่มีกุญแจ: ที่สะเดาะกุญแจ (สายเครื่องกลใช้เครื่องมืออะไรก็ได้) หรือนักสู้พังประตูมือเปล่า
+  // วิธีผ่านประตูที่ล็อกโดยไม่มีกุญแจ: ที่สะเดาะกุญแจ (ช่างเทคนิคใช้เครื่องมือช่าง เช่น ไขควง/ประแจ แทนได้) หรือนักสู้พังประตูมือเปล่า
   doorMeans(p) {
     const trait = this.traitOf(p);
-    const pickItem = p.inventory.find((i) => i.kind === 'lockpick') || (trait === 'tech' ? p.inventory.find((i) => i.kind === 'tool') : null);
+    const pickItem = p.inventory.find((i) => i.kind === 'lockpick') || (trait === 'tech' ? p.inventory.find((i) => i.kind === 'tool' && tagsOf(i).has('fastener')) : null);
     if (pickItem) return { method: 'pick', item: pickItem, hours: DOOR.PICK_HOURS };
     if (trait === 'combat') return { method: 'break', item: null, hours: DOOR.BREAK_HOURS };
     return null;
@@ -568,7 +568,7 @@ export class Game {
         name: z.name,
         description: z.description,
         // กุญแจจากสถานที่ (AI/mock รุ่นเก่า) ถูกตัดทิ้ง — ระบบสร้างกุญแจประจำห้องให้เอง 1 ดอกต่อห้อง ไม่มีกุญแจผู้ดูแล
-        items: z.items.filter((it) => it.kind !== 'key').map((it) => ({ ...it, portable: it.portable ?? PORTABLE_KINDS.has(it.kind), master: false, originZoneId: z.id, hidden: false, isPart: false })),
+        items: z.items.filter((it) => it.kind !== 'key').map((it) => ({ ...it, ammo: ammoOf(it), portable: it.portable ?? PORTABLE_KINDS.has(it.kind), master: false, originZoneId: z.id, hidden: false, isPart: false })),
         traps: [],
         evidence: [],
         dark: false,
@@ -669,7 +669,7 @@ export class Game {
 
   weaponHint(p) {
     const cands = [];
-    for (const z of this.zones.values()) for (const it of z.items) if (it.kind === 'weapon' && !it.hidden) cands.push({ it, z });
+    for (const z of this.zones.values()) for (const it of z.items) if (it.kind === 'weapon' && !it.hidden && (attackBaseOf(it, null)?.base || 0) >= ATTACK.WEAPON_BASE.weapon) cands.push({ it, z });
     if (!cands.length) return '';
     const { it, z } = pick(cands);
     return `${it.name}อยู่ที่${this.zn(z)}`;
@@ -940,7 +940,7 @@ export class Game {
       if (stayed && z.locked && !knewLocked) lines.push(this.hasKeyFor(p, z.id) ? '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณมีกุญแจ จะปลดล็อกหรือเดินออกไปก็ได้' : `🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้จากข้างนอก — คุณถูกขังอยู่ ${this.doorMeansText(p) || 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้'}`);
       if (stayed && !z.locked && knewLocked) lines.push('🔓 คุณสังเกตว่าประตูห้องนี้ไม่ได้ล็อกแล้ว');
       lines.push(others.length ? `คนที่อยู่ที่นี่ด้วย: ${others.map((o) => this.nick(o)).join(', ')}` : 'ไม่มีใครอยู่ที่นี่นอกจากคุณ');
-      lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => (i.isPart ? `${i.name} ⭐` : i.name)).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
+      lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => `${i.name}${i.isPart ? ' ⭐' : ''}${this.tagText(i) ? ` (${this.tagText(i)})` : ''}`).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
       for (const b of bodies) {
         const v = this.players.get(b.victimId);
         const first = !p.knownBodies.has(b.victimId);
@@ -1002,7 +1002,7 @@ export class Game {
   triggerTrap(z, trap, victim) {
     z.traps.splice(z.traps.indexOf(trap), 1);
     const setter = this.players.get(trap.setterId) || null;
-    const tt = TRAP_TYPES[trap.item.trapType] || TRAP_TYPES.fall;
+    const tt = trapTexts(trap.item.trapType, trap.item.wound);
     const w = trap.item.weaponName || trap.item.name;
     const outside = trap.item.trapType === 'door' && trap.side === 'outside';
     if (outside) {
@@ -1010,7 +1010,7 @@ export class Game {
       victim.outside = true;
     }
     const where = outside ? `หน้าประตู${this.zn(z)}` : this.zn(z);
-    const kase = this.killPlayer(victim, { cause: 'trap', trapType: trap.item.trapType, killerId: setter?.id || null, weapon: { name: w, kind: tt.weaponKind }, zoneId: z.id, outside, messy: false, witnesses: [] }); // อาวุธของคดี = ชิ้นที่ทำร้ายจริง ไม่ใช่ชื่อกับดักทั้งชุด
+    const kase = this.killPlayer(victim, { cause: 'trap', trapType: trap.item.trapType, killerId: setter?.id || null, weapon: { name: w, kind: tt.weaponKind, tags: trap.item.strikerTags || [] }, zoneId: z.id, outside, messy: false, witnesses: [] }); // อาวุธของคดี = ชิ้นที่ทำร้ายจริง ไม่ใช่ชื่อกับดักทั้งชุด
     z.evidence.push(this.makeEvidence(z.id, fill(tt.evidence, w), false, kase.id, 'trap', outside));
     z.items.push({ ...trap.item, hidden: false, sprung: true });
     this.logTo(victim, `💀 ${fill(tt.trigger, w)} ที่${where}คุณเสียชีวิต... ตอนนี้ทำได้เพียงเฝ้าดู`, 'death');
@@ -1050,7 +1050,7 @@ export class Game {
       killerId: info.killerId || null,
       cause: info.cause,
       trapType: info.trapType || null,
-      weapon: info.weapon ? { name: info.weapon.name, kind: info.weapon.kind } : null,
+      weapon: info.weapon ? { name: info.weapon.name, kind: info.weapon.kind, tags: Array.isArray(info.weapon.tags) ? info.weapon.tags : [...tagsOf(info.weapon)] } : null,
       zoneId: info.zoneId,
       outside: !!info.outside,
       messy: !!info.messy,
@@ -1102,11 +1102,11 @@ export class Game {
   // ของที่ใช้ลงมือได้ดีที่สุดในมือ (กุญแจ/ชิ้นส่วน/แผนผัง/กับดัก ใช้ลงมือไม่ได้)
   bestWeapon(p) {
     const trait = this.traitOf(p);
+    const hasInjector = !!this.injectorOf(p);
     let best = null;
     let bestScore = 0;
     for (const it of p.inventory) {
-      let s = ATTACK.WEAPON_BASE[it.kind] || 0;
-      if (it.kind === 'poison' && trait === 'medical') s = ATTACK.POISON_MEDICAL;
+      const s = attackBaseOf(it, trait, hasInjector)?.base || 0; // ดูแท็กของ: สมุด/วิทยุ/ไฟฉาย = 0 · ยาพิษต้องมีเข็มหรือเป็นสายการแพทย์
       if (s > bestScore) {
         bestScore = s;
         best = it;
@@ -1115,20 +1115,23 @@ export class Game {
     return best;
   }
 
+  // เข็มฉีดยาในมือ (พาหะสำหรับวางยาตรง)
+  injectorOf(p) {
+    return p.inventory.find((i) => tagsOf(i).has('injector')) || null;
+  }
+
   // โอกาสลงมือสำเร็จ พร้อมรายละเอียดการคำนวณ (แสดงให้ผู้เล่นเห็นตอนเลือก)
   attackBreakdown(p, target, weapon, witnessCount, zone) {
     const parts = [];
     const trait = this.traitOf(p);
     let base;
-    if (!weapon) {
+    const ab = attackBaseOf(weapon, trait, !!this.injectorOf(p));
+    if (!weapon || !ab) {
       base = ATTACK.UNARMED;
       parts.push({ label: 'มือเปล่า', value: base });
-    } else if (weapon.kind === 'poison') {
-      base = trait === 'medical' ? ATTACK.POISON_MEDICAL : ATTACK.WEAPON_BASE.poison;
-      parts.push({ label: trait === 'medical' ? `วางยา (สายการแพทย์)` : 'วางยา', value: base });
     } else {
-      base = ATTACK.WEAPON_BASE[weapon.kind] || 0.5;
-      parts.push({ label: `${KIND_LABEL[weapon.kind] || weapon.kind}`, value: base });
+      base = ab.base;
+      parts.push({ label: ab.label, value: base });
     }
     let total = base;
     const add = (label, v) => {
@@ -1155,8 +1158,8 @@ export class Game {
     const trait = this.traitOf(p);
     for (const r of RECIPES) {
       if (r.trait && trait !== r.trait) continue;
-      const a = p.inventory.find((i) => i.kind === r.needs[0]);
-      const b = p.inventory.find((i) => i.kind === r.needs[1] && i !== a && (r.ropeNeeds !== 'conductive' || isConductive(i))); // ไฟช็อตต้องเป็นสายไฟจริง
+      const a = p.inventory.find((i) => partMatches(i, r, 0)); // เช็กแท็ก: ใบมีดเหวี่ยงต้องมีคม/หนัก ของหนักหล่นต้องหนัก ไฟช็อตต้องเครื่องมือช่าง+สายไฟจริง กับดักประตูต้องปืนมีกระสุน/มีคม/หนัก + เครื่องมือช่าง
+      const b = p.inventory.find((i) => i !== a && partMatches(i, r, 1));
       if (!a || !b) continue;
       const placeOk = !r.placeNeeds || z.items.some((i) => i.kind === r.placeNeeds);
       out.push({ type: 'craft', recipeId: r.id, itemId: a.id, itemId2: b.id, label: `🛠 ประกอบ "${r.name}" จาก${a.name} + ${b.name}`, desc: `${r.desc} — ใช้เวลา 1 ชั่วโมง ของทั้งสองชิ้นจะถูกใช้ไป ได้กับดัก 1 ชิ้นไว้วางทีหลัง${placeOk ? '' : ` (วางได้เฉพาะห้องที่มี${KIND_LABEL[r.placeNeeds]})`}` });
@@ -1198,7 +1201,7 @@ export class Game {
         out.push({
           type: 'attack',
           targetId: o.id,
-          label: `🔪 ลงมือกับ ${this.nick(o)}${w ? ` ด้วย${w.name}` : ' ด้วยมือเปล่า'}`,
+          label: `🔪 ลงมือกับ ${this.nick(o)}${w ? ` ด้วย${w.name}${w.kind === 'poison' && this.injectorOf(p) ? ` (ฉีดด้วย${this.injectorOf(p).name})` : ''}${tagsOf(w).has('firearm') ? ` (เหลือ ${w.ammo ?? 0} นัด ทั้งตึกจะได้ยินเสียง)` : ''}` : ' ด้วยมือเปล่า'}`,
           desc: `โอกาสสำเร็จราว ${Math.round(bd.chance * 100)}% (${bd.text})${others.length > 1 ? ` · มีคนอื่นในห้องอีก ${others.length - 1} คน (อาจเห็น หรือโดนลูกหลง)` : ''} · พลาดแล้วเขาจะรู้ตัว และอาจสวนกลับ${this.traitOf(o) === 'combat' ? ' (เขาเป็นนักสู้ สวนกลับ 50%)' : ' (25%)'}`,
           danger: true,
         });
@@ -1218,8 +1221,10 @@ export class Game {
         }
       }
       if (food && !food.poisoned) {
-        for (const it of p.inventory.filter((i) => i.kind === 'poison')) {
-          out.push({ type: 'poisonFood', itemId: it.id, label: `☠ ผสม${it.name}ลงใน${food.name}`, desc: `ใครก็ตามที่มากินอาหารในห้องนี้มีโอกาสตาย (สายการแพทย์/ช่างสังเกตอาจรู้ทัน 50% คนทั่วไป 15%) ถ้าเขาตาย คุณคือคนร้าย${trait === 'medical' ? ' · คุณเป็นสายการแพทย์ ผสมได้เนียน' : ''}`, danger: true });
+        for (const it of p.inventory.filter((i) => i.kind === 'poison' && !tagsOf(i).has('bloodOnly'))) {
+          // พิษที่ต้องเข้ากระแสเลือด (พิษแมงกะพรุน) ผสมอาหารไม่ได้ · ยากลิ่นฉุนสังเกตง่าย ยาไร้สีไร้รสสังเกตยาก
+          const pt = [...tagsOf(it)];
+          out.push({ type: 'poisonFood', itemId: it.id, label: `☠ ผสม${it.name}ลงใน${food.name}`, desc: `ใครก็ตามที่มากินอาหารในห้องนี้มีโอกาสตาย (คนทั่วไปสังเกตทัน ${Math.round(poisonNoticeChance('none', pt) * 100)}% สายการแพทย์/ช่างสังเกต ${Math.round(poisonNoticeChance('medical', pt) * 100)}%${pt.includes('pungent') ? ' — กลิ่นฉุน สังเกตง่าย' : pt.includes('tasteless') ? ' — ไร้สีไร้รส สังเกตยาก' : ''}) ถ้าเขาตาย คุณคือคนร้าย${trait === 'medical' ? ' · คุณเป็นสายการแพทย์ ผสมได้เนียน' : ''}`, danger: true });
         }
       }
     }
@@ -1341,16 +1346,24 @@ export class Game {
       return;
     }
     const w = this.bestWeapon(p);
-    const wtxt = w ? `ด้วย${w.name}` : 'ด้วยมือเปล่า';
+    const inj = w?.kind === 'poison' ? this.injectorOf(p) : null; // วางยาตรงด้วยเข็มฉีดยา
+    const shot = !!w && tagsOf(w).has('firearm') && (w.ammo ?? 0) > 0; // ยิงปืน: กระสุนลดทุกครั้ง ทั้งตึกได้ยิน
+    const wtxt = w ? `ด้วย${w.name}${inj ? ` (ฉีดด้วย${inj.name})` : ''}` : 'ด้วยมือเปล่า';
+    // อาวุธของคดี: ชื่อบอกวิธี (ฉีดด้วย...) และแท็กบอกชนิดแผล (ปืนที่กระสุนหมดแล้วใช้ด้ามฟาดไม่นับว่า "ยิง")
+    const wrec = w ? { name: inj ? `${w.name} (ฉีดด้วย${inj.name})` : w.name, kind: w.kind, tags: [...tagsOf(w)].filter((t) => t !== 'firearm' || shot) } : null;
     const others = this.presentWith(p).filter((o) => o.id !== p.id && o.id !== target.id);
     const pSucc = this.attackChance(p, target, w, others.length, z);
     const who = this.who(p, z);
+    if (shot) {
+      w.ammo -= 1;
+      for (const o of this.alivePlayers()) if (o.id !== p.id && !this.sameSpot(o, p)) this.logTo(o, `🔫 เสียงปืนดังสนั่นมาจากทาง${this.zn(z)} — ทั้งตึกได้ยิน`, 'witness');
+    }
     const r = Math.random();
     if (r < pSucc) {
       const messy = chance(this.traitOf(p) === 'combat' ? ATTACK.MESSY_COMBAT : ATTACK.MESSY);
       const saw = others.filter(() => chance(messy ? 0.75 : 0.4));
-      const kase = this.killPlayer(target, { cause: 'attack', killerId: p.id, weapon: w, zoneId: z.id, outside: p.outside, messy, witnesses: saw.map((o) => o.id) });
-      this.addKillEvidence(z, kase, w, messy, p);
+      const kase = this.killPlayer(target, { cause: 'attack', killerId: p.id, weapon: wrec, zoneId: z.id, outside: p.outside, messy, witnesses: saw.map((o) => o.id) });
+      this.addKillEvidence(z, kase, wrec, messy, p);
       if (messy) p.stained = this.turn;
       if (w?.kind === 'poison') {
         p.inventory.splice(p.inventory.indexOf(w), 1);
@@ -1376,7 +1389,7 @@ export class Game {
             'witness',
           );
       }
-      this.designatedHears(kase, p);
+      if (!shot) this.designatedHears(kase, p); // ถ้ายิงปืน ทุกคนได้ยินอยู่แล้ว
       this.recordEvent(`${this.nick(p)}ฆ่า${this.nick(target)}ที่${this.zn(z)}${wtxt}${messy ? ' แบบเลอะเทอะ' : ' อย่างเงียบเชียบ'}${saw.length ? ` (${saw.map((o) => this.nick(o)).join(', ')}เห็น)` : ''}`);
       return;
     }
@@ -1398,8 +1411,8 @@ export class Game {
     if (others.length && chance(ATTACK.WRONG_TARGET)) {
       const wrong = pick(others);
       const rest = others.filter((o) => o !== wrong);
-      const kase = this.killPlayer(wrong, { cause: 'wrongTarget', killerId: p.id, weapon: w, zoneId: z.id, outside: p.outside, messy: true, witnesses: [target.id, ...rest.map((o) => o.id)] });
-      this.addKillEvidence(z, kase, w, true, p);
+      const kase = this.killPlayer(wrong, { cause: 'wrongTarget', killerId: p.id, weapon: wrec, zoneId: z.id, outside: p.outside, messy: true, witnesses: [target.id, ...rest.map((o) => o.id)] });
+      this.addKillEvidence(z, kase, wrec, true, p);
       p.stained = this.turn;
       this.logTo(p, `💥 คุณพุ่งเข้าใส่${this.nick(target)} แต่เขาหลบทัน และ${w ? w.name : 'แรงของคุณ'}ไปลง${this.nick(wrong)}เต็ม ๆ... ${this.nick(wrong)}ตายทันที ทุกคนในห้องเห็นหมด คุณคือคนร้ายของคดีนี้`, 'culprit');
       this.logTo(wrong, `💀 ${who}ตั้งใจเล่นงาน${this.nick(target)} แต่พลาดมาโดนคุณ... คุณเสียชีวิต`, 'death');
@@ -1460,7 +1473,8 @@ export class Game {
     const [first, second] = ia < ib ? [ib, ia] : [ia, ib];
     const itemB = p.inventory.splice(first, 1)[0];
     const itemA = p.inventory.splice(second, 1)[0];
-    const [partA, partB] = itemA.kind === r.needs[0] ? [itemA, itemB] : [itemB, itemA];
+    const bFirst = partMatches(itemB, r, 0) && partMatches(itemA, r, 1) && !(partMatches(itemA, r, 0) && partMatches(itemB, r, 1));
+    const [partA, partB] = bFirst ? [itemB, itemA] : [itemA, itemB]; // ชิ้นแรกของสูตร = ชิ้นที่ตรงลำดับแรก (ถ้าไม่ตรงทั้งคู่ คงลำดับที่ส่งมา)
     const striker = r.striker === 1 ? partB : partA; // ชิ้นที่ทำร้ายจริง (ใบมีด/ของหนัก/สายไฟ) = "อาวุธ" ของคดี
     const trap = {
       id: `trap_${nextId()}`,
@@ -1469,6 +1483,8 @@ export class Game {
       kind: 'trap',
       trapType: r.trapType,
       weaponName: striker.name,
+      strikerTags: [...tagsOf(striker)],
+      wound: woundOf(striker), // ชนิดแผลที่กับดักนี้ทำ (ปืน = ยิง, มีคม = บาด, หนัก = กระแทก) ใช้เลือกข้อความตอนทำงาน
       ingredients: [partA.name, partB.name],
       portable: true,
       hidden: false,
@@ -1518,7 +1534,7 @@ export class Game {
     if (!food || idx < 0) return this.logTo(p, 'ผสมยาไม่ได้ที่นี่', 'danger');
     if (food.poisoned) return this.logTo(p, `${food.name}มีคนผสมอะไรไว้ก่อนแล้ว คุณเลยไม่ได้ทำอะไร`, 'danger');
     const poison = p.inventory.splice(idx, 1)[0];
-    food.poisoned = { setterId: p.id, poisonName: poison.name, turn: this.turn };
+    food.poisoned = { setterId: p.id, poisonName: poison.name, poisonTags: [...tagsOf(poison)], turn: this.turn };
     z.evidence.push(this.makeEvidence(z.id, `ขอบภาชนะของ${food.name}มีคราบผงและกลิ่นเคมีจาง ๆ`, true, null, 'poison'));
     const who = this.who(p, z);
     this.logTo(p, `☠ คุณผสม${poison.name}ลงใน${food.name}ที่${this.zn(z)}แล้ว ใครมากินมีโอกาสตาย — ถ้าเขาตาย คุณคือคนร้าย (อย่าเผลอกินเอง)`, 'culprit');
@@ -1534,7 +1550,7 @@ export class Game {
     const who = this.who(p, z);
     if (food.poisoned && food.poisoned.setterId !== p.id) {
       const trait = this.traitOf(p);
-      const notice = POISON_NOTICE[trait] ?? POISON_NOTICE.default;
+      const notice = poisonNoticeChance(trait, food.poisoned.poisonTags || []); // ยากลิ่นฉุนสังเกตง่าย ไร้สีไร้รสสังเกตยาก
       if (chance(notice)) {
         z.evidence.push(this.makeEvidence(z.id, `${food.name}ถูกคายทิ้งไว้ครึ่งคำ มีกลิ่นและรสขมผิดปกติ — มีคนผสมอะไรลงไป`, false, null, 'poison'));
         this.logTo(p, `🤢 คุณกัด${food.name}ไปคำเดียวแล้วรู้สึกถึงรสขมและกลิ่นเคมี คุณคายทิ้งทันที — มีคนผสมยาพิษไว้ในอาหารห้องนี้!`, 'danger');
@@ -1713,9 +1729,27 @@ export class Game {
     const w = kase.weapon;
     let text;
     if (kase.cause === 'trap') {
-      const tt = TRAP_TYPES[kase.trapType] || TRAP_TYPES.fall;
-      text = med ? `${fill(tt.body, w?.name)} — เป็นกับดักที่เตรียมไว้ล่วงหน้า ไม่มีคนลงมือโดยตรง` : kase.trapType === 'poison' ? 'ริมฝีปากเขียวคล้ำ ไม่มีบาดแผล มีเศษอาหารติดมุมปาก' : kase.trapType === 'shock' ? 'ฝ่ามือไหม้เกรียม ไม่มีบาดแผลอื่น' : kase.trapType === 'door' ? `บาดแผลฉกรรจ์ที่หน้าอกระดับประตู เหมือนโดน${w?.name || 'ของหนัก'}ที่ยึดไว้กับบานประตู` : `แผล${kase.trapType === 'blade' ? 'ลึกที่ลำคอ' : 'แตกที่ศีรษะ'} เหมือนโดน${w?.name || 'ของหนัก'}`;
-    } else if (w?.kind === 'poison') text = med ? `อาการตรงกับพิษจาก${w.name} ถูกวางยาโดยตรง` : 'ริมฝีปากเขียวคล้ำ ไม่มีบาดแผล น่าจะเป็นพิษอะไรสักอย่าง';
+      const wound = woundOf(w);
+      const tt = trapTexts(kase.trapType, wound);
+      const lay =
+        kase.trapType === 'poison'
+          ? 'ริมฝีปากเขียวคล้ำ ไม่มีบาดแผล มีเศษอาหารติดมุมปาก'
+          : kase.trapType === 'shock'
+            ? 'ฝ่ามือไหม้เกรียม ไม่มีบาดแผลอื่น'
+            : kase.trapType === 'door'
+              ? wound === 'pierce'
+                ? `บาดแผลทะลุที่หน้าอก เหมือนถูก${w?.name || 'ปืน'}ยิงตอนเปิดประตู`
+                : wound === 'blunt'
+                  ? `กะโหลกแตก เหมือน${w?.name || 'ของหนัก'}หล่นใส่ตอนเปิดประตู`
+                  : `บาดแผลฉกรรจ์ที่หน้าอกระดับประตู เหมือนโดน${w?.name || 'ของหนัก'}ที่ยึดไว้กับบานประตู`
+              : kase.trapType === 'blade' && wound === 'blunt'
+                ? `กะโหลกด้านข้างแตก เหมือนโดน${w?.name || 'ของหนัก'}เหวี่ยงใส่`
+                : `แผล${kase.trapType === 'blade' ? 'ลึกที่ลำคอ' : 'แตกที่ศีรษะ'} เหมือนโดน${w?.name || 'ของหนัก'}`;
+      text = med ? `${fill(tt.body, w?.name)} — เป็นกับดักที่เตรียมไว้ล่วงหน้า ไม่มีคนลงมือโดยตรง` : lay;
+    } else if (w?.kind === 'poison') {
+      const injected = /ฉีดด้วย/.test(w.name);
+      text = med ? `อาการตรงกับพิษจาก${w.name} ${injected ? 'ฉีดเข้าเส้นเลือดที่ลำคอ' : 'ถูกวางยาโดยตรง'}` : `ริมฝีปากเขียวคล้ำ ไม่มีบาดแผล น่าจะเป็นพิษอะไรสักอย่าง${injected ? ' มีรอยเข็มเล็ก ๆ ที่ข้างลำคอ' : ''}`;
+    }
     else if (kase.cause === 'defense') text = med ? 'รอยช้ำหลายแห่งและแผลที่ท้ายทอยจากการต่อสู้ ข้อนิ้วถลอก — เขาเป็นฝ่ายเปิดฉากต่อสู้ก่อนแล้วแพ้' : 'รอยช้ำเต็มตัว เหมือนผ่านการต่อสู้อย่างหนัก';
     else if (w) {
       // ร่องรอยใช้ตัวจำแนกเดียวกับตอนเล่าคดี (rules.woundOf) จะได้ไม่ขัดกัน: เชิงเทียน = ทุบ, ไขควง/ที่เปิดไวน์ = แทง, ผ้า = อุดหายใจ
@@ -2515,7 +2549,7 @@ export class Game {
       const mine = b.inventory.filter((i) => i.exitId === x.id);
       if (x.route === 'locked' && mine.some((i) => i.role === 'key')) return x;
       if (x.route === 'power' && x.powered) return x;
-      if (x.route === 'breach' && b.inventory.some((i) => i.kind === 'weapon' || i.kind === 'tool')) return x;
+      if (x.route === 'breach' && b.inventory.some(canBreachWith)) return x;
       if ((x.route === 'code' || x.route === 'repair') && mine.length >= x.items.length) return x;
     }
     return null;
@@ -2626,8 +2660,13 @@ export class Game {
     };
   }
 
+  // ป้ายแท็กของ (หนัก · มีคม · ยิงได้ …) ให้ผู้เล่นรู้ว่าของชิ้นนี้ทำอะไรได้
+  tagText(i) {
+    return [...tagsOf(i)].map((t) => TAG_LABEL[t]).filter(Boolean).join(' · ');
+  }
+
   itemView(i) {
-    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, description: i.description, trapType: i.trapType || null, unlocksZoneNames: (i.unlocksZoneIds || []).map((id) => this.zoneName(id)), exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
+    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, description: i.description, trapType: i.trapType || null, ammo: Number.isInteger(i.ammo) ? i.ammo : null, tagText: this.tagText(i), unlocksZoneNames: (i.unlocksZoneIds || []).map((id) => this.zoneName(id)), exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
   }
 
   viewFor(playerId) {
