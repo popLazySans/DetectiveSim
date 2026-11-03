@@ -57,9 +57,14 @@ export const ATTACK = {
   DARK_BONUS: 0.05, // ห้องถูกตัดไฟ
   MIN: 0.1,
   MAX: 0.95,
-  // เมื่อพลาด
-  COUNTER_KILL: 0.25, // เป้าหมายสวนกลับจนคนลงมือตาย
-  COUNTER_KILL_COMBAT: 0.5, // ถ้าเป้าหมายเป็นนักสู้
+  // เมื่อพลาด: เป้าหมายสวนกลับ — ผลของการสวนกลับขึ้นกับของที่เป้าหมายถือ (ฆ่า หรือทำให้คนลงมือสลบ · มือเปล่า = สลบเท่านั้น)
+  COUNTER: 0.25,
+  COUNTER_COMBAT: 0.5, // ถ้าเป้าหมายเป็นนักสู้
+  COUNTER_ARMED_BONUS: 0.15, // เป้าหมายถือของที่ใช้ลงมือได้
+  // ลงมือสำเร็จแล้ว "ฆ่า" ได้กี่เปอร์เซ็นต์ (ที่เหลือ = เป้าหมายสลบ 1–3 ชั่วโมง) · มือเปล่า ยานอนหลับ ยาสลบ ทำให้สลบเท่านั้น
+  LETHALITY: { firearm: 0.9, sharp: 0.7, heavy: 0.55, light: 0.25, toolSharp: 0.5, toolHeavy: 0.4, rope: 0.6, cloth: 0.35, poison: 0.85, sedative: 0, unarmed: 0 },
+  KO_HOURS: [1, 3], // สลบกี่ชั่วโมง (สุ่ม) · โดนซ้ำตอนสลบ = ต่อเวลา
+  KO_SURE: 1, // ลงมือกับคนที่สลบอยู่สำเร็จแน่นอน (ของฆ่าได้ = ตาย · มือเปล่า/ยาสลบ = สลบต่อ)
   WRONG_TARGET: 0.3, // มีคนอื่นในห้อง → พลาดไปโดนคนอื่น
   DROP_WEAPON: 0.4,
   MESSY: 0.4, // สำเร็จแต่เลอะเทอะ
@@ -143,8 +148,8 @@ export const POISON_NOTICE = { medical: 0.5, detective: 0.5, default: 0.15 }; //
 // สูตรกับดัก การลงมือ ทางออก และการสะเดาะเช็กจากแท็กเหล่านี้ ไม่ใช่แค่ชนิดของ — สมุด วิทยุ ไฟฉาย กล้อง กุญแจมือ จึงเป็นแค่ของประกอบฉาก
 // heavy = หนักพอจะทุบ/ถ่วง · sharp = มีคม/ปลายแหลม · firearm = ยิงได้ (กระสุนจำกัด) · fastener = เครื่องมือช่างที่ยึด/ขัน/ตอก/ปอกสายได้
 // conductive = สายไฟที่นำไฟฟ้า · cord = เส้นที่ผูก/ขึงได้ (เชือกทุกเส้น) · injector = เข็มฉีดยา (พาหะวางยาตรง)
-// pungent = ยากลิ่น/รสชัด (คนกินสังเกตง่าย) · tasteless = ไร้สีไร้รส (สังเกตยาก) · bloodOnly = พิษที่ต้องเข้ากระแสเลือด (ผสมอาหารไม่ได้)
-export const TAG_LABEL = { heavy: 'หนัก', sharp: 'มีคม', firearm: 'ยิงได้', fastener: 'เครื่องมือช่าง', conductive: 'นำไฟฟ้า', injector: 'ฉีดได้', pungent: 'กลิ่นฉุน', tasteless: 'ไร้สีไร้รส', bloodOnly: 'ต้องเข้ากระแสเลือด' };
+// pungent = ยากลิ่น/รสชัด (คนกินสังเกตง่าย) · tasteless = ไร้สีไร้รส (สังเกตยาก) · bloodOnly = พิษที่ต้องเข้ากระแสเลือด (ผสมอาหารไม่ได้) · sedative = ยานอนหลับ/ยาสลบ ทำให้สลบเท่านั้น
+export const TAG_LABEL = { heavy: 'หนัก', sharp: 'มีคม', firearm: 'ยิงได้', fastener: 'เครื่องมือช่าง', conductive: 'นำไฟฟ้า', injector: 'ฉีดได้', pungent: 'กลิ่นฉุน', tasteless: 'ไร้สีไร้รส', bloodOnly: 'ต้องเข้ากระแสเลือด', sedative: 'ทำให้สลบ' };
 const TAG_RX = {
   heavy: /ถัง|ประแจ|ค้อน|กระทะ|พลั่ว|ฟืน|ท่อน|เครื่องเงิน|กาน้ำ|ลูกบอล|โคมไฟ|เบสบอล|ที่เขี่ย|ขวด|เชิงเทียน|ขวาน|หิน|ตุ้ม|ดัมเบล|สมอ|แท่ง|ไม้กอล์ฟ|ตะบอง|กระบอง|หนัก/,
   sharp: /มีด|กรรไกร|ขวาน|แหลม|ผ่าตัด|ตัดเนื้อ|ไขควง|เปิดไวน์|ดาบ|หอก|เคียว|เลื่อย|สว่าน|ง่าม|คมกริบ|คมมาก|คมและ|มีคม|ใบคม|ปลายคม|สิ่ว|ตะขอ/, // ไม่ใช้ "คม" เดี่ยว ๆ เพราะจะไปจับ "โคมไฟ"
@@ -154,6 +159,7 @@ const TAG_RX = {
   pungent: /ฟอกขาว|ล้างจาน|ปุ๋ย|ฉุน|แอมโมเนีย|ทินเนอร์|กรด|น้ำมัน|คลอรีน|ฆ่าแมลง/,
   tasteless: /ไม่มีสี|ไม่มีกลิ่น|ไม่มีรส|รสหวาน|กันเยือกแข็ง|เบื่อหนู|นอนหลับ|ยาสลบ|ความดัน|ไซยาไนด์|สารหนู/,
   bloodOnly: /แมงกะพรุน|พิษงู|แมงป่อง|ปักเป้า|เซรุ่ม|พิษ.*สกัด/,
+  sedative: /นอนหลับ|ยาสลบ|สลบ|คลอโรฟอร์ม|ยากล่อม|ระงับประสาท/, // ทำให้สลบ ไม่ฆ่า (ทั้งฉีดและผสมอาหาร)
 };
 export function tagsOf(item) {
   if (!item) return new Set();
@@ -176,6 +182,7 @@ export function tagsOf(item) {
     test('pungent');
     test('tasteless');
     test('bloodOnly');
+    test('sedative');
     if (out.has('pungent')) out.delete('tasteless');
   }
   return out;
@@ -197,25 +204,33 @@ export const ammoOf = (item) => (item && tagsOf(item).has('firearm') ? parseAmmo
 export function attackBaseOf(item, trait, hasInjector = false) {
   if (!item) return null;
   const t = tagsOf(item);
+  const L = ATTACK.LETHALITY; // lethal = โอกาสฆ่าเมื่อสำเร็จ (ที่เหลือ = สลบ)
   switch (item.kind) {
     case 'weapon':
       if (t.has('firearm')) {
-        if ((item.ammo ?? 0) > 0) return { base: ATTACK.FIREARM, label: 'อาวุธปืน' };
-        return t.has('heavy') || t.has('sharp') ? { base: ATTACK.WEAPON_BASE.weapon, label: 'อาวุธ (กระสุนหมด ใช้ฟาด)' } : { base: ATTACK.WEAPON_LIGHT, label: 'ด้ามปืนเปล่า' };
+        if ((item.ammo ?? 0) > 0) return { base: ATTACK.FIREARM, lethal: L.firearm, label: 'อาวุธปืน' };
+        if (t.has('sharp')) return { base: ATTACK.WEAPON_BASE.weapon, lethal: L.sharp, label: 'อาวุธ (กระสุนหมด ใช้ฟาด)' };
+        if (t.has('heavy')) return { base: ATTACK.WEAPON_BASE.weapon, lethal: L.heavy, label: 'อาวุธ (กระสุนหมด ใช้ฟาด)' };
+        return { base: ATTACK.WEAPON_LIGHT, lethal: L.light, label: 'ด้ามปืนเปล่า' };
       }
-      if (t.has('sharp') || t.has('heavy')) return { base: ATTACK.WEAPON_BASE.weapon, label: t.has('sharp') ? 'อาวุธมีคม' : 'อาวุธหนัก' };
-      return { base: ATTACK.WEAPON_LIGHT, label: 'อาวุธเบา' };
+      if (t.has('sharp')) return { base: ATTACK.WEAPON_BASE.weapon, lethal: L.sharp, label: 'อาวุธมีคม' };
+      if (t.has('heavy')) return { base: ATTACK.WEAPON_BASE.weapon, lethal: L.heavy, label: 'อาวุธหนัก' };
+      return { base: ATTACK.WEAPON_LIGHT, lethal: L.light, label: 'อาวุธเบา' };
     case 'tool':
-      if (t.has('sharp') || t.has('heavy')) return { base: ATTACK.WEAPON_BASE.tool, label: t.has('sharp') ? 'เครื่องมือปลายแหลม' : 'เครื่องมือ/ของหนัก' };
+      if (t.has('sharp')) return { base: ATTACK.WEAPON_BASE.tool, lethal: L.toolSharp, label: 'เครื่องมือปลายแหลม' };
+      if (t.has('heavy')) return { base: ATTACK.WEAPON_BASE.tool, lethal: L.toolHeavy, label: 'เครื่องมือ/ของหนัก' };
       return null;
     case 'cloth':
-      return { base: ATTACK.WEAPON_BASE.cloth, label: 'ผ้า (อุดหายใจ)' };
+      return { base: ATTACK.WEAPON_BASE.cloth, lethal: L.cloth, label: 'ผ้า (อุดหายใจ)' };
     case 'rope':
-      return { base: ATTACK.WEAPON_BASE.rope, label: 'เชือก/สาย (รัดคอ)' };
-    case 'poison':
-      if (trait === 'medical') return { base: ATTACK.POISON_MEDICAL, label: hasInjector ? 'ฉีดยา (สายการแพทย์)' : 'วางยา (สายการแพทย์)' };
-      if (hasInjector) return { base: ATTACK.POISON_INJECT, label: 'ฉีดยาด้วยเข็ม' };
+      return { base: ATTACK.WEAPON_BASE.rope, lethal: L.rope, label: 'เชือก/สาย (รัดคอ)' };
+    case 'poison': {
+      const sed = t.has('sedative');
+      const lethal = sed ? L.sedative : L.poison;
+      if (trait === 'medical') return { base: ATTACK.POISON_MEDICAL, lethal, label: `${hasInjector ? 'ฉีดยา' : 'วางยา'} (สายการแพทย์)${sed ? ' — ทำให้สลบ' : ''}` };
+      if (hasInjector) return { base: ATTACK.POISON_INJECT, lethal, label: `ฉีดยาด้วยเข็ม${sed ? ' — ทำให้สลบ' : ''}` };
       return null;
+    }
     default:
       return null;
   }
@@ -255,10 +270,16 @@ export function poisonNoticeChance(trait, tags = []) {
 export const canBreachWith = (i) => !!i && (tagsOf(i).has('heavy') || (i.kind === 'weapon' && tagsOf(i).has('sharp')));
 
 // ---------- การล็อกห้อง ----------
+// ---------- ขนาดสถานที่ ----------
+// จำนวนห้อง (รวมที่นอนรวม) = ผู้เล่น × 2 (อย่างน้อย 6 อย่างมาก 30) — ห้องเยอะขึ้นตามคน ฆาตกรหาจังหวะอยู่สองต่อสองได้ง่ายขึ้น
+export const ROOMS = { PER_PLAYER: 2, MIN: 6, MAX: 30 };
+export const roomCountFor = (players) => Math.max(ROOMS.MIN, Math.min(ROOMS.MAX, Number(players || 0) * ROOMS.PER_PLAYER));
+
 export const LOCKS = {
-  LOCKED_ZONES_SMALL: 1, // ห้องที่ล็อกไว้ตั้งแต่เริ่ม (สถานที่ ≤ 6 ห้องสำรวจ)
-  LOCKED_ZONES_LARGE: 2,
-  MAX_KEYS: 2, // กุญแจทั้งเกมมีไม่เกิน 2 ดอก (สุ่ม 1–2) ไม่มีกุญแจผู้ดูแล (ระบบสร้างให้เองแทนของจากสถานที่)
+  // ห้องที่ล็อกไว้ตั้งแต่เริ่ม: ราว 1 ห้องต่อห้องสำรวจ 6 ห้อง (อย่างน้อย 1 อย่างมาก 4)
+  lockedZones: (exploreCount) => Math.min(4, Math.max(1, Math.round(exploreCount / 6))),
+  // กุญแจทั้งเกม: สุ่ม 1 ถึง maxKeys ดอก (2 ดอกสำหรับแผนที่ ≤ 14 ห้องสำรวจ ใหญ่กว่านั้นสูงสุด 4) ไม่มีกุญแจผู้ดูแล (ระบบสร้างให้เองแทนของจากสถานที่)
+  maxKeys: (exploreCount) => Math.min(4, Math.max(2, Math.ceil(exploreCount / 7))),
   ROOMS_PER_KEY: [1, 3], // กุญแจดอกหนึ่งไขได้กี่ห้อง · แต่ละห้องมีกุญแจที่ไขได้ไม่เกินดอกเดียว · ห้องที่ล็อกตั้งแต่เริ่มมีกุญแจเสมอ · ห้องที่เหลือบางห้องไม่มีกุญแจเลย (ล็อกไม่ได้)
 };
 
@@ -299,7 +320,7 @@ export const OBJECTIVE_WEIGHTS = { visit: 3, visit_eat: 2, visit2: 2, take: 2, p
 
 // ---------- ผลของสายความสามารถ (trait) ที่ระบบใช้จริง ----------
 export const TRAIT_EFFECTS = {
-  combat: ['ลงมือมือเปล่า 35% → 70%, ถืออาวุธ +15%', 'เมื่อถูกจู่โจม สวนกลับจนคนลงมือตาย 50% (คนทั่วไป 25%) และคนที่จะลงมือกับคุณโดนหัก 15%', 'ลงมือแล้วเลอะเทอะแค่ 20% (คนทั่วไป 40%)', 'ทุบ/งัดทางออกได้ 2 แต้มต่อครั้ง (ต้องการ 5 แต้ม)', 'พังประตูห้องที่ล็อกได้ด้วยมือเปล่า ใช้เวลา 1–2 ชั่วโมง (เสียงดัง คนในห้องได้ยินทุกชั่วโมง ประตูพังแล้วล็อกไม่ได้อีก)'],
+  combat: ['ลงมือมือเปล่า 35% → 70%, ถืออาวุธ +15%', 'เมื่อถูกจู่โจม สวนกลับได้ 50% (คนทั่วไป 25% · ถืออาวุธ +15%) ผลของการสวนกลับขึ้นกับของที่ถือ และคนที่จะลงมือกับคุณโดนหัก 15%', 'ลงมือแล้วเลอะเทอะแค่ 20% (คนทั่วไป 40%)', 'ทุบ/งัดทางออกได้ 2 แต้มต่อครั้ง (ต้องการ 5 แต้ม)', 'พังประตูห้องที่ล็อกได้ด้วยมือเปล่า ใช้เวลา 1–2 ชั่วโมง (เสียงดัง คนในห้องได้ยินทุกชั่วโมง ประตูพังแล้วล็อกไม่ได้อีก)'],
   stealth: ['ล้วงกระเป๋าคนในห้องเดียวกันได้ (สำเร็จ 70%)', 'ทำลายหลักฐานสำเร็จ 75% (คนทั่วไป 50%)', 'คนในห้องเห็นคุณซ่อนของ/วางกับดัก/หยิบของน้อยลงครึ่งหนึ่ง'],
   medical: ['ตรวจศพเห็นอาวุธ เวลาตาย และว่าศพถูกย้ายไหม', 'วางยาโดยตรงได้โดยไม่ต้องมีเข็มฉีดยา สำเร็จ 80% (คนทั่วไปต้องมีเข็มฉีดยา 65%)', 'สังเกตอาหารมีพิษก่อนกิน 50% (คนทั่วไป 15%)', 'ทำลายหลักฐานสำเร็จ 75%'],
   tech: ['ตัดไฟ/กล้องในห้องที่มีแผงไฟ (พยานจำหน้าไม่ได้ และคนลงมือได้ +5%)', 'คราฟกับดักไฟช็อตได้ (ต้องใช้สายไฟจริง เชือกไม่นำไฟฟ้า)', 'กดรหัสทางออกด้วยเศษรหัสแค่ 2 ใน 3 ชิ้น', 'ทุบ/งัดทางออกได้ 2 แต้มต่อครั้ง', 'ใช้เครื่องมือช่าง (ไขควง/ประแจ/คีม) สะเดาะกลอนประตูที่ล็อกแทนที่สะเดาะกุญแจ (2–3 ชั่วโมง)'],

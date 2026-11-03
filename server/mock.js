@@ -1,7 +1,7 @@
 // Mock generators — ใช้เมื่อไม่มี ANTHROPIC_API_KEY หรือเมื่อเรียก AI ไม่สำเร็จ
 // ทุกฟังก์ชันคืนค่าในรูปแบบเดียวกับที่ ai.js คาดหวังจาก Claude
 
-import { woundOf } from './rules.js';
+import { woundOf, ROOMS, tagsOf } from './rules.js';
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const shuffle = (arr) => {
@@ -219,15 +219,89 @@ export const LOCATIONS = [
 const NON_PORTABLE = new Set(['fixture', 'power', 'food']);
 
 // คืนสถานที่ในรูปแบบที่ game.js ใช้: zones[].items[] มี kind/portable, sleepZoneId = ห้องแรก, exits = เทมเพลตทางออก
-export function mockLocation({ previousNames = [] } = {}) {
+// ห้องเสริมสำหรับสถานที่ที่ต้องมีห้องมากกว่าแม่แบบ 8 ห้อง (ห้อง = ผู้เล่น × 2) — ชื่อห้อง/ของไม่ซ้ำกับแม่แบบ
+// ของทุกชิ้นตั้งชื่อ/คำบรรยายให้ตัวจำแนกแท็ก (rules.tagsOf) อ่านออก: หนัก มีคม เครื่องมือช่าง นำไฟฟ้า กลิ่นฉุน ไร้สี ทำให้สลบ
+export const EXTRA_ROOMS = [
+  { name: 'ห้องเก็บของเก่า', description: 'ลังไม้และของใช้เก่าวางซ้อนกันจนเกือบถึงเพดาน', items: [['ท่อนเหล็กสั้น', 'หนักมือ', 'weapon'], ['ผ้าใบคลุมของ', 'ผืนใหญ่หนา', 'cloth'], ['กล่องตะปูและค้อนเล็ก', 'เครื่องมือช่างชุดเล็ก', 'tool']] },
+  { name: 'ห้องน้ำรวม', description: 'กระเบื้องชื้น ก๊อกน้ำหยดไม่หยุด', items: [['น้ำยาล้างห้องน้ำ', 'กลิ่นฉุนแสบจมูก', 'poison'], ['ราวผ้าเช็ดตัวเหล็ก', 'แท่งเหล็กถอดได้', 'weapon'], ['ผ้าเช็ดตัวเปียก', 'ชุ่มน้ำ', 'cloth']] },
+  { name: 'ทางเดินหลังอาคาร', description: 'ทางเดินแคบ ๆ มีถังขยะและท่อระบายน้ำ', items: [['ถังขยะเหล็ก', 'หนักและมีฝา', 'tool'], ['สายยางรดน้ำ', 'ยาวและเหนียว', 'rope']] },
+  { name: 'ห้องซักล้าง', description: 'เครื่องซักผ้าเก่าและราวตากผ้า', items: [['น้ำยาซักผ้าเข้มข้น', 'กลิ่นฉุน', 'poison'], ['ไม้ตีพรม', 'ด้ามไม้หนัก', 'weapon'], ['เชือกตากผ้า', 'ยาวหลายเมตร', 'rope']] },
+  { name: 'ห้องเครื่องสำรอง', description: 'เครื่องปั่นไฟสำรองและแผงสวิตช์เก่า', items: [['แผงไฟสำรอง', 'จ่ายไฟให้โซนนี้', 'power'], ['ประแจเลื่อน', 'เครื่องมือช่างหนักมือ', 'tool'], ['สายไฟสำรองสั้น', 'ฉนวนลอก นำไฟฟ้าได้', 'rope']] },
+  { name: 'ดาดฟ้า', description: 'ลมแรง มองเห็นได้ไกล แต่ไม่มีทางลง', items: [['ท่อเหล็กผุ', 'ท่อนยาวหนัก', 'weapon'], ['เชือกขึงเสาอากาศ', 'เหนียว ยาว', 'rope'], ['เก้าอี้พักผ่อน', 'ตรึงกับพื้น', 'fixture']] },
+  { name: 'ห้องใต้หลังคา', description: 'ฝุ่นหนา เพดานต่ำ ของเก่ากองเต็ม', items: [['ขวานเล็ก', 'ใบคมกริบ', 'weapon'], ['โคมตะเกียงเก่า', 'หนัก', 'tool'], ['ผ้าม่านเก่า', 'ผืนหนาเต็มไปด้วยฝุ่น', 'cloth']] },
+  { name: 'ลานจอดรถใต้ดิน', description: 'มืด เงียบ มีรถเก่าจอดอยู่คันเดียว', items: [['แม่แรงรถ', 'เหล็กหนักมาก', 'tool'], ['สายพ่วงแบตเตอรี่', 'สายทองแดงหนา นำไฟฟ้า', 'rope'], ['น้ำมันเบรก', 'รสขม กลิ่นฉุน', 'poison']] },
+  { name: 'ห้องพักพนักงาน', description: 'โซฟาเก่า ตู้เย็นเล็ก และกาแฟค้างแก้ว', items: [['ตู้เสบียงพนักงาน', 'ขนม กาแฟ และน้ำดื่ม', 'food'], ['ที่เปิดกระป๋อง', 'ปลายแหลม', 'tool']] },
+  { name: 'ห้องประชุม', description: 'โต๊ะยาวและโปรเจกเตอร์ที่ยังเสียบปลั๊กอยู่', items: [['เก้าอี้เหล็กพับได้', 'หนักพอจะฟาด', 'weapon'], ['สายไฟโปรเจกเตอร์', 'ยาวหลายเมตร นำไฟฟ้า', 'rope'], ['แฟ้มเอกสารเก่า', 'มีแต่กระดาษ', 'tool']] },
+  { name: 'โรงรถ', description: 'กลิ่นน้ำมัน เครื่องมือแขวนเต็มผนัง', items: [['ค้อนยาง', 'หนักมือ', 'tool'], ['โซ่ล็อกจักรยาน', 'โซ่เหล็กยาว', 'rope'], ['น้ำมันเครื่องใช้แล้ว', 'กลิ่นฉุน', 'poison']] },
+  { name: 'ห้องสมุดเล็ก', description: 'ชั้นหนังสือเตี้ย ๆ และโต๊ะอ่านหนังสือ', items: [['ที่ตัดกระดาษ', 'ใบมีดคมกริบ', 'weapon'], ['สมุดลงบันทึกห้องสมุด', 'มีแต่รายชื่อผู้ยืม', 'tool']] },
+  { name: 'ห้องเล่นเกม', description: 'โต๊ะพูลและตู้เกมที่ไฟดับ', items: [['ไม้คิว', 'ไม้ยาว เบา', 'weapon'], ['ลูกเหล็กเปตอง', 'หนักมาก', 'weapon'], ['เชือกกระโดดเด็ก', 'เหนียวยาว', 'rope']] },
+  { name: 'ห้องออกกำลังกาย', description: 'เครื่องออกกำลังกายและกระจกบานใหญ่', items: [['ดัมเบล 5 กิโล', 'หนักมาก', 'weapon'], ['ยางยืดออกกำลังกาย', 'ยืดได้ เหนียว', 'rope'], ['ผ้าขนหนูยิม', 'ผืนหนา', 'cloth']] },
+  { name: 'สวนหย่อมหลังบ้าน', description: 'ต้นไม้รก น้ำพุหินที่น้ำขุ่น', items: [['จอบขุดดิน', 'ด้ามหนักปลายคม', 'tool'], ['ยาฆ่าแมลง', 'กลิ่นฉุน', 'poison'], ['น้ำพุหิน', 'น้ำขุ่น', 'fixture']] },
+  { name: 'ห้องเก็บไวน์', description: 'เย็นและมืด ชั้นไวน์เรียงยาว', items: [['ขวดไวน์เก่า', 'ขวดแก้วหนัก', 'weapon'], ['ชั้นไวน์และชีส', 'ไวน์ ชีส และขนมปังแห้ง', 'food'], ['ที่เปิดไวน์โบราณ', 'เกลียวเหล็กแหลม', 'tool']] },
+  { name: 'ห้องมืดล้างฟิล์ม', description: 'ไฟแดงสลัว ถาดน้ำยาเรียงราย', items: [['น้ำยาล้างฟิล์ม', 'ไม่มีสี กลิ่นอ่อน', 'poison'], ['กรรไกรตัดฟิล์ม', 'ปลายแหลม', 'weapon'], ['ไฟแดงห้องมืด', 'แผงไฟแยกห้อง', 'power']] },
+  { name: 'ห้องเครื่องมือ', description: 'เครื่องมือช่างแขวนเป็นระเบียบบนผนัง', items: [['ชุดไขควงช่าง', 'เครื่องมือช่างครบชุด', 'tool'], ['เลื่อยมือ', 'ใบคมกริบ', 'weapon'], ['เทปกาวผ้า', 'เหนียวมาก', 'rope']] },
+  { name: 'ทางหนีไฟ', description: 'บันไดเหล็กวนลงไปในความมืด ประตูด้านล่างถูกเชื่อมปิด', items: [['ถังดับเพลิงเล็ก', 'หนัก', 'tool'], ['สายดับเพลิง', 'สายยางหนา ยาว', 'rope']] },
+  { name: 'ห้องพยาบาลสำรอง', description: 'เตียงเดียวและตู้ยาที่เกือบว่าง', items: [['ยาสลบสำรอง', 'ขวดเล็ก ทำให้สลบ', 'poison'], ['เข็มฉีดยาสำรอง', 'กล่องเข็ม', 'tool'], ['ผ้าพันแผลม้วนใหญ่', 'ยาวหลายเมตร', 'rope']] },
+  { name: 'ห้องควบคุมสำรอง', description: 'จอดับไปครึ่งหนึ่ง สวิตช์ไฟแยกโซน', items: [['ตู้สวิตช์ไฟสำรอง', 'คุมไฟอีกครึ่งอาคาร', 'power'], ['คีมตัดสายไฟ', 'เครื่องมือช่าง', 'tool']] },
+  { name: 'ห้องครัวเล็ก', description: 'เคาน์เตอร์เล็ก ๆ กับตู้เย็นที่ยังทำงาน', items: [['มีดปอกผลไม้', 'ใบเล็กคม', 'weapon'], ['ตู้เย็นเล็ก', 'น้ำผลไม้และของว่าง', 'food'], ['ยากันบูด', 'ไม่มีสี ไม่มีกลิ่น', 'poison']] },
+  { name: 'ห้องเก็บศพเก่า', description: 'เย็นเฉียบ ลิ้นชักเหล็กเรียงเป็นแถว', items: [['เลื่อยผ่าศพ', 'ใบคมกริบ', 'weapon'], ['ฟอร์มาลิน', 'กลิ่นฉุนรุนแรง', 'poison'], ['ลิ้นชักเก็บศพ', 'เหล็กเย็นเฉียบ', 'fixture']] },
+  { name: 'ห้องเก็บอุปกรณ์กีฬา', description: 'ตาข่ายและไม้กีฬากองรวมกัน', items: [['ไม้ฮอกกี้', 'ไม้แข็งหนัก', 'weapon'], ['ตาข่ายวอลเลย์บอล', 'เชือกถักเหนียว', 'rope'], ['ลูกตุ้มเหล็ก', 'หนักมาก', 'weapon']] },
+];
+
+const REQUIRED_KINDS = ['food', 'power', 'lockpick', 'rope', 'tool', 'weapon', 'poison'];
+// ของที่กลไกเกมต้องมีอย่างน้อย 1 ชิ้นเสมอ: ชนิดจำเป็น + เครื่องมือช่าง (กับดักประตู/ซ่อมทางออก/ช่างสะเดาะ)
+const hasRequired = (items) => REQUIRED_KINDS.every((k) => items.some((it) => it[2] === k)) && items.some((it) => it[2] === 'tool' && tagsOf({ name: it[0], description: it[1], kind: it[2] }).has('fastener'));
+
+// เลือกห้องเสริม count ห้องที่ชื่อห้อง/ชื่อของไม่ซ้ำกับที่มีอยู่ (คืนรูปแบบดิบ items = [name, description, kind])
+export function extraRooms(count, usedZoneNames = [], usedItemNames = []) {
+  const zoneSet = new Set(usedZoneNames);
+  const itemSet = new Set(usedItemNames);
+  const out = [];
+  for (const r of shuffle(EXTRA_ROOMS)) {
+    if (out.length >= count) break;
+    if (zoneSet.has(r.name)) continue;
+    const items = r.items.filter(([name]) => !itemSet.has(name));
+    if (!items.length) continue;
+    out.push({ name: r.name, description: r.description, items });
+    zoneSet.add(r.name);
+    for (const [name] of items) itemSet.add(name);
+  }
+  return out;
+}
+
+// ปรับจำนวนห้องให้ได้ตามต้องการ: ห้องแรก (ที่นอนรวม) อยู่เสมอ · น้อยกว่า = ตัดห้องสำรวจท้าย ๆ ที่ไม่ทำให้ของชนิดจำเป็นหายไป · มากกว่า = เติมห้องเสริม
+export function fitRooms(zones, count) {
+  let out = zones.map((z) => ({ name: z.name, description: z.description, items: z.items.map((it) => [...it]) }));
+  const itemsLeft = (list, skipIdx) => list.flatMap((z, i) => (i === skipIdx ? [] : z.items));
+  while (out.length > count) {
+    let removed = false;
+    for (let i = out.length - 1; i >= 1; i--) {
+      if (hasRequired(itemsLeft(out, i))) {
+        out.splice(i, 1);
+        removed = true;
+        break;
+      }
+    }
+    if (!removed) break;
+  }
+  if (out.length < count) {
+    const extra = extraRooms(count - out.length, out.map((z) => z.name), out.flatMap((z) => z.items.map((it) => it[0])));
+    out = out.concat(extra);
+  }
+  return out;
+}
+
+export function mockLocation({ previousNames = [], zoneCount = 0 } = {}) {
   const avail = LOCATIONS.filter((l) => !previousNames.includes(l.name));
   // สำหรับเทสต์/เดโม: MOCK_LOCATION=<ส่วนหนึ่งของชื่อสถานที่> บังคับเลือกสถานที่นั้น (เช่น MOCK_LOCATION=คฤหาสน์)
   const forced = process.env.MOCK_LOCATION ? LOCATIONS.find((l) => l.name.includes(process.env.MOCK_LOCATION)) : null;
   const base = forced || pick(avail.length ? avail : LOCATIONS);
+  const want = Math.max(ROOMS.MIN, Math.min(ROOMS.MAX, zoneCount || base.zones.length));
+  const zones = fitRooms(base.zones, want);
   return {
     name: base.name,
     description: base.description,
-    zones: base.zones.map((z, zi) => ({
+    zones: zones.map((z, zi) => ({
       id: `z${zi + 1}`,
       name: z.name,
       description: z.description,

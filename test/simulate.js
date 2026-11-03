@@ -3,9 +3,9 @@
 // รัน: npm test
 import { Game, PHASE, STEP, CONFIG, NONE_VOTE, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap, MURDER_CAUSES } from '../server/game.js';
 import { createAI } from '../server/ai.js';
-import { resolveExits } from '../server/escape.js';
-import { RECIPES, OBJECTIVE_HOURS, LOCKS, ATTACK, woundOf, isConductive, tagsOf, attackBaseOf, parseAmmo, poisonNoticeChance, canBreachWith } from '../server/rules.js';
-import { LOCATIONS, mockNarrateCase } from '../server/mock.js';
+import { resolveExits, exitReadyFor, exitUsefulFor } from '../server/escape.js';
+import { RECIPES, OBJECTIVE_HOURS, LOCKS, ATTACK, ROOMS, roomCountFor, woundOf, isConductive, tagsOf, attackBaseOf, parseAmmo, poisonNoticeChance, canBreachWith } from '../server/rules.js';
+import { LOCATIONS, EXTRA_ROOMS, mockLocation, mockNarrateCase } from '../server/mock.js';
 
 CONFIG.BOT_DELAY_SCALE = 0.02;
 CONFIG.STEP_TIMEOUT_MS = 0;
@@ -20,7 +20,8 @@ function assertKeyLayout(game, atStart) {
   const allItems = zones.flatMap((z) => z.items);
   const keys = allItems.filter((i) => i.kind === 'key' && i.unlocksZoneIds);
   assert(!allItems.some((i) => i.master), 'no master keys exist');
-  assert(keys.length >= 1 && keys.length <= LOCKS.MAX_KEYS, `1–${LOCKS.MAX_KEYS} room keys exist (${keys.length})`);
+  const maxKeys = LOCKS.maxKeys(zones.length - 1);
+  assert(keys.length >= 1 && keys.length <= maxKeys, `1–${maxKeys} room keys exist (${keys.length})`);
   for (const k of keys) assert(k.unlocksZoneIds.length >= LOCKS.ROOMS_PER_KEY[0] && k.unlocksZoneIds.length <= LOCKS.ROOMS_PER_KEY[1], `key opens ${LOCKS.ROOMS_PER_KEY.join('–')} rooms (${k.unlocksZoneIds.length})`);
   for (const z of zones) {
     const openers = keys.filter((k) => k.unlocksZoneIds.includes(z.id));
@@ -69,11 +70,12 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   const host = ids[0];
   if (bots) game.setBots(host, bots);
 
-  const stats = { hours: 0, days: 0, trials: 0, huntRounds: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, requests: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
+  const stats = { kos: 0, hours: 0, days: 0, trials: 0, huntRounds: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, requests: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
   let rolesChecked = false;
   let roleStats = { hidden: 0, fakes: 0 };
   let ticks = 0;
   let lastTurnSeen = 0;
+  let lastAutoHours = 0;
   const objectiveSeen = new Map(); // playerId → { id, deadlineTurn } ของภารกิจล่าสุดที่เห็น
 
   const checkViews = () => {
@@ -145,7 +147,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
         }
       }
       if (game.step === STEP.ACT && me.alive) {
-        assert(Array.isArray(v.me.availableActions) && v.me.availableActions.some((a) => a.type === (me.outside ? 'rest' : 'search')), 'alive player has actions');
+        assert(Array.isArray(v.me.availableActions) && (me.ko ? v.me.availableActions.length === 0 : v.me.availableActions.some((a) => a.type === (me.outside ? 'rest' : 'search'))), 'alive player has actions (none while knocked out)');
         if (me.outside) assert(!v.me.availableActions.some((a) => ['search', 'take', 'drop', 'hide', 'eat', 'examine', 'moveBody', 'clean', 'exit', 'lock', 'unlock'].includes(a.type)), 'outside a locked door: no room actions');
         for (const a of v.me.availableActions) if (a.type === 'trap') assert(me.inventory.find((i) => i.id === a.itemId)?.kind === 'trap', 'only crafted traps can be placed');
         stats.actionsChecked++;
@@ -170,14 +172,9 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     return z && !game.doorBlocking(p, id); // รวมกรณีถูกขังอยู่ในห้องที่ล็อก
   };
   const exitFor = (p) => {
-    for (const x of game.exits.values()) {
-      if (x.open) continue;
-      const mine = p.inventory.filter((i) => i.exitId === x.id);
-      if (x.route === 'locked' && mine.some((i) => i.role === 'key')) return x;
-      if (x.route === 'power' && x.powered) return x;
-      if (x.route === 'breach' && p.inventory.some(canBreachWith)) return x;
-      if ((x.route === 'code' || x.route === 'repair') && mine.length >= x.items.length && (x.route !== 'repair' || p.inventory.some((i) => tagsOf(i).has('fastener')))) return x;
-    }
+    // พร้อมเปิด (ถือของครบ + ทำขั้นที่เหลือได้เอง) ก่อน ไม่งั้นไปทำขั้นถาวรให้คืบหน้า
+    for (const x of game.exits.values()) if (!x.open && exitReadyFor(game, p, x)) return x;
+    for (const x of game.exits.values()) if (!x.open && exitUsefulFor(game, p, x)) return x;
     return null;
   };
 
@@ -233,6 +230,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     if (eatObj && byType('eat').length && chance(0.8)) return byType('eat')[0];
     if (strategy === 'escape') {
       if (byType('exit_power').length) return byType('exit_power')[0];
+      const asm = byType('craft').find((a) => a.recipeId === 'assembly');
+      if (asm) return asm;
       const x = exitFor(p);
       const ex = byType('exit').find((a) => a.exitId === x?.id);
       if (ex) return ex;
@@ -241,11 +240,13 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
         return it && (it.isPart || it.kind === 'clue' || it.kind === 'key');
       });
       if (routeTake) return routeTake;
-      const useful = (it) => !!it && (canBreachWith(it) || tagsOf(it).has('fastener'));
-      const toolTake = take.find((a) => useful(z.items.find((i) => i.id === a.itemId)));
-      if (toolTake && !p.inventory.some(useful)) return toolTake;
+      // ของที่ทางออกต้องใช้: เครื่องมือช่าง (ถอดน็อต) ของมีคม (ตัด) ของหนัก/อาวุธมีคม (ลงแรง)
+      const roles = (it) => (!it ? [] : [tagsOf(it).has('fastener') && 'tool', tagsOf(it).has('sharp') && 'cut', canBreachWith(it) && 'force'].filter(Boolean));
+      const haveRoles = new Set(p.inventory.flatMap(roles));
+      const toolTake = take.find((a) => roles(z.items.find((i) => i.id === a.itemId)).some((r) => !haveRoles.has(r)));
+      if (toolTake && p.inventory.length < CONFIG.INVENTORY_MAX) return toolTake;
       if (p.inventory.length >= CONFIG.INVENTORY_MAX && byType('drop').length) {
-        const junk = byType('drop').find((a) => !p.inventory.find((i) => i.id === a.itemId)?.isPart);
+        const junk = byType('drop').find((a) => { const it = p.inventory.find((i) => i.id === a.itemId); return it && !it.isPart && !roles(it).length; });
         if (junk) return junk;
       }
       return (byType('search')[0] || byType('rest')[0]);
@@ -407,7 +408,10 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
         try {
           checkViews();
           if (game.turn !== lastTurnSeen) {
-            assert(game.turn === lastTurnSeen + 1 || lastTurnSeen === 0, `turn advances by one (${lastTurnSeen} → ${game.turn})`);
+            // ชั่วโมงเดินเองได้ทีละหลายชั่วโมงเฉพาะตอนทุกคนที่ยังอยู่สลบหมด (ระบบประกาศทุกครั้ง)
+            const autoHours = game.chat.filter((m) => m.system && /ทุกคนที่ยังอยู่สลบหมด/.test(m.text)).length;
+            assert(game.turn === lastTurnSeen + 1 + (autoHours - lastAutoHours) || lastTurnSeen === 0, `turn advances by one (${lastTurnSeen} → ${game.turn}, auto-advanced ${autoHours - lastAutoHours})`);
+            lastAutoHours = autoHours;
             lastTurnSeen = game.turn;
             stats.hours = game.turn;
             stats.days = game.day;
@@ -437,7 +441,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   assert(x.clueItemId && [...game.zones.values()].some((zz) => zz.items.some((i) => i.id === x.clueItemId && i.hidden)), 'clue item hidden');
                 }
                 const locked = [...game.zones.values()].filter((z) => z.locked);
-                const expectLocked = CONFIG.LOCKED_ZONES >= 0 ? CONFIG.LOCKED_ZONES : game.zones.size - 1 <= 6 ? 1 : 2;
+                const expectLocked = CONFIG.LOCKED_ZONES >= 0 ? CONFIG.LOCKED_ZONES : LOCKS.lockedZones(game.zones.size - 1);
+                assert(game.zones.size === roomCountFor(game.players.size), `rooms = players × 2 (${game.zones.size} rooms for ${game.players.size} players)`);
                 assert(locked.length === Math.min(expectLocked, game.zones.size - 3), `locked zones at start (${locked.length})`);
                 for (const z of locked) {
                   const keyZone = [...game.zones.values()].find((zz) => zz.items.some((i) => i.id === z.keyItemId));
@@ -455,7 +460,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                 if (pendingMove.length) {
                   try { game.sendChat(pendingMove[0].id, `${game.timeLabel()} ไปไหนกันดี`); } catch {}
                   for (const p of pendingMove) {
-                    assert(!p.forced, 'forced players are pre-moved by the engine');
+                    assert(!p.ko, 'knocked-out players are pre-moved by the engine');
                     let target = decideMove(p);
                     const block = game.doorBlocking(p, target);
                     const means = block ? game.doorMeans(p) : null;
@@ -476,6 +481,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                 }
               } else if (game.step === STEP.ACT) {
                 for (const p of humansAlive()) {
+                  if (game.step !== STEP.ACT) break; // ชั่วโมงจบไปแล้วตอนคนก่อนหน้าเลือก (คนสลบมีแอ็กชันอัตโนมัติ)
                   if (p.__expectBounce) {
                     const door = game.zones.get(p.__expectBounce.target);
                     const eb = p.__expectBounce;
@@ -496,10 +502,10 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                     p.__expectWork = null;
                   }
                   const cur = game.actions.get(p.id);
-                  if (cur?.forced) {
+                  if (cur?.ko) {
                     let threw = false;
                     try { game.chooseAction(p.id, { type: 'search' }); } catch { threw = true; }
-                    assert(threw, 'forced action cannot be overridden');
+                    assert(threw && p.ko, 'a knocked-out player cannot act');
                     continue;
                   }
                   if (cur) continue;
@@ -517,9 +523,11 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   }
                 }
               } else if (game.step === STEP.REPORT) {
-                for (const p of humansAlive().filter((x) => !game.ready.has(x.id))) {
+                // คนสลบนับว่าพร้อมแล้ว: ชั่วโมงใหม่อาจเริ่มทันทีที่คนสุดท้ายที่ไม่สลบกดพร้อม จึงต้องหยุดลูปเมื่อขั้นเปลี่ยน
+                for (const p of humansAlive().filter((x) => !game.ready.has(x.id) && !x.ko)) {
+                  if (game.step !== STEP.REPORT) break;
                   const v = game.viewFor(p.id);
-                  assert(v.me.log.some((l) => l.day === game.day && l.hour === game.hour && l.kind === 'move'), 'player has a move log entry for this hour');
+                  assert(v.me.log.some((l) => l.day === game.day && l.hour === game.hour && l.kind === 'move'), `player has a move log entry for this hour (hour=${game.hour} turn=${game.turn} phase=${game.phase} step=${game.step} moved=${game.moves.has(p.id)} acted=${JSON.stringify(game.actions.get(p.id))} ko=${JSON.stringify(p.ko)} alive=${p.alive} zone=${p.zoneId} out=${p.outside} last=${JSON.stringify(v.me.log.slice(-4).map((l) => [l.day, l.hour, l.kind, l.text.slice(0, 50)]))})`);
                   tryGive(p);
                   tryRequest(p);
                   game.markReady(p.id);
@@ -577,7 +585,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   // ทุกคนตื่นที่ห้องนอนรวม — เว้นชั่วโมงแรกที่ทุกคนถูกภารกิจบังคับพาไปพร้อมกัน (เอนจินประมวลผลการย้ายทันที)
                   if (game.step === STEP.MOVE) for (const p of game.alivePlayers()) if (!game.moves.has(p.id)) assert(p.zoneId === game.location.sleepZoneId && !p.outside, 'everyone restarts the day in the sleep zone');
                 }
-                for (const p of game.alivePlayers()) if (invBefore.has(p.id)) assert(p.inventory.map((i) => i.id).join(',') === invBefore.get(p.id), 'survivors keep their items');
+                // คนที่เพิ่งถูกลงโทษเรื่องภารกิจตอนเริ่มวัน (สลบ) ทำของหล่นได้
+                for (const p of game.alivePlayers()) if (invBefore.has(p.id) && !p.ko) assert(p.inventory.map((i) => i.id).join(',') === invBefore.get(p.id), 'survivors keep their items');
                 for (const p of game.players.values()) if (!p.alive) assert(p.inventory.length === 0, 'dead players hold nothing (dropped where they died)');
               }
               break;
@@ -617,7 +626,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   stats.exitsFound = [...game.exits.values()].filter((x) => x.discoveredBy.size > 0).length;
   if (game.endReason === 'escape') stats.escapes++;
   for (const p of game.players.values()) {
-    stats.forced += p.log.filter((l) => l.text.startsWith('⏰')).length;
+    stats.forced += p.log.filter((l) => l.text.startsWith('⏰')).length; // ตอนนี้ = ถูกลงโทษเพราะละเลยภารกิจ (สลบ)
+    stats.kos += p.log.filter((l) => l.text.startsWith('😵') && !/ยังสลบอยู่|สลบไปก่อน/.test(l.text)).length;
     stats.objectivesDone += p.log.filter((l) => l.text.startsWith('✅')).length;
     stats.crafts += p.log.filter((l) => l.text.startsWith('🛠')).length;
     stats.trapsPlaced += p.log.filter((l) => l.text.startsWith('🪤 คุณตั้ง') || l.text.startsWith('🪤 คุณติดตั้ง')).length; // รวมกับดักประตู
@@ -681,7 +691,12 @@ async function unitTests() {
     foodZone.locked = false;
     zones.find((z) => z.lockable && z.id !== foodZone.id).locked = true;
   }
-  const poison = zones.flatMap((z) => z.items).find((i) => i.kind === 'poison');
+  // ยาพิษสำหรับเทสต์ต้องฆ่าได้ (ยานอนหลับ/ยาสลบทำให้สลบเท่านั้น และพิษที่ต้องเข้ากระแสเลือดผสมอาหารไม่ได้)
+  let poison = zones.flatMap((z) => z.items).find((i) => i.kind === 'poison' && !tagsOf(i).has('sedative') && !tagsOf(i).has('bloodOnly'));
+  if (!poison) {
+    poison = { id: 'poison_test', name: 'ยาเบื่อหนูทดสอบ', description: 'กล่องเปิดอยู่', kind: 'poison', portable: true, hidden: false, isPart: false };
+    zones[1].items.push(poison);
+  }
   const rope = zones.flatMap((z) => z.items).find((i) => i.kind === 'rope');
   const weapon = zones.flatMap((z) => z.items).find((i) => i.kind === 'weapon' && (tagsOf(i).has('sharp') || tagsOf(i).has('heavy')));
   assert(foodZone && poison && rope && weapon, 'unit world has food, poison, rope and a sharp or heavy weapon');
@@ -886,15 +901,28 @@ async function unitTests() {
     // การสำรวจข้างบนหยิบของทางออกที่เจอเข้ากระเป๋าอัตโนมัติ กุญแจของทางออกนี้อาจอยู่ในมือ a แล้ว (ไม่งั้น inventory = [undefined] แล้วพังแบบสุ่ม)
     const keyItem = [...zones.flatMap((z) => z.items), ...a.inventory].find((i) => i && i.exitId === lockedExit.id && i.role === 'key');
     assert(keyItem, 'the locked exit has a key item somewhere');
-    a.inventory = [keyItem];
+    a.inventory = [keyItem, { id: 'tool_x', name: 'ไขควงทดสอบ', description: 'ปลายแหลม', kind: 'tool', portable: true, hidden: false, isPart: false }, { id: 'axe_x', name: 'ขวานทดสอบ', description: 'คมกริบ', kind: 'weapon', portable: true, hidden: false, isPart: false }];
     const act = game.availableActions(a).find((x) => x.type === 'exit' && x.exitId === lockedExit.id);
-    assert(act && !act.disabled, 'exit action enabled when holding the exit key');
+    assert(act && !act.disabled && /ขั้น/.test(act.label) && lockedExit.steps.length >= 4, 'exit action lists the steps (4 or more)');
+    const view5 = game.viewFor(a.id).me.exits.find((x) => x.id === lockedExit.id);
+    assert(view5 && view5.steps.length === lockedExit.steps.length && view5.steps.some((s) => s.kind === 'key' && s.done) && view5.steps.some((s) => s.kind === 'force' && !s.done), 'the view shows a step checklist with the key already satisfied');
     game.phase = PHASE.DAY;
     game.step = STEP.ACT;
-    game.actions = new Map([[a.id, act]]);
-    for (const p of game.alivePlayers()) if (p.id !== a.id) game.actions.set(p.id, { type: 'rest', auto: true });
-    game.resolveActions();
-    assert(lockedExit.open && game.phase === PHASE.ENDED && game.endReason === 'escape', 'using the key opens the exit and ends the game');
+    game.charOf(a).ultimate.trait = 'none'; // คนทั่วไปลงแรงได้ 1 แต้มต่อครั้ง
+    let tries = 0;
+    while (!lockedExit.open && tries < 6) {
+      game.actions = new Map([[a.id, act]]);
+      for (const p of game.alivePlayers()) if (p.id !== a.id) game.actions.set(p.id, { type: 'rest', auto: true });
+      game.resolveActions();
+      tries++;
+      if (!lockedExit.open) {
+        assert(lockedExit.steps.find((s) => s.kind === 'cut').done && lockedExit.steps.find((s) => s.kind === 'tool').done, 'cutting and unbolting stick after the first attempt');
+        assert(a.log.at(-1).text.includes('ยังไม่สำเร็จ') && /ยังขาด/.test(a.log.at(-1).text), 'a failed attempt reports which steps are missing');
+        game.step = STEP.ACT;
+      }
+    }
+    assert(lockedExit.open && game.phase === PHASE.ENDED && game.endReason === 'escape', `key + hand tool + blade + force open the locked exit (${tries} attempts)`);
+    assert(tries === 3, `the force step (3 points) takes exactly 3 attempts for an ordinary player (${tries})`);
   }
   // 6) ขอของจากบอท (เฉพาะบอท เฉพาะช่วงพัก ห้องเดียวกัน)
   {
@@ -991,6 +1019,7 @@ async function unitTests() {
     g4.phase = PHASE.DAY;
     g4.step = STEP.ACT;
     Math.random = () => 0;
+    for (const kk of [k1, k2]) if (!g4.bestWeapon(kk)) kk.inventory.push({ id: `kn_${kk.id}`, name: 'มีดทดสอบ', description: 'คมกริบ', kind: 'weapon', portable: true, hidden: false, isPart: false }); // มือเปล่าทำให้สลบเท่านั้น
     g4.do_attack(k1, { targetId: v1.id });
     assert(!g4.murderLockedFor(k2), 'with the lock off a second person may still kill while a body is hidden');
     g4.do_attack(k2, { targetId: v2.id });
@@ -1156,12 +1185,22 @@ async function unitTests() {
     g6.phase = PHASE.DAY;
     g6.step = STEP.ACT;
     Math.random = () => 0;
+    if (!g6.bestWeapon(k6)) k6.inventory.push({ id: 'kn_k6', name: 'มีดทดสอบ', description: 'คมกริบ', kind: 'weapon', portable: true, hidden: false, isPart: false });
     g6.do_attack(k6, { targetId: v6.id });
     Math.random = realRandom;
     assert(!v6.alive && k6.kills === 1, 'k6 is an uncaught killer');
     const x6 = [...g6.exits.values()][0];
-    x6.route = 'power';
+    // ทำทุกขั้นให้ครบ: ขั้นถาวรติดไว้ ของที่ต้องถือให้ s6 ถือ
+    for (const s of x6.steps) {
+      s.done = true;
+      if (s.kind === 'force') s.progress = s.needed;
+    }
     x6.powered = true;
+    for (const it of x6.items) {
+      const zz = [...g6.zones.values()].find((z) => z.items.some((i) => i.id === it.id));
+      if (zz) s6.inventory.push(zz.items.splice(zz.items.findIndex((i) => i.id === it.id), 1)[0]);
+    }
+    if (x6.assembly) s6.inventory.push({ id: x6.assembly.itemId, name: x6.assembly.name, description: '', kind: 'part', role: 'assembly', exitId: x6.id, isPart: true, portable: true, hidden: false });
     for (const p of [k6, s6, t6]) {
       p.zoneId = x6.zoneId;
       p.outside = false;
@@ -1199,7 +1238,11 @@ async function unitTests() {
     g7.clearTimers();
     const [a7, b7, c7, d7] = ids7.map((id) => g7.players.get(id));
     const R7 = [...g7.zones.values()].find((z) => !z.locked && z.id !== g7.location.sleepZoneId && !z.items.some((i) => i.kind === 'power'));
-    const P7 = [...g7.zones.values()].find((z) => !z.locked && z.items.some((i) => i.kind === 'power'));
+    let P7 = [...g7.zones.values()].find((z) => !z.locked && z.items.some((i) => i.kind === 'power'));
+    if (!P7) {
+      P7 = [...g7.zones.values()].find((z) => z.items.some((i) => i.kind === 'power'));
+      if (P7) P7.locked = false;
+    }
     assert(R7 && P7, 'unit world has an open room without and one with a power panel');
     for (const p of [a7, b7, c7, d7]) {
       g7.charOf(p).ultimate.trait = 'none';
@@ -1357,13 +1400,191 @@ async function unitTests() {
     assert(g8.doorMeans(a8)?.method === 'pick', 'a tech picks a lock with a screwdriver');
     assert(canBreachWith(ball) && canBreachWith(mk('ขวานดับเพลิง', 'weapon')) && !canBreachWith(notebook) && !canBreachWith(driver) && !canBreachWith(skimmer), 'only heavy things or sharp weapons can breach an exit');
   }
+  // 12) ระบบสลบ: มือเปล่า = สลบ · คนสลบเลือกอะไรไม่ได้ ของหล่น ถูกลงมือสำเร็จแน่นอน · ยาสลบในอาหาร = สลบ · สวนกลับด้วยมือเปล่า = คนลงมือสลบ · ละเลยภารกิจ = สลบ · ฟื้นตามชั่วโมง
+  {
+    const mk = (name, kind, description = '', extra = {}) => ({ id: `ko_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false, ...extra });
+    const g9 = new Game({ code: 'UNIT9', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids9 = ['k1-xxxxxxxx', 'k2-xxxxxxxx', 'k3-xxxxxxxx', 'k4-xxxxxxxx', 'k5-xxxxxxxx'];
+    for (const [i, id] of ids9.entries()) g9.addPlayer({ id, name: `สลบ ${i + 1}` });
+    g9.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g9.start(ids9[0]);
+    g9.clearTimers();
+    const [a9, b9, c9, d9, e9] = ids9.map((id) => g9.players.get(id));
+    const zones9 = [...g9.zones.values()];
+    let F9 = zones9.find((z) => !z.locked && z.items.some((i) => i.kind === 'food'));
+    if (!F9) { F9 = zones9.find((z) => z.items.some((i) => i.kind === 'food')); F9.locked = false; }
+    const R9 = zones9.find((z) => z.id !== g9.location.sleepZoneId && z.id !== F9.id && !z.locked);
+    for (const p of [a9, b9, c9, d9, e9]) { g9.charOf(p).ultimate.trait = 'none'; p.zoneId = R9.id; p.outside = false; }
+    e9.zoneId = F9.id;
+    g9.phase = PHASE.DAY;
+    g9.step = STEP.ACT;
+    const rr9 = Math.random;
+    const seq = (vals) => { let i = 0; Math.random = () => (i < vals.length ? vals[i++] : 0.5); };
+    // (i) มือเปล่าสำเร็จ → สลบ ไม่ตาย ของหล่นครึ่งหนึ่ง
+    a9.inventory = [];
+    b9.inventory = [mk('ขวานทดสอบ', 'weapon', 'คมกริบ'), mk('เชือกทดสอบ', 'rope')];
+    const bd9 = g9.attackBreakdown(a9, b9, null, 0, R9);
+    assert(bd9.lethal === 0 && /มือเปล่า/.test(bd9.parts[0].label), 'bare hands have zero lethality');
+    seq([0, 0.99, 0.99, 0]); // สำเร็จ · ไม่เลอะเทอะ · (lethal 0 → ไม่ต้องสุ่ม) · สลบ 1 ชม.
+    g9.do_attack(a9, { targetId: b9.id });
+    Math.random = rr9;
+    assert(b9.alive && b9.ko && b9.ko.hours >= 1 && b9.ko.hours <= 3 && !g9.bodies.has(b9.id), 'a bare-handed hit knocks the target out instead of killing');
+    assert(b9.inventory.length === 1 && R9.items.some((i) => /ทดสอบ/.test(i.name)), 'half of the victim\'s items drop in the room');
+    assert(b9.log.some((l) => /หมดสติ/.test(l.text)) && a9.log.some((l) => /สลบ/.test(l.text)), 'both sides are told about the knockout');
+    // (ii) คนสลบเลือกอะไรไม่ได้ และมีแอ็กชันว่างเปล่า
+    g9.step = STEP.MOVE;
+    let threw9 = false;
+    try { g9.chooseMove(b9.id, R9.id); } catch { threw9 = true; }
+    assert(threw9, 'a knocked-out player cannot choose a room');
+    g9.step = STEP.ACT;
+    threw9 = false;
+    try { g9.chooseAction(b9.id, { type: 'rest' }); } catch { threw9 = true; }
+    assert(threw9 && g9.availableActions(b9).length === 0, 'a knocked-out player cannot act and has no actions');
+    // (iii) ลงมือกับคนสลบด้วยของฆ่าได้ = ตายแน่ (ไม่ต้องสุ่ม) · ด้วยมือเปล่า = สลบต่อ
+    const atkB = g9.availableActions(c9).find((x) => x.type === 'attack' && x.targetId === b9.id);
+    assert(atkB && /สลบอยู่/.test(atkB.label) && /สำเร็จแน่นอน/.test(atkB.desc), 'attacking a knocked-out player is shown as a sure thing');
+    const hoursBefore = b9.ko.hours;
+    c9.inventory = [];
+    seq([0.99, 0.99, 0.99, 0.99]);
+    g9.do_attack(c9, { targetId: b9.id });
+    Math.random = rr9;
+    assert(b9.alive && b9.ko.hours > hoursBefore, 'bare hands on a knocked-out player just extend the knockout');
+    c9.inventory = [mk('มีดทดสอบ', 'weapon', 'คมกริบ')];
+    seq([0.99, 0.99, 0.99, 0.99]);
+    g9.do_attack(c9, { targetId: b9.id });
+    Math.random = rr9;
+    assert(!b9.alive && g9.cases.at(-1).killerId === c9.id && g9.cases.at(-1).victimId === b9.id, 'a blade on a knocked-out player kills without a roll');
+    // (iv) สวนกลับด้วยมือเปล่า → คนลงมือสลบ (ไม่เป็นคดี) · สวนกลับด้วยมีด → คนลงมือตาย (คดีป้องกันตัว อาวุธ = มีด)
+    d9.inventory = [];
+    a9.inventory = [];
+    seq([0.99, 0, 0.99, 0]); // พลาด · สวนกลับ · (lethal 0) · สลบ 1 ชม.
+    g9.do_attack(a9, { targetId: d9.id });
+    Math.random = rr9;
+    assert(a9.alive && a9.ko && !g9.cases.some((c) => c.victimId === a9.id), 'an unarmed counter knocks the attacker out without a case');
+    a9.ko = null;
+    d9.inventory = [mk('มีดสวนกลับ', 'weapon', 'คมกริบ')];
+    assert(g9.counterChance(d9) === Math.min(0.9, ATTACK.COUNTER + ATTACK.COUNTER_ARMED_BONUS), 'an armed target counters more often');
+    seq([0.99, 0, 0]); // พลาด · สวนกลับ · ฆ่า
+    g9.do_attack(a9, { targetId: d9.id });
+    Math.random = rr9;
+    const def9 = g9.cases.at(-1);
+    assert(!a9.alive && def9.cause === 'defense' && def9.killerId === d9.id && def9.weapon?.name === 'มีดสวนกลับ', 'an armed counter can kill and the case records the defender\'s weapon');
+    // (v) ยาสลบในอาหาร = สลบ ไม่ตาย ไม่เป็นคดี
+    e9.inventory = [mk('ยานอนหลับขนาดแรง', 'poison')];
+    const cases9 = g9.cases.length;
+    g9.do_poisonFood(e9, { itemId: e9.inventory[0].id });
+    c9.zoneId = F9.id;
+    seq([0.99, 0]); // ไม่สังเกตเห็น · สลบ 1 ชม.
+    g9.do_eat(c9);
+    Math.random = rr9;
+    assert(c9.alive && c9.ko && g9.cases.length === cases9 && c9.log.some((l) => /หมดสติ/.test(l.text)), 'sedative-laced food knocks the eater out instead of killing');
+    // (vi) ละเลยภารกิจ = สลบ (ไม่บังคับทำ) · ฟื้นเมื่อครบชั่วโมง
+    c9.ko = null;
+    Object.assign(CONFIG, { OBJECTIVES: true });
+    c9.objectives = [{ id: 'obj-test', type: 'visit', zoneId: R9.id, done: false, forgiven: false, hours: 3, deadlineTurn: g9.turn, assignedTurn: g9.turn - 3, text: 'ไปที่ห้องทดสอบ' }];
+    g9.step = STEP.MOVE;
+    seq([0]);
+    g9.enforceObjectives();
+    Math.random = rr9;
+    assert(c9.ko && c9.objectives[0].done && c9.objectives[0].failed && !c9.forced && g9.moves.get(c9.id) === c9.zoneId, 'an ignored objective knocks the player out and keeps them in place');
+    c9.ko = { hours: 1, since: g9.turn - 1, cause: 'attack', by: null };
+    g9.tickKo();
+    assert(!c9.ko && c9.log.some((l) => /ฟื้นขึ้นมา/.test(l.text)), 'the knockout wears off after its hours');
+    Object.assign(CONFIG, { OBJECTIVES: false });
+  }
+  // 13) ห้อง = ผู้เล่น × 2: โหมด mock ตัด/เติมห้องให้พอดี ของชนิดจำเป็นยังครบ ชื่อห้อง/ของไม่ซ้ำ
+  {
+    assert(roomCountFor(3) === 6 && roomCountFor(6) === 12 && roomCountFor(15) === 30 && roomCountFor(40) === ROOMS.MAX, 'room count is players × 2 within 6–30');
+    const required = ['food', 'power', 'lockpick', 'rope', 'tool', 'weapon', 'poison'];
+    for (const n of [6, 8, 12, 20, 30]) {
+      const loc = mockLocation({ zoneCount: n });
+      assert(loc.zones.length === n, `mock location has ${n} rooms (${loc.zones.length})`);
+      const names = loc.zones.map((z) => z.name);
+      assert(new Set(names).size === names.length, 'room names are unique');
+      const items = loc.zones.flatMap((z) => z.items);
+      const itemNames = items.map((i) => i.name);
+      assert(new Set(itemNames).size === itemNames.length, `item names are unique in a ${n}-room map`);
+      for (const k of required) assert(items.some((i) => i.kind === k), `${n}-room map still has a ${k}`);
+      assert(loc.sleepZoneId === 'z1' && loc.zones[0].id === 'z1' && loc.zones.every((z, i) => z.id === `z${i + 1}`), 'zone ids stay sequential');
+    }
+    assert(EXTRA_ROOMS.length >= 22, 'the extra room pool can fill a 30-room map from an 8-room template');
+    for (const r of EXTRA_ROOMS) for (const [name, description, kind] of r.items) assert(['weapon', 'tool', 'poison', 'rope', 'cloth', 'food', 'power', 'fixture', 'lockpick'].includes(kind), `extra room item kind valid (${name}: ${kind})`);
+    assert(EXTRA_ROOMS.flatMap((r) => r.items).some(([name, description, kind]) => kind === 'poison' && tagsOf({ name, description, kind }).has('sedative')), 'the extra pool has a sedative');
+    assert(EXTRA_ROOMS.flatMap((r) => r.items).some(([name, description, kind]) => kind === 'tool' && tagsOf({ name, description, kind }).has('fastener')), 'the extra pool has hand tools');
+    assert(LOCKS.lockedZones(5) === 1 && LOCKS.lockedZones(11) === 2 && LOCKS.lockedZones(29) === 4 && LOCKS.maxKeys(7) === 2 && LOCKS.maxKeys(29) === 4, 'locked rooms and keys scale with the map');
+  }
+  // 14) ทางออก 4–5 ขั้น: เส้นทางซ่อมต้องประกอบชิ้นส่วนก่อน (แอ็กชันประกอบ) · ขั้นถาวรติดไว้ · คนที่ลงมือพร้อมกันนับของรวมกัน · บอท/ตัวจำลองรู้ว่าพร้อมเมื่อไร
+  {
+    const g10 = new Game({ code: 'UNIT10', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids10 = ['r1-xxxxxxxx', 'r2-xxxxxxxx', 'r3-xxxxxxxx'];
+    for (const [i, id] of ids10.entries()) g10.addPlayer({ id, name: `ซ่อม ${i + 1}` });
+    g10.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g10.start(ids10[0]);
+    g10.clearTimers();
+    const [a10, b10] = ids10.map((id) => g10.players.get(id));
+    for (const id of ids10) g10.charOf(g10.players.get(id)).ultimate.trait = 'none'; // แต้มลงแรง 1 ต่อครั้ง
+    for (const x of g10.exits.values()) assert(x.steps.length >= 4 && x.steps.length <= 5 && x.steps.filter((s) => s.kind === 'force').length === 1, `every exit has 4–5 steps incl. one force step (${x.route}: ${x.steps.length})`);
+    // บังคับให้มีทางออกแบบซ่อม (ถ้าสุ่มไม่ได้ สร้างขึ้นมาเอง)
+    let rx = [...g10.exits.values()].find((x) => x.route === 'repair');
+    if (!rx) {
+      rx = [...g10.exits.values()][0];
+      rx.route = 'repair';
+      rx.steps = [{ id: 'assembly', kind: 'assembly', done: false, progress: 0, needed: 0 }, { id: 'key', kind: 'key', done: false, progress: 0, needed: 0 }, { id: 'tool', kind: 'tool', done: false, progress: 0, needed: 0 }, { id: 'force', kind: 'force', done: false, progress: 0, needed: 2 }];
+      rx.items = rx.items.filter((i) => i.role === 'key');
+      if (!rx.items.length) {
+        const k = { id: `${rx.id}_key9`, name: 'กุญแจทดสอบ', description: '', kind: 'key', portable: true, hidden: false, isPart: true, exitId: rx.id, role: 'key' };
+        g10.zones.get(rx.zoneId).items.push(k);
+        rx.items.push({ id: k.id, name: k.name, role: 'key' });
+      }
+      rx.assembly = { name: 'ชุดชิ้นส่วนทดสอบ (ประกอบแล้ว)', itemId: `${rx.id}_assembly`, partIds: [] };
+      for (const n of [1, 2]) {
+        const part = { id: `${rx.id}_part9${n}`, name: `ชิ้นส่วนทดสอบ ${n}`, description: '', kind: 'part', portable: true, hidden: false, isPart: true, exitId: rx.id, role: 'part' };
+        g10.zones.get(rx.zoneId).items.push(part);
+        rx.items.push({ id: part.id, name: part.name, role: 'part' });
+        rx.assembly.partIds.push(part.id);
+      }
+    }
+    const allItems10 = [...g10.zones.values()].flatMap((z) => z.items);
+    const parts = rx.assembly.partIds.map((id) => allItems10.find((i) => i.id === id));
+    const key10 = allItems10.find((i) => i.exitId === rx.id && i.role === 'key');
+    assert(parts.every(Boolean) && key10, 'the repair exit has two parts and a key hidden somewhere');
+    for (const it of [...parts, key10]) { const zz = [...g10.zones.values()].find((z) => z.items.includes(it)); zz.items.splice(zz.items.indexOf(it), 1); }
+    a10.zoneId = rx.zoneId;
+    a10.outside = false;
+    rx.discoveredBy.add(a10.id);
+    g10.phase = PHASE.DAY;
+    g10.step = STEP.ACT;
+    a10.inventory = [parts[0]];
+    assert(!g10.availableActions(a10).some((x) => x.type === 'craft' && x.recipeId === 'assembly'), 'one part alone cannot be assembled');
+    a10.inventory = [parts[0], parts[1]];
+    const asmAct = g10.availableActions(a10).find((x) => x.type === 'craft' && x.recipeId === 'assembly');
+    assert(asmAct && !asmAct.exitId && rx.assembly.partIds.includes(asmAct.itemId) && rx.assembly.partIds.includes(asmAct.itemId2), 'holding both parts offers the assembly craft (without leaking the exit id)');
+    assert(!exitReadyFor(g10, a10, rx), 'not ready before assembling');
+    g10.do_craft(a10, asmAct);
+    const asm = a10.inventory.find((i) => i.role === 'assembly');
+    assert(asm && a10.inventory.length === 1 && rx.items.some((i) => i.role === 'assembly'), 'assembling consumes both parts and yields one assembled item');
+    // ลงมือครั้งแรกด้วยเครื่องมือ (ถอดน็อต + ลงแรง) แล้วค่อยเอากุญแจมา
+    const tool10 = { id: 'tool10', name: 'ประแจทดสอบ', description: 'เครื่องมือช่างหนัก', kind: 'tool', portable: true, hidden: false, isPart: false };
+    b10.zoneId = rx.zoneId;
+    b10.outside = false;
+    b10.inventory = [tool10];
+    assert(exitUsefulFor(g10, b10, rx) && !exitReadyFor(g10, b10, rx), 'a player with only a hand tool can make progress but is not ready');
+    assert(!resolveExits(g10, [{ p: b10, a: { exitId: rx.id } }]) && rx.steps.find((s) => s.kind === 'tool').done && rx.steps.find((s) => s.kind === 'force').progress === 1, 'the first attempt unbolts and adds one force point');
+    assert(resolveExits(g10, [{ p: b10, a: { exitId: rx.id } }]) === false && rx.steps.find((s) => s.kind === 'force').done, 'the second attempt completes the force step');
+    a10.inventory = [asm, key10];
+    assert(exitReadyFor(g10, a10, rx), 'assembly + key with the permanent steps done = ready');
+    const ended10 = resolveExits(g10, [{ p: a10, a: { exitId: rx.id } }]);
+    assert(ended10 && rx.open && g10.endReason === 'escape', 'assembly + key open the repaired exit');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts)');
 }
 
 try {
   await unitTests();
-  const agg = { kills: 0, trapKills: 0, trials: 0, huntRounds: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, requests: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
+  const agg = { kos: 0, kills: 0, trapKills: 0, trials: 0, huntRounds: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, requests: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
   const add = (r) => { for (const k of Object.keys(agg)) agg[k] += r[k] || 0; };
 
   for (let i = 0; i < 4; i++) add(await runGame({ humans: 8, label: `explore #${i + 1}`, strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
@@ -1388,8 +1609,8 @@ try {
   assert(locks.bounces >= 1, 'someone waited outside a locked door');
   const camp = await runGame({ humans: 6, label: 'campers (objectives force them apart)', strategy: 'camp', config: { REVIVE_CHANCE: 0, MAX_HOURS: 24 } });
   add(camp);
-  assert(camp.kills === 0 && camp.forced >= 1, 'camping run has no kills and objectives force moves');
-  assert(camp.gives >= 1, 'campers in the same room can give items');
+  assert(camp.kills === 0 && camp.forced >= 1 && camp.kos >= 1, 'camping run has no kills and ignored objectives knock campers out');
+  // การให้ของถูกเช็กรวมใน agg.gives (ตอนนี้คนแคมป์ไม่ถูกพาไปหยิบของห้องอื่น ของในห้องเดียวมีน้อย)
   const peaceful = await runGame({ humans: 6, label: 'peaceful (no kills, timeout cap)', strategy: 'peaceful', config: { REVIVE_CHANCE: 0, MAX_HOURS: 20 } });
   add(peaceful);
   assert(peaceful.kills === 0 && peaceful.endReason === 'timeout', 'peaceful run ends by hour cap');
@@ -1406,11 +1627,12 @@ try {
   add(revive);
   const noObj = await runGame({ humans: 5, label: 'objectives disabled', strategy: 'explore', config: { REVIVE_CHANCE: 0, OBJECTIVES: false, FAKE_ROLES: 0 } });
   add(noObj);
-  assert(noObj.forced === 0 && noObj.roleStats.fakes === 0, 'no forced moves / no fake role when disabled');
+  assert(noObj.forced === 0 && noObj.roleStats.fakes === 0, 'no objective punishment / no fake role when disabled');
 
   assert(agg.kills >= 3, `simulations should produce kills (got ${agg.kills})`);
   assert(agg.trials >= 2, `simulations should reach trials (got ${agg.trials})`);
-  assert(agg.forced >= 1, 'objective enforcement should trigger somewhere');
+  assert(agg.forced >= 1, 'objective punishment should trigger somewhere');
+  assert(agg.kos >= 1, 'someone should get knocked out somewhere');
   assert(agg.gives >= 1, 'item giving should happen somewhere');
   assert(agg.huntRounds >= 1, 'a multi-killer hunt (second trial in one day) should occur somewhere');
   console.log(`ALL SIMULATIONS PASSED — totals: ${JSON.stringify(agg)}`);

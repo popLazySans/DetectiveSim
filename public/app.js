@@ -197,12 +197,13 @@
         <div class="card rules">
           <h3>กติกาย่อ</h3>
           <ol>
-            <li><b>เป้าหมายหลัก:</b> ทุกคนถูกขังในสถานที่เดียวที่มีหลายห้อง ของสำหรับหนี 2–3 ชิ้นถูกสุ่มซ่อนไว้ตามห้อง หาให้เจอแล้วเอาไปรวมกันที่ห้องทางออก → ทุกคนที่ยังอยู่รอด — ยกเว้น<b>ฆาตกรที่ยังไม่ถูกจับ</b>: ประตูจะปิดใส่หน้าและนับว่าตายทันที</li>
+            <li><b>เป้าหมายหลัก:</b> ทุกคนถูกขังในสถานที่เดียวที่มีหลายห้อง ห้องมี = ผู้เล่น × 2 · ทางออกแต่ละทางต้องผ่าน <b>4–5 ขั้น</b> (กุญแจ/เศษรหัส/ชิ้นส่วนที่ต้องประกอบก่อน · เครื่องมือช่าง · ของมีคม · ลงแรง) ของพวกนี้ถูกสุ่มซ่อนไว้ตามห้อง ขั้นที่ทำแล้วติดถาวร คนที่ลงมือพร้อมกันในห้องนับของรวมกัน → ทุกคนที่ยังอยู่รอด — ยกเว้น<b>ฆาตกรที่ยังไม่ถูกจับ</b>: ประตูจะปิดใส่หน้าและนับว่าตายทันที</li>
             <li><b>เวลา:</b> ทุกครั้งที่เข้าห้อง = 1 ชั่วโมง (รวมรอบเก็บหลักฐาน) ตัดสินคดีเสร็จจึงขึ้นวันใหม่ ไม่มีเวลาจำกัดทั้งในเกมและเวลาจริง</li>
             <li><b>แต่ละชั่วโมง:</b> ทุกคนเลือกห้องพร้อมกัน (ไม่มีใครรู้ว่าใครเลือกอะไร) → เห็นว่าใครอยู่ห้องเดียวกับคุณ เห็นของในห้อง → เลือกทำได้ 1 อย่าง: สำรวจ หยิบของ ซ่อนของ ลงมือฆ่า วางกับดัก ย้ายศพ ทำลายหลักฐาน ตรวจศพ… ทุกอย่างมีโอกาสสำเร็จ/พลาด/สำเร็จแบบเลอะเทอะ → พักชั่วโมง: อ่านบันทึก และ<b>ให้ของ</b>กับคนในห้องเดียวกันได้ · เดินไปเจอห้องที่ล็อก = <b>ยืนรอหน้าประตู (ข้างนอก)</b> ทำอะไรกับห้องไม่ได้ ทำได้แค่กับคนที่ยืนอยู่หน้าประตูด้วยกัน · <b>กับดักประตู</b> (อาวุธ+เครื่องมือ) วางข้างใน = คนที่เปิดประตูเข้ามาตาย วางข้างนอก = คนที่เปิดประตูออกมาตาย คนที่ปลดล็อกโดนก่อน</li>
             <li><b>ของแต่ละชิ้นทำอะไรได้ดูจากป้ายกำกับ</b> (หนัก · มีคม · ยิงได้ · เครื่องมือช่าง · นำไฟฟ้า · ฉีดได้): ลงมือด้วยปืน 85% (กระสุนจำกัด ยิงแล้วทั้งตึกได้ยิน) · อาวุธมีคม/หนัก 70% · อาวุธเบา 50% · เครื่องมือที่หนักหรือปลายแหลม 55% · ผ้า (อุดหายใจ) / เชือก (รัดคอ) 50% · ยาพิษลงมือตรงต้องมี<b>เข็มฉีดยา</b> (65%) หรือเป็นสายการแพทย์ (80%) ไม่งั้นผสมอาหารได้อย่างเดียว · สมุด วิทยุ ไฟฉาย กล้อง กุญแจมือ ใช้ฆ่าหรือประกอบกับดักไม่ได้ · ยากลิ่นฉุนคนกินสังเกตง่าย (60%) ยาไร้สีไร้รสสังเกตยาก (5%) พิษที่ต้องเข้ากระแสเลือดผสมอาหารไม่ได้ · สูตรกับดักดูแท็ก: ใบมีดเหวี่ยง = อาวุธมีคม/หนัก + เชือก · ของหนักหล่น = ของหนัก + เชือก · ไฟช็อต = เครื่องมือช่าง + สายไฟจริง · กับดักประตู = ปืนมีกระสุน/มีคม/หนัก + เครื่องมือช่าง · ซ่อมทางออกและช่างเทคนิคสะเดาะต้องใช้เครื่องมือช่าง ทุบ/งัดต้องของหนักหรืออาวุธมีคม</li>
             <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
-            <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 5 ชั่วโมง ไม่มีใครตายเพราะภารกิจ — แต่ถ้าครบกำหนดแล้วยังไม่ทำ ระบบจะพาคุณไปทำเอง (ล็อกห้อง) มีไว้กันทุกคนแคมป์อยู่ห้องเดียวกัน</li>
+            <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 3–5 ชั่วโมง <b>ละเลยได้</b> แต่ถ้าครบกำหนดแล้วยังไม่ทำ จะโดนลงโทษ: <b>สลบ 1–3 ชั่วโมง</b> (ทำอะไรไม่ได้ ไม่รู้ว่ารอบตัวเกิดอะไรขึ้น) ของบางชิ้นหล่นในห้อง และระหว่างสลบใครลงมือกับคุณก็สำเร็จแน่นอน · ภารกิจที่ทำไม่ได้แล้วโดยไม่ใช่ความผิดคุณถูกยกเลิกโดยไม่มีโทษ</li>
+            <li><b>ลงมือสำเร็จไม่ได้แปลว่าตาย:</b> โอกาสฆ่าขึ้นกับของ (ปืน 90% · มีคม 70% · หนัก 55% · เชือก 60% · ผ้า 35% · ยาพิษ 85% · ของเบา 25%) ที่เหลือเป้าหมายแค่ <b>สลบ 1–3 ชั่วโมง</b> · <b>มือเปล่า ยานอนหลับ ยาสลบ ทำให้สลบเท่านั้น</b> ฆ่าไม่ได้ · คนที่สลบอยู่ถูกลงมือสำเร็จแน่นอน (ของฆ่าได้ = ตาย) · ลงมือพลาดแล้วเป้าหมายสวนกลับได้ 25% (นักสู้ 50% · ถืออาวุธ +15%) ผลของการสวนกลับขึ้นกับของที่เขาถือ: ฆ่าคุณหรือทำให้คุณสลบ</li>
             <li><b>ศพอยู่ที่ตาย:</b> จนกว่าจะมีคนย้าย เมื่อมีคนพบศพครบ 3 คน (ไม่นับคนฆ่า) จะประกาศและเข้าสู่รอบเก็บหลักฐาน 1 ชั่วโมง แล้วตัดสิน</li>
             <li><b>การตัดสิน:</b> เล่าหลักฐานที่แต่ละคนเจอในแชท แล้วโหวต — โหวตถูก: คนนั้นถูกประหาร (ใครก็เป็นฆาตกรได้พร้อมกันหลายคน ถ้ายังมีฆาตกรเหลือ ระบบบอกแค่ว่า "ยังมีอีก 1 คน" ไม่บอกจำนวน แล้วเก็บหลักฐาน-ตัดสินต่อในวันเดิมจนจับครบ) · โหวตผิด: คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · มีตัวเลือก "ไม่มีคนร้ายให้ลงโทษ" ถ้าคนร้ายตายไปแล้ว</li>
             <li>ทุกคนมี Ultimate ที่ให้ "trait" ใช้ได้จริง · 1–2 คนถูกซ่อนเป็น ??? และ 1 คนถือโรลปลอม — เจ้าตัวรู้ของจริงเสมอ และการ์ดของคุณจะบอกชัดว่าคนอื่นเห็นคุณเป็นอะไร</li>
@@ -346,6 +347,7 @@
       ${ultimateLine(c, isMe)}
       ${sameZone ? `<div><span class="badge green">${me.outside ? 'ยืนหน้าประตูด้วยกัน' : 'อยู่ห้องเดียวกับคุณ'}</span></div>` : !isMe && p.zoneId && !me.alive ? `<div class="muted" style="font-size:.8rem">📍 ${esc(zoneName(p.zoneId))}</div>` : ''}
       ${p.knownDead && p.fate ? `<div class="muted" style="font-size:.8rem">${FATE_LABEL[p.fate]} · ${esc(timeText(p.eliminatedDay, p.eliminatedHour))}</div>` : ''}
+      ${p.alive && p.ko ? '<div><span class="badge red">😵 สลบอยู่</span></div>' : ''}
       ${p.alive && p.revived ? '<div><span class="badge yellow">คืนชีพ</span></div>' : ''}
       ${s.runoff && p.alive && s.runoff.candidates.includes(p.id) ? '<div><span class="badge red">รอบตัดสิน</span></div>' : ''}
     </div>`;
@@ -389,7 +391,7 @@
 
   function objectiveBadge(o) {
     if (o.done) return o.forgiven ? '<span class="badge">ยกเลิก</span>' : '<span class="badge green">สำเร็จ</span>';
-    if (o.remainingHours <= 0) return '<span class="badge red">ครบกำหนด — ระบบพาไปทำ</span>';
+    if (o.remainingHours <= 0) return '<span class="badge red">ครบกำหนด — โดนลงโทษ</span>';
     return `<span class="badge ${o.remainingHours <= 1 ? 'red' : ''}">เหลือ ${o.remainingHours} ชม.</span>`;
   }
 
@@ -401,11 +403,11 @@
       <div class="row"><h2>🕐 วันที่ ${s.day} · ชั่วโมงที่ ${s.hour}</h2><span class="spacer"></span><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span></div>
       <p class="muted">${esc(s.location.description)}</p>
       ${me.isDesignated ? `<div class="clue culprit"><span class="ctag">🔪 วันนี้เกมเลือกคุณเป็น "ฆาตกร" (มีแค่คุณที่รู้)</span>จะลงมือหรือไม่ก็ได้ — ถ้าลงมือในวันนี้โอกาสสำเร็จสูงขึ้น ดูรายละเอียดในสมุดบันทึก ถ้าคนอื่นลงมือก่อน คุณจะเป็นแค่คนที่อยู่ในเหตุการณ์</div>` : ''}
-      ${me.forced ? `<div class="clue night-self"><span class="ctag">⏰ ภารกิจครบกำหนด</span>ชั่วโมงนี้ระบบพาคุณไปที่ <b>${esc(me.forced.zoneName)}</b>${me.forced.actionLabel ? ` และจะ${esc(me.forced.actionLabel)}ให้เอง` : ''} (เลือกห้องอื่นไม่ได้)</div>` : ''}
+      ${me.ko ? `<div class="clue culprit"><span class="ctag">😵 คุณสลบอยู่</span>ฟื้นในอีก ${me.ko.hours} ชั่วโมง — ชั่วโมงนี้คุณอยู่ที่เดิมและทำอะไรไม่ได้ ไม่รู้ว่ารอบตัวเกิดอะไรขึ้น และใครลงมือกับคุณก็สำเร็จแน่นอน</div>` : ''}
       ${me.door?.lockedIn ? `<div class="clue culprit"><span class="ctag">🔒 คุณถูกล็อกอยู่ใน${esc(me.zoneName || '')}</span>${me.door.means ? `ออกตามปกติไม่ได้ แต่คุณ${esc(me.door.means.label)} — เลือกห้องที่จะไป แล้วชั่วโมงนั้นจะหมดไปกับประตู (ใช้กี่ชั่วโมงแล้วแต่ดวง)${me.door.work ? ` · ทำไปแล้ว ${me.door.work.progress} ชม.` : ''}` : 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้ — เลือกได้แค่อยู่ห้องนี้ต่อ'}</div>` : ''}
       ${me.outside ? `<div class="clue culprit"><span class="ctag">🚪 คุณยืนรออยู่หน้าประตู${esc(me.zoneName || '')} (ข้างนอก)</span>ประตูล็อกอยู่ เข้าไม่ได้ — ทำอะไรกับห้องไม่ได้ (ไม่มีสำรวจ/หยิบ/วาง) ทำได้เฉพาะกับคนที่ยืนอยู่หน้าประตูด้วยกัน${me.door?.means ? ` · คุณ${esc(me.door.means.label)} — เลือกห้องนี้อีกครั้งเพื่อทำต่อ` : ' · ต้องมีกุญแจหรือที่สะเดาะกุญแจ หรือรอให้ประตูเปิด'} · จะเดินไปห้องอื่นก็ได้</div>` : ''}
       ${me.door?.work && !me.door.lockedIn ? `<div class="clue night-self"><span class="ctag">${me.door.work.method === 'break' ? '💥' : '🪛'} งานค้างที่ประตู</span>คุณกำลัง${me.door.work.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน'}<b>${esc(me.door.work.zoneName)}</b> (ทำไปแล้ว ${me.door.work.progress} ชม.) — เลือกห้องนั้นอีกครั้งเพื่อทำต่อ เลือกห้องอื่นแล้วต้องเริ่มใหม่</div>` : ''}
-      ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (กันแคมป์ — ครบกำหนดระบบพาไปทำ ไม่มีใครตาย)</span>${esc(o.text)} ${objectiveBadge(o)}</div>`).join('')}
+      ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (ละเลยได้ แต่ครบกำหนดแล้วไม่ทำ = สลบ 1–3 ชม.)</span>${esc(o.text)} ${objectiveBadge(o)}</div>`).join('')}
       ${s.config.objectives && me.nextObjectiveIn != null && !me.objectives.some((o) => !o.done) ? `<p class="muted" style="font-size:.85rem">📋 ภารกิจถัดไปจะมาใน${me.nextObjectiveIn ? `อีก ${me.nextObjectiveIn} ชั่วโมง` : 'ชั่วโมงหน้า'}</p>` : ''}
       <p class="muted" style="font-size:.85rem">เลือกห้องจากแผนที่ด้านล่าง — ไม่มีใครเห็นว่าใครเลือกอะไร จนกว่าจะเข้าห้องแล้วเจอกัน</p>
     </div>`;
@@ -449,7 +451,7 @@
         .join('')}</div>
       <div class="row" style="margin-top:.8rem">
         ${chosen
-          ? `<p class="status">${me.forced ? '⏰ ภารกิจพาคุณไป' : 'คุณเลือกไป'} <b>${esc(zoneName(chosen))}</b> แล้ว รอคนอื่น (${moved}/${alive.length})</p>`
+          ? `<p class="status">${me.ko ? '😵 คุณสลบอยู่ที่' : 'คุณเลือกไป'} <b>${esc(zoneName(chosen))}</b> แล้ว รอคนอื่น (${moved}/${alive.length})</p>`
           : `<button class="primary" data-action="confirm-move" ${sel ? '' : 'disabled'}>${sel ? `🚶 ไป${esc(zoneName(sel))}` : 'เลือกห้องก่อน'}</button><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span>`}
       </div>
     </div>`;
@@ -490,7 +492,7 @@
     const alive = s.players.filter((p) => p.alive);
     const acted = alive.filter((p) => p.acted).length;
     if (me.actionChoice) {
-      return `<div class="card"><h3>${me.actionChoice.busy ? '🪛 ชั่วโมงนี้คุณใช้เวลาไปกับประตู' : me.actionChoice.forced ? '⏰ ภารกิจบังคับการกระทำของคุณชั่วโมงนี้' : 'คุณเลือกแล้ว'}</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น (${acted}/${alive.length})</p><p class="muted">${me.actionChoice.busy ? 'สะเดาะ/พังประตูใช้ทั้งชั่วโมง ทำอย่างอื่นไม่ได้ — ถ้ายังไม่สำเร็จ เลือกห้องนั้นอีกครั้งชั่วโมงหน้า' : 'ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ'}</p></div>`;
+      return `<div class="card"><h3>${me.actionChoice.busy ? '🪛 ชั่วโมงนี้คุณใช้เวลาไปกับประตู' : me.actionChoice.ko ? '😵 คุณสลบอยู่ — ชั่วโมงนี้ทำอะไรไม่ได้' : 'คุณเลือกแล้ว'}</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น (${acted}/${alive.length})</p><p class="muted">${me.actionChoice.busy ? 'สะเดาะ/พังประตูใช้ทั้งชั่วโมง ทำอย่างอื่นไม่ได้ — ถ้ายังไม่สำเร็จ เลือกห้องนั้นอีกครั้งชั่วโมงหน้า' : 'ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ'}</p></div>`;
     }
     const list = me.availableActions || [];
     const selected = list.find((a) => actionKey(a) === ui.selectedAction) || null;
@@ -715,7 +717,7 @@
       ${exitsHtml(s)}
       ${s.config.objectives ? `<h3 style="margin-top:.7rem">📋 ภารกิจลับ</h3>
       ${objs.length ? objs.map((o) => `<div class="objective ${o.done ? 'done' : o.remainingHours <= 1 ? 'due' : ''}">${o.done ? (o.forgiven ? '➖' : '✅') : '•'} ${esc(o.text)} ${objectiveBadge(o)}</div>`).join('') : '<p class="muted">ไม่มีภารกิจค้าง</p>'}
-      <p class="muted" style="font-size:.78rem">ภารกิจมีไว้กันแคมป์ — ครบกำหนดแล้วระบบพาไปทำเอง ไม่มีใครตายเพราะภารกิจ</p>` : ''}
+      <p class="muted" style="font-size:.78rem">ภารกิจละเลยได้ แต่ครบกำหนดแล้วยังไม่ทำ = สลบ 1–3 ชั่วโมง ของบางชิ้นหล่น และระหว่างสลบใครลงมือกับคุณก็สำเร็จแน่นอน</p>` : ''}
       ${me.isDesignated ? '<p style="margin-top:.5rem"><span class="badge red">🔪 วันนี้เกมเลือกคุณเป็นฆาตกร</span></p>' : ''}
     </div>`;
   }
@@ -729,7 +731,8 @@
         ? exits.map((x) => `<div class="exitbox ${x.open ? 'open' : ''}">
             <div class="row"><b>${ROUTE_ICON[x.route] || '🚪'} ${esc(x.name)}</b><span class="spacer"></span><span class="badge yellow">${esc(x.zoneName)}</span></div>
             <div class="muted" style="font-size:.82rem">${esc(x.description)}</div>
-            <div style="font-size:.85rem;margin-top:.25rem"><b>${esc(x.routeLabel)}:</b> ${esc(x.requirement)}</div>
+            <div style="font-size:.85rem;margin-top:.25rem"><b>${esc(x.routeLabel)}</b> · ผ่านแล้ว ${x.stepsDone ?? 0}/${x.steps?.length ?? 0} ขั้น</div>
+            ${x.steps?.length ? `<ol class="obs" style="margin:.2rem 0 0 1.1rem;font-size:.82rem">${x.steps.map((st) => `<li>${st.done ? '✅' : '⬜'} ${esc(st.label)}${st.needed ? ` (${st.progress}/${st.needed})` : ''}</li>`).join('')}</ol>` : ''}
             ${x.items?.length ? `<div class="chips" style="margin-top:.3rem">${x.items.map((i) => `<span class="chip ${i.held ? 'part' : ''}" title="${i.held ? 'คุณถืออยู่' : 'ยังไม่ได้อยู่กับคุณ'}">${i.held ? '✅' : '⬜'} ${esc(i.name)}</span>`).join('')}</div>` : ''}
             ${x.route === 'breach' ? `<div class="muted" style="font-size:.82rem">ความคืบหน้า ${x.progress}/${x.progressNeeded}</div>` : ''}${x.route === 'power' ? `<div class="muted" style="font-size:.82rem">${x.powered ? '⚡ มีไฟแล้ว' : 'ยังไม่มีไฟ'}</div>` : ''}
           </div>`).join('')
@@ -753,7 +756,7 @@
         if (!s.step) body += '<p class="status">กำลังประมวลผล...</p>';
         else if (s.step === 'move') {
           const n = alive.filter((p) => p.moved).length;
-          body += me.alive ? `<p class="status">${me.moveChoice ? `${me.forced ? 'ภารกิจพาไป' : 'เลือกไป'} ${esc(zoneName(me.moveChoice))} แล้ว` : 'เลือกห้องจากแผนที่ตรงกลาง'} (${n}/${alive.length})</p>` : `<p class="status">รอทุกคนเลือกห้อง (${n}/${alive.length})</p>`;
+          body += me.alive ? `<p class="status">${me.moveChoice ? `${me.ko ? 'สลบอยู่ที่' : 'เลือกไป'} ${esc(zoneName(me.moveChoice))} แล้ว` : 'เลือกห้องจากแผนที่ตรงกลาง'} (${n}/${alive.length})</p>` : `<p class="status">รอทุกคนเลือกห้อง (${n}/${alive.length})</p>`;
           body += hostForce('บังคับไปต่อ (คนที่ยังไม่เลือกจะอยู่ที่เดิม)');
         } else if (s.step === 'act') {
           const n = alive.filter((p) => p.acted).length;

@@ -4,8 +4,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { mockUltimates, mockLocation, mockReviveEvent, mockNarrateCase, TRAIT_KEYS } from './mock.js';
-import { isConductive, tagsOf } from './rules.js';
+import { mockUltimates, mockLocation, mockReviveEvent, mockNarrateCase, extraRooms, TRAIT_KEYS } from './mock.js';
+import { isConductive, tagsOf, roomCountFor } from './rules.js';
 
 const UltimatesSchema = z.object({
   ultimates: z.array(
@@ -212,12 +212,13 @@ ${characters.map(fmtCharacter).join('\n')}
       return withFallback(
         'location',
         async () => {
+          const roomsWanted = roomCountFor(playerCount);
           const user = `สร้าง "สถานที่ปิดตาย" สำหรับเกมที่มีผู้เล่น ${playerCount} คน ผู้เล่นต้องสำรวจห้องต่าง ๆ เพื่อหา "ทางออกที่ซ่อนอยู่" และของที่ต้องใช้เปิดมัน
 
 ข้อกำหนด:
 1. name: ชื่อสถานที่สั้น ๆ น่าสนใจ / description: บรรยากาศ 2-3 ประโยค บอกว่าทำไมออกไปไม่ได้ (ห้ามเอ่ยถึงทางออกที่ซ่อนอยู่)
-2. zones: ห้อง 8 ห้อง — ห้องแรกคือ "ที่นอนรวม" ที่ทุกคนนอน (มีของธรรมดา 1-2 ชิ้น เช่น ผ้า ไฟฉาย) ห้องที่ 2-8 คือห้องสำรวจ แต่ละห้องมีของ 2-3 ชิ้น
-3. ของในห้อง 2-8 รวมกันต้องมี: อาวุธ (weapon) อย่างน้อย 5 ชิ้น, ยา/สารพิษ (poison) 3 ชิ้น, เชือก/สายไฟ (rope) 3 ชิ้น, เครื่องมือ/ของหนัก (tool) 3 ชิ้น (อย่างน้อย 1 ชิ้นเป็นเครื่องมือช่าง เช่น ไขควง ประแจ ค้อน · ถ้ามีอาวุธปืนให้บอกจำนวนกระสุนในคำบรรยาย), แผงไฟหรือกล้อง (power) 2-3 ชิ้น, อาหารกลางห้อง (food) 2 ชิ้นในคนละห้อง, ที่สะเดาะกุญแจ (lockpick) 1 ชิ้น (ห้ามสร้างกุญแจ ระบบจะสร้างกุญแจประจำห้องให้เอง), ผ้า (cloth) 1-2 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน 2 ชิ้น ชื่อของห้ามซ้ำกัน
+2. zones: ห้อง ${roomsWanted} ห้อง (ผู้เล่น × 2) — ห้องแรกคือ "ที่นอนรวม" ที่ทุกคนนอน (มีของธรรมดา 1-2 ชิ้น เช่น ผ้า ไฟฉาย) ห้องที่ 2-${roomsWanted} คือห้องสำรวจ แต่ละห้องมีของ 2-3 ชิ้น ชื่อห้องห้ามซ้ำกัน
+3. ของในห้องสำรวจรวมกันต้องมี: อาวุธ (weapon) อย่างน้อย ${Math.max(5, Math.ceil(roomsWanted / 2))} ชิ้น, ยา/สารพิษ (poison) ${Math.max(3, Math.ceil(roomsWanted / 4))} ชิ้น (อย่างน้อย 1 ชิ้นเป็นยานอนหลับ/ยาสลบ), เชือก/สายไฟ (rope) ${Math.max(3, Math.ceil(roomsWanted / 4))} ชิ้น (อย่างน้อย 1 เส้นเป็นสายไฟจริง), เครื่องมือ/ของหนัก (tool) ${Math.max(3, Math.ceil(roomsWanted / 4))} ชิ้น (อย่างน้อย 1 ชิ้นเป็นเครื่องมือช่าง เช่น ไขควง ประแจ ค้อน · ถ้ามีอาวุธปืนให้บอกจำนวนกระสุนในคำบรรยาย), แผงไฟหรือกล้อง (power) ${2 + Math.floor(roomsWanted / 10)}-${3 + Math.floor(roomsWanted / 10)} ชิ้น, อาหารกลางห้อง (food) ${2 + Math.floor(roomsWanted / 10)} ชิ้นในคนละห้อง, ที่สะเดาะกุญแจ (lockpick) 1 ชิ้น (ห้ามสร้างกุญแจ ระบบจะสร้างกุญแจประจำห้องให้เอง), ผ้า (cloth) 1-2 ชิ้น และของติดตั้งถาวร (fixture) ไม่เกิน ${1 + Math.floor(roomsWanted / 8)} ชิ้น ชื่อของห้ามซ้ำกัน
 4. exits: ทางออกที่เป็นไปได้ 5 ทาง route ครบทั้ง locked, code, repair, power, breach อย่างละ 1 แต่ละทาง "ซ่อน" อยู่ในห้องสำรวจคนละห้อง (zoneName ต้องตรงกับชื่อห้อง) ชื่อและคำบรรยายต้องสมเหตุสมผลกับสถานที่ และ itemNames ต้องสอดคล้องกับ route (ของพวกนี้ระบบจะซ่อนตามห้องเอง ไม่ต้องใส่ใน zones)
 5. ทุกอย่างสมจริง ของทุกชิ้นต้องมีเหตุผลว่าทำไมถึงอยู่ในห้องนั้น`;
           const loc = await callJson({ user, schema: LocationSchema, effort: 'medium', label: 'location' });
@@ -229,6 +230,11 @@ ${characters.map(fmtCharacter).join('\n')}
             description: z.description,
             items: (z.items || []).map((it, ii) => ({ id: `z${zi + 1}_i${ii + 1}`, name: it.name, description: it.description, kind: it.kind, portable: !nonPortable.has(it.kind), master: false })),
           }));
+          // ห้องต้องครบ ผู้เล่น × 2 — ถ้า Claude ให้มาน้อยกว่านั้น เติมห้องเสริมจากคลัง (ชื่อไม่ซ้ำ)
+          for (const r of extraRooms(Math.max(0, roomsWanted - zones.length), zones.map((z) => z.name), zones.flatMap((z) => z.items.map((i) => i.name)))) {
+            const zi = zones.length;
+            zones.push({ id: `z${zi + 1}`, name: r.name, description: r.description, items: r.items.map(([name, description, kind], ii) => ({ id: `z${zi + 1}_i${ii + 1}`, name, description, kind, portable: !nonPortable.has(kind), master: false })) });
+          }
           const explore = zones.slice(1);
           const all = () => zones.flatMap((z) => z.items);
           const inject = (kind, name, description) => {
@@ -249,7 +255,7 @@ ${characters.map(fmtCharacter).join('\n')}
           const exits = (loc.exits || []).filter((e) => e && e.name && e.route).map((e) => ({ name: e.name, description: e.description || '', zoneName: e.zoneName || null, route: e.route, itemNames: Array.isArray(e.itemNames) ? e.itemNames.filter(Boolean) : [] }));
           return { name: loc.name, description: loc.description, zones, sleepZoneId: zones[0].id, exits };
         },
-        () => mockLocation(),
+        () => mockLocation({ zoneCount: roomCountFor(playerCount) }),
       );
     },
 
