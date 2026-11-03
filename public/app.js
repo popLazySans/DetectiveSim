@@ -451,7 +451,7 @@
         .join('')}</div>
       <div class="row" style="margin-top:.8rem">
         ${chosen
-          ? `<p class="status">${me.ko ? '😵 คุณสลบอยู่ที่' : 'คุณเลือกไป'} <b>${esc(zoneName(chosen))}</b> แล้ว รอคนอื่น (${moved}/${alive.length})</p>`
+          ? `<p class="status">${me.ko ? '😵 คุณสลบอยู่ที่' : 'คุณเลือกไป'} <b>${esc(zoneName(chosen))}</b> ${me.ko ? '— ขยับไม่ได้' : 'แล้ว'} รอคนอื่น (${moved}/${alive.length})</p>`
           : `<button class="primary" data-action="confirm-move" ${sel ? '' : 'disabled'}>${sel ? `🚶 ไป${esc(zoneName(sel))}` : 'เลือกห้องก่อน'}</button><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span>`}
       </div>
     </div>`;

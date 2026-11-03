@@ -1488,6 +1488,12 @@ async function unitTests() {
     g9.enforceObjectives();
     Math.random = rr9;
     assert(c9.ko && c9.objectives[0].done && c9.objectives[0].failed && !c9.forced && g9.moves.get(c9.id) === c9.zoneId, 'an ignored objective knocks the player out and keeps them in place');
+    assert(c9.ko.since === g9.turn - 1, 'a punishment at the start of the hour counts that hour as unconscious');
+    // เวลาภารกิจหยุดเดินตอนสลบ และคนสลบไม่ได้ภารกิจใหม่
+    e9.ko = null;
+    e9.objectives = [{ id: 'obj-e', type: 'visit', zoneId: R9.id, done: false, forgiven: false, hours: 3, deadlineTurn: g9.turn + 2, assignedTurn: g9.turn - 1, text: 'ไปที่ห้องทดสอบ' }];
+    g9.knockOut(e9, 2, { cause: 'attack' });
+    assert(e9.objectives[0].deadlineTurn === g9.turn + 4, 'objective deadlines are pushed back by the knockout hours');
     c9.ko = { hours: 1, since: g9.turn - 1, cause: 'attack', by: null };
     g9.tickKo();
     assert(!c9.ko && c9.log.some((l) => /ฟื้นขึ้นมา/.test(l.text)), 'the knockout wears off after its hours');

@@ -37,9 +37,10 @@ export const CONFIG = {
   // ห้องที่ล็อกไว้ตั้งแต่เริ่มเกม (-1 = อัตโนมัติ: ราว 1 ห้องต่อห้องสำรวจ 6 ห้อง ดู LOCKS.lockedZoneง)
   LOCKED_ZONES: process.env.LOCKED_ZONES !== undefined ? Number(process.env.LOCKED_ZONES) : -1,
   // โอกาสเจอของที่ซ่อนอยู่เมื่อ "สำรวจ" (ของทั่วไป / ของสำหรับทางออก) และโอกาสค้นพบทางออกที่ซ่อนในห้อง
-  FIND_HIDDEN_CHANCE: ESCAPE.FIND_HIDDEN_CHANCE,
-  FIND_ROUTE_ITEM_CHANCE: ESCAPE.FIND_ROUTE_ITEM_CHANCE,
-  FIND_EXIT_CHANCE: ESCAPE.FIND_EXIT_CHANCE,
+  // ตั้งใน .env ได้เพื่อเทสต์/เดโม (เช่น FIND_EXIT_CHANCE=1 ให้สำรวจเจอทางออกทันที)
+  FIND_HIDDEN_CHANCE: process.env.FIND_HIDDEN_CHANCE !== undefined ? Number(process.env.FIND_HIDDEN_CHANCE) : ESCAPE.FIND_HIDDEN_CHANCE,
+  FIND_ROUTE_ITEM_CHANCE: process.env.FIND_ROUTE_ITEM_CHANCE !== undefined ? Number(process.env.FIND_ROUTE_ITEM_CHANCE) : ESCAPE.FIND_ROUTE_ITEM_CHANCE,
+  FIND_EXIT_CHANCE: process.env.FIND_EXIT_CHANCE !== undefined ? Number(process.env.FIND_EXIT_CHANCE) : ESCAPE.FIND_EXIT_CHANCE,
   // ภารกิจย่อย (ปิดได้ด้วย OBJECTIVES=false) ระยะเวลาตามความยากอยู่ใน rules.js ครบแล้วระบบพาไปทำเอง (ไม่ตาย)
   OBJECTIVES: process.env.OBJECTIVES !== 'false',
   // เจ้าของ Ultimate ที่ถูกซ่อน (???) รู้ของจริงเสมอ
@@ -311,6 +312,8 @@ export class Game {
     }
     p.ko = { hours: (p.ko?.hours || 0) + hours, since: this.turn, cause, by };
     p.doorWork = null;
+    for (const o of p.objectives) if (!o.done) o.deadlineTurn += hours; // เวลาภารกิจหยุดเดินตอนสลบ
+    p.nextObjectiveTurn += hours; // ภารกิจถัดไปก็เลื่อนตาม
     if (this.step === STEP.MOVE) this.moves.set(p.id, p.zoneId);
     if (this.step === STEP.ACT && !this.actions.has(p.id)) this.actions.set(p.id, { type: 'rest', ko: true, auto: true, label: 'สลบอยู่' });
     if (this.step === STEP.REPORT) this.ready.add(p.id);
@@ -717,7 +720,7 @@ export class Game {
     for (const z of this.zones.values()) z.dark = false;
     const alive = this.alivePlayers();
     // ภารกิจค้างได้ทีละข้อ และภารกิจใหม่จะมาเมื่อครบชั่วโมงของข้อเดิมเท่านั้น (ทำเสร็จก่อนก็ต้องรอ)
-    if (CONFIG.OBJECTIVES) for (const p of alive) if (p.objectives.every((o) => o.done) && this.turn >= p.nextObjectiveTurn) this.assignObjective(p);
+    if (CONFIG.OBJECTIVES) for (const p of alive) if (!p.ko && p.objectives.every((o) => o.done) && this.turn >= p.nextObjectiveTurn) this.assignObjective(p); // คนสลบยังไม่ได้ภารกิจใหม่
     this.enforceObjectives();
     this.systemMessage(`🕐 ${this.timeLabel()} — เลือกห้องที่จะไป (ไม่มีใครเห็นว่าใครเลือกอะไร)`);
     this.emit();
@@ -778,6 +781,7 @@ export class Game {
       due.doneTurn = this.turn;
       const hours = this.koHours();
       const dropped = this.knockOut(p, hours, { cause: 'objective' });
+      p.ko.since = this.turn - 1; // สลบตั้งแต่ต้นชั่วโมง ชั่วโมงนี้นับด้วย
       this.logTo(p, `⏰ ครบกำหนดภารกิจ "${due.text}" แล้วคุณยังไม่ทำ — ระบบลงโทษ: แก๊สพ่นออกจากช่องแอร์ใส่คุณ คุณหมดสติที่${this.spotName(p.zoneId, p.outside)} ${hours} ชั่วโมง${dropped.length ? ` ของหล่นจากมือ: ${dropped.join(', ')}` : ''} — ระหว่างนี้คุณทำอะไรไม่ได้ และใครลงมือกับคุณก็สำเร็จแน่นอน`, 'danger');
       for (const o of this.awakeWith(p)) if (o.id !== p.id) this.logTo(o, `😵 ${this.nick(p)}ล้มลงหมดสติอยู่ตรงหน้าคุณ (ระบบลงโทษเรื่องภารกิจ)${dropped.length ? ` ของหล่นกระจาย: ${dropped.join(', ')}` : ''}`, 'witness');
       this.recordEvent(`${this.nick(p)}ถูกลงโทษเพราะละเลยภารกิจ สลบ ${hours} ชม. ที่${this.zn(p.zoneId)}`);
@@ -1830,7 +1834,7 @@ export class Game {
         lines.push(`🔍 คุณเจอ${it.name}${it.isPart ? ' ⭐' : ''}ซ่อนอยู่ในห้องนี้ (ตอนนี้มันวางให้เห็นแล้ว${it.isPart || it.kind === 'clue' ? ' คุณถือของเต็มมือจึงยังไม่ได้หยิบ' : ''})`);
       }
     }
-    const exitsFound = tryFindExit(this, p, z, det ? ESCAPE.FIND_EXIT_DETECTIVE_BONUS : 0);
+    const exitsFound = tryFindExit(this, p, z, (det ? ESCAPE.FIND_EXIT_DETECTIVE_BONUS : 0) + (CONFIG.FIND_EXIT_CHANCE - ESCAPE.FIND_EXIT_CHANCE)); // CONFIG ปรับได้จาก .env/เทสต์
     if (exitsFound.length) lines.push(`🚪 ค้นพบทางออกที่ซ่อนอยู่: ${exitsFound.map((x) => x.name).join(', ')} (รายละเอียดอยู่ในบันทึกอีกบรรทัด)`);
     const newEv = z.evidence.filter((e) => !e.outside && !p.evidence.includes(e.id) && (!e.hidden || chance(CONFIG.FIND_HIDDEN_CHANCE + bonus)));
     for (const e of newEv) {
