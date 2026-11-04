@@ -538,7 +538,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
             case PHASE.TRIAL: {
               assert([...game.bodies.values()].every((b) => b.announced), 'every body is part of the trial');
               if (game.runoff && game.runoff.number > stats.runoffs) stats.runoffs = game.runoff.number;
-              const pendingVote = humansAlive().filter((p) => !game.confirmedVotes.has(p.id));
+              const pendingVote = humansAlive().filter((p) => !game.confirmedVotes.has(p.id) && !p.ko); // คนสลบโหวตไม่ได้
               for (const p of pendingVote) {
                 const t = decideVote(p);
                 game.castVote(p.id, t);
@@ -586,7 +586,9 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   if (game.step === STEP.MOVE) for (const p of game.alivePlayers()) if (!game.moves.has(p.id)) assert(p.zoneId === game.location.sleepZoneId && !p.outside, 'everyone restarts the day in the sleep zone');
                 }
                 // คนที่เพิ่งถูกลงโทษเรื่องภารกิจตอนเริ่มวัน (สลบ) ทำของหล่นได้
-                for (const p of game.alivePlayers()) if (invBefore.has(p.id) && !p.ko) assert(p.inventory.map((i) => i.id).join(',') === invBefore.get(p.id), 'survivors keep their items');
+                // คนที่ถูกลงโทษเรื่องภารกิจตอนเริ่มวัน (สลบ ของหล่น) — รวมคนที่สลบแล้วฟื้นในชั่วโมงที่เวลาเดินเองเพราะทุกคนสลบ
+                const koToday = (p) => p.ko || p.log.some((l) => l.day === game.day && /หมดสติ|ฟื้นขึ้นมา/.test(l.text));
+                for (const p of game.alivePlayers()) if (invBefore.has(p.id) && !koToday(p)) assert(p.inventory.map((i) => i.id).join(',') === invBefore.get(p.id), 'survivors keep their items');
                 for (const p of game.players.values()) if (!p.alive) assert(p.inventory.length === 0, 'dead players hold nothing (dropped where they died)');
               }
               break;
@@ -1030,9 +1032,18 @@ async function unitTests() {
     s1.knownBodies.add(v1.id);
     await g4.startInvestigation();
     assert(g4.phase === PHASE.INVESTIGATION && g4.huntRound === 1 && [...g4.bodies.values()].every((b) => b.announced) && g4.cases.every((c) => c.announced), 'finding one body announces every body');
+    assert(g4.investigation.total === 3 && g4.investigation.hour === 1 && /3 ชั่วโมง/.test(g4.chat.at(-1).text), 'two bodies make a 3-hour investigation (1 + 1 per body)');
+    assert(!g4.availableActions(s2).some((x) => ['attack', 'eat', 'poisonFood', 'trap'].includes(x.type)) && g4.availableActions(s2).some((x) => x.type === 'search'), 'no killing or eating during the investigation');
     assert([s1, s2, k1, k2].every((p) => p.knownBodies.has(v1.id) && p.knownBodies.has(v2.id)), 'everyone now knows where both bodies are');
     const ann = g4.chat.at(-1).text;
     assert(/ศพทุกร่างในสถานที่ถูกเปิดเผยพร้อมกัน/.test(ann) && /ยังไม่มีใครเคยเห็น/.test(ann), 'announcement mentions the never-seen body');
+    // รอบเก็บหลักฐาน 3 ชั่วโมง: เล่นชั่วโมงที่ 1 และ 2 ให้ผ่าน → ถึงชั่วโมงที่ 3/3 (ส่วนทดสอบเดิมเรียก beginTrial ต่อ)
+    const invTurn = g4.turn;
+    for (let h = 1; h <= 2; h++) {
+      for (const p of g4.alivePlayers()) g4.chooseMove(p.id, p.zoneId);
+      for (const p of g4.alivePlayers()) if (g4.step === STEP.ACT) g4.chooseAction(p.id, { type: 'search' });
+      assert(g4.phase === PHASE.INVESTIGATION && g4.step === STEP.MOVE && g4.investigation.hour === h + 1 && g4.turn === invTurn + h, `investigation continues to hour ${h + 1}/3 instead of going to trial`);
+    }
     await g4.beginTrial();
     assert(!/รอบที่/.test(g4.chat.at(-1).text), 'first trial of the day is not numbered');
     for (const p of g4.alivePlayers()) {
@@ -1497,6 +1508,29 @@ async function unitTests() {
     c9.ko = { hours: 1, since: g9.turn - 1, cause: 'attack', by: null };
     g9.tickKo();
     assert(!c9.ko && c9.log.some((l) => /ฟื้นขึ้นมา/.test(l.text)), 'the knockout wears off after its hours');
+    // (vii) นักสู้ต่อยฆ่าได้ 5% · คนสลบโหวตไม่ได้
+    e9.ko = null;
+    c9.ko = null;
+    c9.zoneId = e9.zoneId;
+    c9.outside = e9.outside = false;
+    g9.phase = PHASE.DAY;
+    g9.step = STEP.ACT;
+    g9.charOf(e9).ultimate.trait = 'combat';
+    e9.inventory = [];
+    const bdC = g9.attackBreakdown(e9, c9, null, 0, g9.zones.get(e9.zoneId));
+    assert(bdC.lethal === ATTACK.LETHALITY.unarmedCombat && /ฆ่าได้ 5%/.test(bdC.parts[0].label), 'a combat trait can kill bare-handed at 5%');
+    seq([0, 0.99, 0.04, 0.5]); // สำเร็จ · ไม่เลอะเทอะ · โชคร้าย 4% < 5% → ตาย
+    g9.do_attack(e9, { targetId: c9.id });
+    Math.random = rr9;
+    assert(!c9.alive && g9.cases.at(-1).killerId === e9.id && g9.cases.at(-1).weapon === null, 'a 5% bare-handed kill by a fighter is recorded without a weapon');
+    e9.ko = { hours: 1, since: g9.turn, cause: 'attack', by: null };
+    g9.phase = PHASE.TRIAL;
+    g9.votes = new Map();
+    g9.confirmedVotes = new Set();
+    let threwV = false;
+    try { g9.castVote(e9.id, d9.id); } catch { threwV = true; }
+    assert(threwV, 'a knocked-out player cannot vote');
+    assert(g9.viewFor(e9.id).players.find((p) => p.id === e9.id).voteConfirmed === true, 'a knocked-out player counts as done voting');
     Object.assign(CONFIG, { OBJECTIVES: false });
   }
   // 13) ห้อง = ผู้เล่น × 2: โหมด mock ตัด/เติมห้องให้พอดี ของชนิดจำเป็นยังครบ ชื่อห้อง/ของไม่ซ้ำ
@@ -1585,7 +1619,7 @@ async function unitTests() {
     assert(ended10 && rx.open && g10.endReason === 'escape', 'assembly + key open the repaired exit');
   }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote');
 }
 
 try {
@@ -1622,7 +1656,7 @@ try {
   assert(peaceful.kills === 0 && peaceful.endReason === 'timeout', 'peaceful run ends by hour cap');
   let escapes = 0;
   for (let i = 0; i < 3; i++) {
-    const esc = await runGame({ humans: 6, label: `escape-focused #${i + 1}`, strategy: 'escape', config: { REVIVE_CHANCE: 0, OBJECTIVES: false, MAX_HOURS: 60, FIND_EXIT_CHANCE: 0.9, FIND_ROUTE_ITEM_CHANCE: 0.9 } });
+    const esc = await runGame({ humans: 6, label: `escape-focused #${i + 1}`, strategy: 'escape', config: { REVIVE_CHANCE: 0, OBJECTIVES: false, MAX_HOURS: 80, FIND_EXIT_CHANCE: 1, FIND_ROUTE_ITEM_CHANCE: 1, FIND_HIDDEN_CHANCE: 1 } }); // ทางออก 4–5 ขั้นใช้เวลา: ให้หาของเจอแน่และมีเวลาพอ
     add(esc);
     escapes += esc.escapes;
   }
