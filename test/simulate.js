@@ -70,7 +70,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   const host = ids[0];
   if (bots) game.setBots(host, bots);
 
-  const stats = { kos: 0, hours: 0, days: 0, trials: 0, huntRounds: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, requests: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
+  const stats = { itemsMoved: 0, kos: 0, hours: 0, days: 0, trials: 0, huntRounds: 0, kills: 0, trapKills: 0, runoffs: 0, leakChecks: 0, wrongVotes: 0, escapes: 0, actionsChecked: 0, defenses: 0, wrongTargets: 0, noneVotes: 0, forced: 0, gives: 0, requests: 0, objectivesDone: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, exitAttempts: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
   let rolesChecked = false;
   let roleStats = { hidden: 0, fakes: 0 };
   let ticks = 0;
@@ -219,12 +219,13 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     const avail = game.availableActions(p).filter((a) => !a.disabled);
     const byType = (t) => avail.filter((a) => a.type === t);
     const z = game.zones.get(p.zoneId);
-    const take = byType('take');
+    const itemActs = game.itemActions(p).filter((a) => !a.disabled); // หยิบ/วาง/ซ่อนทำได้ทันที (ไม่กินชั่วโมง)
+    const take = itemActs.filter((a) => a.type === 'take');
     const obj = p.objectives.filter((o) => !o.done);
     const t = obj.find((o) => o.type === 'take' && take.some((a) => a.itemId === o.itemId));
     if (t && chance(0.7)) return take.find((a) => a.itemId === t.itemId);
     const pl = obj.find((o) => o.type === 'plant' && o.zoneId === p.zoneId && p.inventory.some((i) => i.id === o.itemId));
-    const plantAct = pl ? byType('hide').find((a) => a.itemId === pl.itemId) : null; // ไม่มีให้ซ่อนตอนยืนรอหน้าประตู
+    const plantAct = pl ? itemActs.filter((a) => a.type === 'hide').find((a) => a.itemId === pl.itemId) : null; // ไม่มีให้ซ่อนตอนยืนรอหน้าประตู
     if (plantAct && chance(0.7)) return plantAct;
     const eatObj = obj.find((o) => o.type === 'visit_eat' && o.zoneId === p.zoneId);
     if (eatObj && byType('eat').length && chance(0.8)) return byType('eat')[0];
@@ -245,8 +246,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
       const haveRoles = new Set(p.inventory.flatMap(roles));
       const toolTake = take.find((a) => roles(z.items.find((i) => i.id === a.itemId)).some((r) => !haveRoles.has(r)));
       if (toolTake && p.inventory.length < CONFIG.INVENTORY_MAX) return toolTake;
-      if (p.inventory.length >= CONFIG.INVENTORY_MAX && byType('drop').length) {
-        const junk = byType('drop').find((a) => { const it = p.inventory.find((i) => i.id === a.itemId); return it && !it.isPart && !roles(it).length; });
+      if (p.inventory.length >= CONFIG.INVENTORY_MAX && itemActs.filter((a) => a.type === 'drop').length) {
+        const junk = itemActs.filter((a) => a.type === 'drop').find((a) => { const it = p.inventory.find((i) => i.id === a.itemId); return it && !it.isPart && !roles(it).length; });
         if (junk) return junk;
       }
       return (byType('search')[0] || byType('rest')[0]);
@@ -277,7 +278,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
       if (p.inventory.length >= CONFIG.INVENTORY_MAX && !p.inventory.some((i) => i.kind === 'trap')) {
         const kinds = p.inventory.map((i) => i.kind);
         const canCraft = kinds.includes('rope') && (kinds.includes('weapon') || kinds.includes('tool'));
-        const junk = byType('drop').find((a) => {
+        const junk = itemActs.filter((a) => a.type === 'drop').find((a) => {
           const k = p.inventory.find((i) => i.id === a.itemId)?.kind;
           return !['weapon', 'rope', 'tool'].includes(k) || kinds.filter((x) => x === k).length > 1;
         });
@@ -302,7 +303,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     if (special.length && chance(0.3)) return pick(special);
     if (byType('clean').length && chance(0.2)) return byType('clean')[0];
     if (byType('eat').length && chance(0.15)) return byType('eat')[0];
-    const stash = [...byType('hide'), ...byType('drop')];
+    const stash = [...itemActs.filter((a) => a.type === 'hide'), ...itemActs.filter((a) => a.type === 'drop')];
     if (stash.length && chance(0.1)) return pick(stash);
     if (chance(0.75)) return (byType('search')[0] || byType('rest')[0]);
     return byType('rest')[0];
@@ -511,7 +512,17 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   if (cur) continue;
                   checkMurderLock(p);
                   if (game.actions.has(p.id)) continue;
+                  // หยิบ/วาง/ซ่อนของทำได้ทันที ไม่กินชั่วโมง — ทำก่อน แล้วค่อยเลือกแอ็กชันหลัก
                   let a = decideAction(p);
+                  for (let k = 0; k < 3 && a && ['take', 'hide', 'drop'].includes(a.type); k++) {
+                    const before = p.inventory.length;
+                    game.instantItemAction(p.id, a);
+                    assert(game.step === STEP.ACT && !game.actions.has(p.id), 'instant item actions do not spend the hour');
+                    assert(p.inventory.length === before + (a.type === 'take' ? 1 : -1), 'instant item action moves the item');
+                    stats.itemsMoved++;
+                    a = decideAction(p);
+                  }
+                  if (a && ['take', 'hide', 'drop'].includes(a.type)) a = game.availableActions(p).find((x) => x.type === 'search') || game.availableActions(p).find((x) => x.type === 'rest');
                   assert(a, `action chosen for ${p.id}`);
                   try {
                     game.chooseAction(p.id, a);
@@ -527,6 +538,14 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                 for (const p of humansAlive().filter((x) => !game.ready.has(x.id) && !x.ko)) {
                   if (game.step !== STEP.REPORT) break;
                   const v = game.viewFor(p.id);
+                  // ตอนพักชั่วโมงก็หยิบของได้ทันที
+                  const restTake = game.itemActions(p).find((x) => x.type === 'take' && !x.disabled);
+                  if (restTake && chance(0.3)) {
+                    const before = p.inventory.length;
+                    game.instantItemAction(p.id, restTake);
+                    assert(p.inventory.length === before + 1 && game.step === STEP.REPORT, 'taking during the rest step is instant');
+                    stats.itemsMoved++;
+                  }
                   assert(v.me.log.some((l) => l.day === game.day && l.hour === game.hour && l.kind === 'move'), `player has a move log entry for this hour (hour=${game.hour} turn=${game.turn} phase=${game.phase} step=${game.step} moved=${game.moves.has(p.id)} acted=${JSON.stringify(game.actions.get(p.id))} ko=${JSON.stringify(p.ko)} alive=${p.alive} zone=${p.zoneId} out=${p.outside} last=${JSON.stringify(v.me.log.slice(-4).map((l) => [l.day, l.hour, l.kind, l.text.slice(0, 50)]))})`);
                   tryGive(p);
                   tryRequest(p);
@@ -569,6 +588,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               assert(rv.lastResult?.cases?.length === r.cases.length, 'result visible after trial');
               const dayBefore = game.day;
               const invBefore = new Map(game.alivePlayers().map((p) => [p.id, p.inventory.map((i) => i.id).join(',')]));
+              const autoAll = () => game.chat.filter((m) => m.system && /ทุกคนที่ยังอยู่สลบหมด/.test(m.text)).length;
+              const autoBefore = autoAll();
               await game.nextRound(host);
               // a revived player starts objectives over, so the pacing check must forget their old deadline
               for (const p of game.players.values()) if (p.revived && p.revivedDay === game.day) objectiveSeen.delete(p.id);
@@ -579,7 +600,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
                   assert([...game.bodies.values()].every((b) => !b.judged && !game.caseOf(b.caseId).judged) && game.bodies.size === stillOpenCases.length, 'bodies of closed cases are collected, open-case bodies stay');
                   for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of closed cases is wiped');
                 } else {
-                  assert(game.day === dayBefore + 1 && game.hour === 1, 'trial ends the day; new day starts at hour 1');
+                  // ถ้าทุกคนที่ยังอยู่ถูกลงโทษจนสลบพร้อมกันตอนเริ่มวัน เวลาจะเดินเองต่อจากชั่วโมง 1
+                  assert(game.day === dayBefore + 1 && (game.hour === 1 || autoAll() > autoBefore), `trial ends the day; new day starts at hour 1 (hour ${game.hour})`);
                   assert(game.bodies.size === 0, 'no bodies remain after the final verdict (all cases of the day closed)');
                   for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of judged cases is wiped');
                   // ทุกคนตื่นที่ห้องนอนรวม — เว้นชั่วโมงแรกที่ทุกคนถูกภารกิจบังคับพาไปพร้อมกัน (เอนจินประมวลผลการย้ายทันที)
@@ -1618,13 +1640,62 @@ async function unitTests() {
     const ended10 = resolveExits(g10, [{ p: a10, a: { exitId: rx.id } }]);
     assert(ended10 && rx.open && g10.endReason === 'escape', 'assembly + key open the repaired exit');
   }
+  // 15) หยิบ/วาง/ซ่อนของทำได้ทันที ไม่กินชั่วโมง (ช่วงเลือกแอ็กชันและช่วงพัก) · ไม่อยู่ในรายการแอ็กชันหลัก · ข้างนอก/สลบ/ขั้นเลือกห้องทำไม่ได้
+  {
+    const g11 = new Game({ code: 'UNIT11', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids11 = ['i1-xxxxxxxx', 'i2-xxxxxxxx', 'i3-xxxxxxxx'];
+    for (const [i, id] of ids11.entries()) g11.addPlayer({ id, name: `ของ ${i + 1}` });
+    g11.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g11.start(ids11[0]);
+    g11.clearTimers();
+    const [a11, b11] = ids11.map((id) => g11.players.get(id));
+    const room11 = [...g11.zones.values()].find((z) => z.id !== g11.location.sleepZoneId && z.items.some((i) => i.portable && !i.hidden));
+    for (const p of [a11, b11]) {
+      p.zoneId = room11.id;
+      p.outside = false;
+      p.inventory = [];
+    }
+    g11.phase = PHASE.DAY;
+    g11.step = STEP.MOVE;
+    let threw11 = false;
+    try { g11.instantItemAction(a11.id, g11.itemActions(a11)[0]); } catch { threw11 = true; }
+    assert(threw11, 'items cannot be taken before entering the room (move step)');
+    g11.step = STEP.ACT;
+    const main = g11.availableActions(a11);
+    assert(!main.some((x) => ['take', 'hide', 'drop'].includes(x.type)) && main.some((x) => x.type === 'search'), 'take/hide/drop are no longer hour-spending actions');
+    const takeAct = g11.itemActions(a11).find((x) => x.type === 'take' && !x.disabled);
+    assert(takeAct, 'the room offers an instant take');
+    g11.instantItemAction(a11.id, takeAct);
+    assert(a11.inventory.length === 1 && a11.inventory[0].id === takeAct.itemId && !g11.actions.has(a11.id), 'taking is instant and does not count as the hour\'s action');
+    const dropAct = g11.itemActions(a11).find((x) => x.type === 'drop');
+    g11.instantItemAction(a11.id, dropAct);
+    assert(a11.inventory.length === 0 && room11.items.some((i) => i.id === dropAct.itemId && !i.hidden), 'dropping is instant too');
+    g11.instantItemAction(a11.id, g11.itemActions(a11).find((x) => x.type === 'take' && !x.disabled));
+    g11.chooseAction(a11.id, { type: 'search' });
+    assert(g11.actions.get(a11.id)?.type === 'search' && a11.inventory.length === 1, 'after taking, the player still chooses a main action');
+    g11.chooseAction(b11.id, { type: 'rest' });
+    for (const p of g11.alivePlayers()) if (!g11.actions.has(p.id)) g11.chooseAction(p.id, { type: 'rest' });
+    assert(g11.step === STEP.REPORT, 'the hour resolved into the rest step');
+    const hideAct = g11.itemActions(a11).find((x) => x.type === 'hide');
+    assert(hideAct, 'items can still be handled during the rest step');
+    const invBefore11 = a11.inventory.length; // การสำรวจเมื่อครู่อาจหยิบของทางออกให้อัตโนมัติ
+    g11.instantItemAction(a11.id, hideAct);
+    assert(a11.inventory.length === invBefore11 - 1 && room11.items.some((i) => i.id === hideAct.itemId && i.hidden), 'hiding during the rest step is instant');
+    a11.ko = { hours: 1, since: g11.turn, cause: 'attack', by: null };
+    assert(g11.itemActions(a11).length === 0, 'a knocked-out player has no item actions');
+    a11.ko = null;
+    a11.outside = true;
+    assert(g11.itemActions(a11).length === 0, 'waiting outside a locked door offers no item actions');
+    a11.outside = false;
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free');
 }
 
 try {
   await unitTests();
-  const agg = { kos: 0, kills: 0, trapKills: 0, trials: 0, huntRounds: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, requests: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
+  const agg = { itemsMoved: 0, kos: 0, kills: 0, trapKills: 0, trials: 0, huntRounds: 0, escapes: 0, wrongVotes: 0, defenses: 0, wrongTargets: 0, forced: 0, gives: 0, requests: 0, crafts: 0, trapsPlaced: 0, poisonings: 0, locks: 0, bounces: 0, lockBlocks: 0, exitsFound: 0, doorWorks: 0, lockedIn: 0, breaks: 0 };
   const add = (r) => { for (const k of Object.keys(agg)) agg[k] += r[k] || 0; };
 
   for (let i = 0; i < 4; i++) add(await runGame({ humans: 8, label: `explore #${i + 1}`, strategy: 'explore', config: { REVIVE_CHANCE: 0 } }));
@@ -1673,6 +1744,7 @@ try {
   assert(agg.trials >= 2, `simulations should reach trials (got ${agg.trials})`);
   assert(agg.forced >= 1, 'objective punishment should trigger somewhere');
   assert(agg.kos >= 1, 'someone should get knocked out somewhere');
+  assert(agg.itemsMoved >= 5, 'items get taken/dropped instantly without spending hours');
   assert(agg.gives >= 1, 'item giving should happen somewhere');
   assert(agg.huntRounds >= 1, 'a multi-killer hunt (second trial in one day) should occur somewhere');
   console.log(`ALL SIMULATIONS PASSED — totals: ${JSON.stringify(agg)}`);

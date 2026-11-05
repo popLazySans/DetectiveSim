@@ -1209,6 +1209,36 @@ export class Game {
     return out;
   }
 
+  // หยิบ/วาง/ซ่อนของ ทำได้ทันทีไม่กินชั่วโมง (ทั้งตอนเลือกแอ็กชันและตอนพักชั่วโมง) แล้วยังเลือกแอ็กชันหลักได้อีก 1 อย่าง · ยืนรอหน้าประตูข้างนอกทำไม่ได้
+  itemActions(p) {
+    const z = this.zones.get(p.zoneId);
+    if (!z || !p.alive || p.ko || p.outside) return [];
+    const out = [];
+    const invFull = p.inventory.length >= CONFIG.INVENTORY_MAX;
+    for (const it of z.items.filter((i) => !i.hidden && i.portable)) {
+      out.push({ type: 'take', itemId: it.id, label: `🖐 หยิบ ${it.name}${it.isPart ? ' ⭐' : ''}`, desc: it.description, disabled: invFull, reason: invFull ? `ถือของได้สูงสุด ${CONFIG.INVENTORY_MAX} ชิ้น วางของก่อน` : '' });
+    }
+    for (const it of p.inventory) {
+      out.push({ type: 'hide', itemId: it.id, label: `🫥 ซ่อน ${it.name} ไว้ในห้องนี้`, desc: 'คนอื่นต้องสำรวจละเอียดถึงจะเจอ' });
+      out.push({ type: 'drop', itemId: it.id, label: `⬇ วาง ${it.name} ไว้ในห้องนี้`, desc: 'ใครเข้ามาก็เห็นทันที' });
+    }
+    return out;
+  }
+
+  // ทำทันที (ไม่รอประมวลผลชั่วโมง): หยิบ/วาง/ซ่อน — คนในห้องอาจเห็นเหมือนเดิม
+  instantItemAction(playerId, action) {
+    this.assertPhase(PHASE.DAY, PHASE.INVESTIGATION);
+    if (this.step !== STEP.ACT && this.step !== STEP.REPORT) throw new GameError('หยิบ/วางของได้ตอนอยู่ในห้องแล้ว (ช่วงเลือกแอ็กชันหรือพักชั่วโมง)');
+    const p = this.alivePlayer(playerId);
+    if (p.ko) throw new GameError('😵 คุณสลบอยู่ ทำอะไรไม่ได้จนกว่าจะฟื้น');
+    const match = this.itemActions(p).find((a) => a.type === action?.type && a.itemId === action?.itemId);
+    if (!match) throw new GameError('ทำแอ็กชันนี้ไม่ได้');
+    if (match.disabled) throw new GameError(match.reason || 'ทำแอ็กชันนี้ไม่ได้');
+    this[`do_${match.type}`](p, match);
+    this.emit();
+    return match;
+  }
+
   availableActions(p) {
     const z = this.zones.get(p.zoneId);
     if (!z || !p.alive || p.ko) return [];
@@ -1219,14 +1249,7 @@ export class Game {
     const out = [];
     const inDay = this.phase === PHASE.DAY;
     if (!outside) out.push({ type: 'search', label: '🔍 สำรวจห้องอย่างละเอียด', desc: 'หาของที่ซ่อนอยู่ ทางออกที่ซ่อนอยู่ หลักฐาน และสังเกตว่ามีอะไรหายไปจากห้อง' });
-    const invFull = p.inventory.length >= CONFIG.INVENTORY_MAX;
-    for (const it of outside ? [] : z.items.filter((i) => !i.hidden && i.portable)) {
-      out.push({ type: 'take', itemId: it.id, label: `🖐 หยิบ ${it.name}${it.isPart ? ' ⭐' : ''}`, desc: it.description, disabled: invFull, reason: invFull ? `ถือของได้สูงสุด ${CONFIG.INVENTORY_MAX} ชิ้น วางของก่อน` : '' });
-    }
-    for (const it of outside ? [] : p.inventory) {
-      out.push({ type: 'hide', itemId: it.id, label: `🫥 ซ่อน ${it.name} ไว้ในห้องนี้`, desc: 'คนอื่นต้องสำรวจละเอียดถึงจะเจอ' });
-      out.push({ type: 'drop', itemId: it.id, label: `⬇ วาง ${it.name} ไว้ในห้องนี้`, desc: 'ใครเข้ามาก็เห็นทันที' });
-    }
+    // หยิบ/วาง/ซ่อนของไม่ใช่แอ็กชันของชั่วโมง — ทำได้ทันทีผ่าน itemActions()/instantItemAction()
     const food = outside ? null : z.items.find((i) => i.kind === 'food');
     if (food && inDay) out.push({ type: 'eat', label: `🍞 กินอาหาร/ดื่มน้ำ (${food.name})`, desc: 'พักกินอะไรสักหน่อย — ใช้ทำภารกิจ "ไปกินอาหาร" ได้ · ระวัง ถ้ามีคนผสมยาพิษไว้คุณอาจไม่รู้ตัว' });
     if (z.lockable && !outside) {
@@ -2686,6 +2709,7 @@ export class Game {
         this.setTimer(() => {
           if ((this.phase === PHASE.DAY || this.phase === PHASE.INVESTIGATION) && this.step === STEP.ACT && !this.actions.has(b.id) && b.alive && !b.ko) {
             try {
+              this.botFreeItems(b); // หยิบ/วาง/ซ่อนของทันที ไม่กินชั่วโมง
               this.chooseAction(b.id, this.botPickAction(b));
             } catch {
               this.chooseAction(b.id, { type: 'rest' });
@@ -2749,27 +2773,43 @@ export class Game {
     return pick(cands) || this.location.sleepZoneId;
   }
 
+  // บอทหยิบ/วาง/ซ่อนของทันที (ไม่กินชั่วโมง) ก่อนเลือกแอ็กชันหลัก: ของตามภารกิจ ของทางออก กุญแจ แผนผัง และอาวุธถ้ายังไม่มี
+  botFreeItems(b) {
+    const z = this.zones.get(b.zoneId);
+    if (!z || b.ko || b.outside) return;
+    const run = (a) => {
+      if (!a || a.disabled) return false;
+      try {
+        this.instantItemAction(b.id, a);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const acts = () => this.itemActions(b);
+    const obj = b.objectives.filter((o) => !o.done);
+    const t = obj.find((o) => o.type === 'take');
+    if (t) run(acts().find((a) => a.type === 'take' && a.itemId === t.itemId));
+    const pl = obj.find((o) => o.type === 'plant' && o.zoneId === b.zoneId);
+    if (pl) run(acts().find((a) => (a.type === 'hide' || a.type === 'drop') && a.itemId === pl.itemId));
+    for (const a of acts().filter((x) => x.type === 'take')) {
+      const it = z.items.find((i) => i.id === a.itemId);
+      if (it && (it.isPart || it.kind === 'clue' || it.kind === 'key') && chance(0.6)) run(a);
+    }
+    const wt = acts().find((a) => a.type === 'take' && z.items.find((i) => i.id === a.itemId)?.kind === 'weapon');
+    if (wt && !this.bestWeapon(b) && chance(0.4)) run(wt);
+  }
+
   botPickAction(b) {
     const avail = this.availableActions(b).filter((a) => !a.disabled);
     const byType = (t) => avail.filter((a) => a.type === t);
-    const take = byType('take');
-    const z = this.zones.get(b.zoneId);
     const obj = b.objectives.filter((o) => !o.done);
-    const t = obj.find((o) => o.type === 'take' && take.some((a) => a.itemId === o.itemId));
-    if (t) return take.find((a) => a.itemId === t.itemId);
-    const pl = obj.find((o) => o.type === 'plant' && o.zoneId === b.zoneId && b.inventory.some((i) => i.id === o.itemId));
-    if (pl) return byType('hide').find((a) => a.itemId === pl.itemId) || byType('drop').find((a) => a.itemId === pl.itemId);
     const eatObj = obj.find((o) => o.type === 'visit_eat' && o.zoneId === b.zoneId);
     if (eatObj && byType('eat').length) return byType('eat')[0];
     const power = byType('exit_power')[0];
     if (power) return power;
     const exitAct = byType('exit')[0];
     if (exitAct && this.botExitTarget(b) && chance(0.7)) return exitAct;
-    const partTake = take.find((a) => {
-      const it = z.items.find((i) => i.id === a.itemId);
-      return it && (it.isPart || it.kind === 'clue' || it.kind === 'key');
-    });
-    if (partTake && chance(0.6)) return partTake;
     const examine = byType('examine');
     if (examine.length && chance(this.phase === PHASE.INVESTIGATION ? 0.6 : 0.4)) return pick(examine);
     const locked = this.murderLockedFor(b);
@@ -2781,8 +2821,6 @@ export class Game {
     if (asm) return asm; // ประกอบชิ้นส่วนทางออกทันทีที่ถือครบ
     const craft = byType('craft');
     if (craft.length && this.designatedId === b.id && chance(0.5)) return craft[0];
-    const weaponTake = take.find((a) => z.items.find((i) => i.id === a.itemId)?.kind === 'weapon');
-    if (weaponTake && chance(0.4)) return weaponTake;
     if (chance(0.8)) return byType('search')[0];
     return byType('rest')[0] || avail[0];
   }
@@ -2991,6 +3029,7 @@ export class Game {
             knownBodies: [...me.knownBodies].map((id) => ({ playerId: id, name: this.nick(this.players.get(id)), zoneName: this.zoneName(this.bodies.get(id)?.zoneId), outside: !!this.bodies.get(id)?.outside, announced: !!this.bodies.get(id)?.announced })),
             zoneMemory: me.zoneMemory,
             availableActions: me.alive && this.step === STEP.ACT ? this.availableActions(me) : [],
+            itemActions: me.alive && (this.step === STEP.ACT || this.step === STEP.REPORT) ? this.itemActions(me) : [], // หยิบ/วาง/ซ่อนทันที ไม่กินชั่วโมง
             zonePeople: me.alive && inZoneStep
               ? this.presentWith(me)
                   .filter((o) => o.id !== me.id)
