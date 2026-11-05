@@ -4,7 +4,7 @@
 import { CHARACTERS } from './characters.js';
 import { ULTIMATE_POOL, TRAITS } from './mock.js';
 import { makeObjective, objectiveOutcome, objectiveTargetZone, hasFood } from './objectives.js';
-import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, tagsOf, attackBaseOf, partMatches, trapTexts, poisonNoticeChance, ammoOf, canBreachWith, TAG_LABEL, INVESTIGATION } from './rules.js';
+import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, tagsOf, attackBaseOf, partMatches, trapTexts, poisonNoticeChance, ammoOf, canBreachWith, TAG_LABEL, INVESTIGATION, tagSetOf, WOUND_LAY, materialOf, trapForensic, TRAP_BODY_POS, TRAP_SCENE, weaponTrace } from './rules.js';
 import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView, craftAssemblyOptions, doCraftAssembly, exitReadyFor, exitUsefulFor } from './escape.js';
 
 export const PHASE = {
@@ -995,7 +995,7 @@ export class Game {
           if (b.killerId !== p.id) b.discoveredBy.add(p.id);
           lines.push(first ? `☠ คุณพบศพของ${this.nick(v)}อยู่หน้าประตูนี้!${b.announced ? '' : ' ยังไม่มีการประกาศ — คุณจะบอกใครหรือไม่ก็ได้'}` : `☠ ศพของ${this.nick(v)}ยังอยู่หน้าประตูนี้`);
         }
-        for (const e of z.evidence.filter((x) => x.outside && !x.hidden && !p.evidence.includes(x.id))) {
+        for (const e of z.evidence.filter((x) => x.outside && !x.hidden && !x.gone && !p.evidence.includes(x.id))) {
           p.evidence.push(e.id);
           lines.push(`🧩 ร่องรอยหน้าประตู: ${e.text}`);
         }
@@ -1021,7 +1021,7 @@ export class Game {
         const first = !p.knownBodies.has(b.victimId);
         p.knownBodies.add(b.victimId);
         if (b.killerId !== p.id) b.discoveredBy.add(p.id);
-        lines.push(first ? `☠ คุณพบศพของ${this.nick(v)}อยู่ที่นี่!${b.announced ? '' : ' ยังไม่มีการประกาศ — คุณจะบอกใครหรือไม่ก็ได้'}` : `☠ ศพของ${this.nick(v)}ยังอยู่ที่นี่`);
+        lines.push(first ? `☠ คุณพบศพของ${this.nick(v)}อยู่ที่นี่!${this.bodyPosText(b)}${b.announced ? '' : ' ยังไม่มีการประกาศ — คุณจะบอกใครหรือไม่ก็ได้'}` : `☠ ศพของ${this.nick(v)}ยังอยู่ที่นี่`);
       }
       for (const o of others) {
         if (o.stained === this.turn - 1 && chance(0.4)) lines.push(`👀 เสื้อผ้าของ${this.nick(o)}มีรอยเปื้อนสีคล้ำที่ยังไม่ได้ซัก`);
@@ -1071,8 +1071,16 @@ export class Game {
     }
     const where = outside ? `หน้าประตู${this.zn(z)}` : this.zn(z);
     const kase = this.killPlayer(victim, { cause: 'trap', trapType: trap.item.trapType, killerId: setter?.id || null, weapon: { name: w, kind: tt.weaponKind, tags: trap.item.strikerTags || [] }, zoneId: z.id, outside, messy: false, witnesses: [] }); // อาวุธของคดี = ชิ้นที่ทำร้ายจริง ไม่ใช่ชื่อกับดักทั้งชุด
-    z.evidence.push(this.makeEvidence(z.id, fill(tt.evidence, w), false, kase.id, 'trap', outside));
-    z.items.push({ ...trap.item, hidden: false, sprung: true });
+    // ร่องรอยในห้อง (ต้องสำรวจถึงเจอ): เลือด/รอยไหม้ตรงประตู + ตัวอุปกรณ์ที่ยังค้างอยู่ตรงนั้น — กับดักที่ทำงานแล้วเหลือแค่ "ของชิ้นที่ทำร้าย" เป็นของธรรมดาในห้อง
+    // (ตอนเข้าห้องเห็นแค่ "ขวานดับเพลิง" ไม่ใช่ "กับดักประตู") ใครเก็บมันไปจะเหลือเศษร่องรอยแทน ดู markDeviceTaken
+    const scene = TRAP_SCENE[trap.item.trapType];
+    const device = { id: `it_${nextId()}`, name: w, description: trap.item.strikerDesc || '', kind: trap.item.strikerKind || 'weapon', portable: true, hidden: false, isPart: false, originZoneId: z.id, deviceOf: { caseId: kase.id, trapType: trap.item.trapType } };
+    if (Number.isInteger(trap.item.strikerAmmo)) device.ammo = Math.max(0, trap.item.strikerAmmo - (trap.item.wound === 'pierce' ? 1 : 0)); // ปืนที่ลั่นไปแล้วเสียกระสุน 1 นัด
+    z.items.push(device);
+    if (scene) {
+      z.evidence.push(this.makeEvidence(z.id, scene.blood, false, kase.id, 'blood', outside));
+      z.evidence.push({ ...this.makeEvidence(z.id, fill(scene.device, w), false, kase.id, 'trap', outside), deviceItemId: device.id });
+    }
     this.logTo(victim, `💀 ${fill(tt.trigger, w)} ที่${where}คุณเสียชีวิต... ตอนนี้ทำได้เพียงเฝ้าดู`, 'death');
     for (const o of this.awakeIn(z.id, outside)) {
       o.knownBodies.add(victim.id);
@@ -1145,6 +1153,14 @@ export class Game {
       if (k) k.kills++;
     }
     return kase;
+  }
+
+  // ตำแหน่งศพที่เห็นได้ทันทีตอนพบ (ไม่บอกกลไก): ศพจากกับดักประตูนอนอยู่ตรงธรณีประตู ฯลฯ ถ้าถูกย้ายแล้วไม่มีเบาะแสนี้
+  bodyPosText(b) {
+    const c = this.caseOf(b.caseId);
+    if (!c || c.cause !== 'trap' || b.moved) return '';
+    const pos = TRAP_BODY_POS[c.trapType];
+    return pos ? ` ร่างนอนอยู่${pos}` : '';
   }
 
   bodyThreshold() {
@@ -1320,7 +1336,7 @@ export class Game {
     }
     for (const b of bodies) {
       const v = this.players.get(b.victimId);
-      out.push({ type: 'examine', victimId: b.victimId, label: `🔎 ตรวจศพของ ${this.nick(v)}`, desc: trait === 'medical' ? 'ความรู้ทางการแพทย์ของคุณจะบอกอาวุธ เวลาตาย และว่าศพถูกย้ายหรือไม่' : 'ดูสภาพศพคร่าว ๆ (คนที่มีความรู้ทางการแพทย์จะเห็นมากกว่า)' });
+      out.push({ type: 'examine', victimId: b.victimId, label: `🔎 ตรวจศพของ ${this.nick(v)}`, desc: trait === 'medical' ? 'ความรู้ทางการแพทย์ของคุณจะบอกชนิดของที่ใช้ ทิศทางแผล เวลาตายที่แน่นอน และว่าศพถูกย้ายหรือไม่ (ไม่บอกชื่อของ)' : 'ดูชนิดบาดแผล ตำแหน่งศพ และเวลาตายคร่าว ๆ (สายการแพทย์เห็นละเอียดกว่า) — ของที่ใช้ต้องหาในห้องเอง' });
       out.push({ type: 'moveBody', victimId: b.victimId, label: `🚚 ย้ายศพของ ${this.nick(v)} ไปห้องอื่น`, desc: 'ทิ้งรอยลากไว้ทั้งสองห้อง และคนในห้องอาจเห็น', needsZone: true, danger: true });
     }
     if (!outside && z.evidence.some((e) => !e.hidden && !e.outside)) {
@@ -1619,10 +1635,10 @@ export class Game {
         const look = this.charOf(killer)?.appearance || 'เสื้อผ้าของใครบางคน';
         z.evidence.push(this.makeEvidence(z.id, `เศษผ้าขาดเกี่ยวติดอยู่กับขอบตู้ — ดูเหมือนมาจากเสื้อผ้าแบบ "${look.split(' ').slice(-3).join(' ')}"`, false, kase.id, 'cloth', kase.outside));
       }
-      if (w) z.evidence.push(this.makeEvidence(z.id, `รอยเลือดบนพื้นมีรูปทรงตรงกับ${w.name}`, true, kase.id, 'weapon', kase.outside));
+      if (w) z.evidence.push(this.makeEvidence(z.id, weaponTrace(w, true), true, kase.id, 'weapon', kase.outside)); // ไม่เอ่ยชื่อของ บอกแค่ชนิด
     } else {
       z.evidence.push(this.makeEvidence(z.id, `รอยเลือดหยดเล็ก ๆ ที่ถูกเช็ดอย่างรีบร้อนใกล้จุดที่พบศพ`, true, kase.id, 'blood', kase.outside));
-      if (w) z.evidence.push(this.makeEvidence(z.id, `รอยเปื้อนจาง ๆ บนพื้นรูปทรงคล้าย${w.name}`, true, kase.id, 'weapon', kase.outside));
+      if (w) z.evidence.push(this.makeEvidence(z.id, weaponTrace(w, false), true, kase.id, 'weapon', kase.outside));
     }
   }
 
@@ -1658,6 +1674,9 @@ export class Game {
       trapType: r.trapType,
       weaponName: striker.name,
       strikerTags: [...tagsOf(striker)],
+      strikerKind: striker.kind, // ไว้ทิ้งชิ้นที่ทำร้ายกลับเป็นของธรรมดาหลังกับดักทำงาน (ร่องรอยต้องสำรวจถึงเจอ)
+      strikerDesc: striker.description || '',
+      strikerAmmo: Number.isInteger(striker.ammo) ? striker.ammo : null,
       wound: woundOf(striker), // ชนิดแผลที่กับดักนี้ทำ (ปืน = ยิง, มีคม = บาด, หนัก = กระแทก) ใช้เลือกข้อความตอนทำงาน
       ingredients: [partA.name, partB.name],
       portable: true,
@@ -1746,7 +1765,8 @@ export class Game {
         return;
       }
       const kase = this.killPlayer(p, { cause: 'trap', trapType: 'poison', killerId: setter?.id || null, weapon: { name: food.poisoned.poisonName, kind: 'poison' }, zoneId: z.id, messy: false, witnesses: [] });
-      z.evidence.push(this.makeEvidence(z.id, fill(TRAP_TYPES.poison.evidence, food.poisoned.poisonName), false, kase.id, 'trap'));
+      const ptags = food.poisoned.poisonTags || [];
+      z.evidence.push(this.makeEvidence(z.id, `ภาชนะของ${food.name}มี${ptags.includes('pungent') ? 'กลิ่นฉุนของสารเคมี' : ptags.includes('tasteless') ? 'คราบผงจาง ๆ ที่ไม่มีกลิ่น' : 'คราบและกลิ่นเคมีจาง ๆ'}ติดอยู่ที่ขอบ`, false, kase.id, 'trap')); // ไม่บอกชื่อยา
       this.logTo(p, `💀 ${fill(TRAP_TYPES.poison.trigger, food.poisoned.poisonName)} คุณเสียชีวิตที่${this.zn(z)}... ตอนนี้ทำได้เพียงเฝ้าดู`, 'death');
       for (const o of this.awakeIn(z.id)) {
         o.knownBodies.add(p.id);
@@ -1784,7 +1804,7 @@ export class Game {
 
   do_clean(p) {
     const z = this.zones.get(p.zoneId);
-    const vis = z.evidence.filter((e) => !e.hidden && !e.outside);
+    const vis = z.evidence.filter((e) => !e.hidden && !e.outside && !e.gone);
     if (!vis.length) return this.logTo(p, `คุณมองหาร่องรอยใน${this.zn(z)}แต่ไม่มีอะไรให้เก็บ`, 'action');
     const trait = this.traitOf(p);
     const pSucc = 0.5 + (trait === 'stealth' || trait === 'medical' ? 0.25 : 0);
@@ -1833,12 +1853,27 @@ export class Game {
     if (p.inventory.length >= CONFIG.INVENTORY_MAX) return this.logTo(p, `คุณถือของเต็มมือแล้ว`, 'danger');
     const it = z.items.splice(idx, 1)[0];
     p.inventory.push(it);
+    this.markDeviceTaken(p, z, it);
     const who = this.who(p, z);
     this.logTo(p, `🖐 คุณหยิบ${it.name}${it.isPart ? ' ⭐' : ''}มาไว้กับตัว${it.kind === 'key' && it.unlocksZoneIds?.length ? ` — ใช้ล็อก/ปลดล็อก${it.unlocksZoneIds.map((id) => this.zoneName(id)).join(', ')}ได้` : ''}`, it.isPart ? 'escape' : 'action');
     onObtainItem(this, p, it);
     this.recordEvent(`${this.nick(p)}หยิบ${it.name}จาก${this.zn(z)}`);
     for (const o of this.witnessesOf(p, z)) if (this.seen(p, 0.5)) this.logTo(o, `👀 คุณเห็น${who}หยิบ${it.name}ติดตัวไป`, 'witness');
     this.checkObjectivesAfterTake(p, it);
+  }
+
+  // เก็บอุปกรณ์กับดักที่ทำงานแล้วออกจากที่เกิดเหตุ: หลักฐาน "อุปกรณ์ยังค้างอยู่" หายไป เหลือเศษร่องรอยแทน
+  // สายเงียบเชียบเก็บเนียน = เศษถูกซ่อน (ต้องสำรวจละเอียดถึงเจอ) · คนอื่นเก็บแล้วเศษเห็นชัด
+  markDeviceTaken(p, z, it) {
+    if (!it.deviceOf) return;
+    const { caseId, trapType } = it.deviceOf;
+    it.deviceOf = null;
+    for (const e of z.evidence) if (e.deviceItemId === it.id) e.gone = true;
+    const scene = TRAP_SCENE[trapType];
+    if (!scene) return;
+    const sneaky = this.traitOf(p) === 'stealth';
+    z.evidence.push(this.makeEvidence(z.id, scene.residue, sneaky, caseId, 'residue', false));
+    this.logTo(p, sneaky ? `🤫 คุณแกะ${it.name}ออกจากกลไกอย่างเนียน เหลือร่องรอยน้อยมาก` : `⚠ คุณแกะ${it.name}ออกจากกลไกที่ประตู แต่เศษเชือก/รอยยึดยังเหลืออยู่ให้คนสังเกตเห็น`, 'danger');
   }
 
   placeItem(p, a, hidden) {
@@ -1888,7 +1923,7 @@ export class Game {
     }
     const exitsFound = tryFindExit(this, p, z, (det ? ESCAPE.FIND_EXIT_DETECTIVE_BONUS : 0) + (CONFIG.FIND_EXIT_CHANCE - ESCAPE.FIND_EXIT_CHANCE)); // CONFIG ปรับได้จาก .env/เทสต์
     if (exitsFound.length) lines.push(`🚪 ค้นพบทางออกที่ซ่อนอยู่: ${exitsFound.map((x) => x.name).join(', ')} (รายละเอียดอยู่ในบันทึกอีกบรรทัด)`);
-    const newEv = z.evidence.filter((e) => !e.outside && !p.evidence.includes(e.id) && (!e.hidden || chance(CONFIG.FIND_HIDDEN_CHANCE + bonus)));
+    const newEv = z.evidence.filter((e) => !e.outside && !e.gone && !p.evidence.includes(e.id) && (!e.hidden || chance(CONFIG.FIND_HIDDEN_CHANCE + bonus)));
     for (const e of newEv) {
       p.evidence.push(e.id);
       lines.push(`🧩 หลักฐาน: ${e.text}`);
@@ -1905,6 +1940,8 @@ export class Game {
     if (p.zoneMemory[z.id]) p.zoneMemory[z.id].searched = this.turn;
   }
 
+  // ตรวจศพ — ไม่เอ่ยชื่อของ: คนทั่วไปเห็นชนิดบาดแผล ตำแหน่งศพ และเวลาตายคร่าว ๆ · สายการแพทย์เห็นชนิดวัสดุ จำนวน/ทิศทางแผล เวลาตายแน่นอน และว่าศพถูกย้ายไหม
+  // ตัวอุปกรณ์ (ขวาน ปืน เชือก) ต้องไปเจอในห้องเองด้วยการสำรวจ
   do_examine(p, a) {
     const b = this.bodies.get(a.victimId);
     if (!b || b.judged || b.zoneId !== p.zoneId || !!b.outside !== !!p.outside) return this.logTo(p, 'ศพไม่ได้อยู่ตรงนี้แล้ว', 'danger');
@@ -1913,42 +1950,28 @@ export class Game {
     b.examinedBy.add(p.id);
     const med = this.traitOf(p) === 'medical';
     const w = kase.weapon;
-    let text;
-    if (kase.cause === 'trap') {
-      const wound = woundOf(w);
-      const tt = trapTexts(kase.trapType, wound);
-      const lay =
-        kase.trapType === 'poison'
-          ? 'ริมฝีปากเขียวคล้ำ ไม่มีบาดแผล มีเศษอาหารติดมุมปาก'
-          : kase.trapType === 'shock'
-            ? 'ฝ่ามือไหม้เกรียม ไม่มีบาดแผลอื่น'
-            : kase.trapType === 'door'
-              ? wound === 'pierce'
-                ? `บาดแผลทะลุที่หน้าอก เหมือนถูก${w?.name || 'ปืน'}ยิงตอนเปิดประตู`
-                : wound === 'blunt'
-                  ? `กะโหลกแตก เหมือน${w?.name || 'ของหนัก'}หล่นใส่ตอนเปิดประตู`
-                  : `บาดแผลฉกรรจ์ที่หน้าอกระดับประตู เหมือนโดน${w?.name || 'ของหนัก'}ที่ยึดไว้กับบานประตู`
-              : kase.trapType === 'blade' && wound === 'blunt'
-                ? `กะโหลกด้านข้างแตก เหมือนโดน${w?.name || 'ของหนัก'}เหวี่ยงใส่`
-                : `แผล${kase.trapType === 'blade' ? 'ลึกที่ลำคอ' : 'แตกที่ศีรษะ'} เหมือนโดน${w?.name || 'ของหนัก'}`;
-      text = med ? `${fill(tt.body, w?.name)} — เป็นกับดักที่เตรียมไว้ล่วงหน้า ไม่มีคนลงมือโดยตรง` : lay;
-    } else if (w?.kind === 'poison') {
-      const injected = /ฉีดด้วย/.test(w.name);
-      text = med ? `อาการตรงกับพิษจาก${w.name} ${injected ? 'ฉีดเข้าเส้นเลือดที่ลำคอ' : 'ถูกวางยาโดยตรง'}` : `ริมฝีปากเขียวคล้ำ ไม่มีบาดแผล น่าจะเป็นพิษอะไรสักอย่าง${injected ? ' มีรอยเข็มเล็ก ๆ ที่ข้างลำคอ' : ''}`;
+    const tags = tagSetOf(w);
+    const isTrap = kase.cause === 'trap';
+    const wound = isTrap && kase.trapType === 'shock' ? 'burn' : (isTrap && kase.trapType === 'poison') || w?.kind === 'poison' ? 'poison' : w ? woundOf(w) : 'hands';
+    const injected = w?.kind === 'poison' && /ฉีดด้วย/.test(w.name || '');
+    const parts = [];
+    let lay = WOUND_LAY[wound] || WOUND_LAY.blunt;
+    if (wound === 'pierce' && tags.has('firearm')) lay = 'บาดแผลทะลุที่หน้าอก รอบแผลมีคราบดำไหม้ เหมือนถูกยิงระยะใกล้';
+    if (wound === 'poison' && injected) lay += ' มีรอยเข็มเล็ก ๆ ที่ข้างลำคอ';
+    if (kase.cause === 'defense') lay = `รอยช้ำเต็มตัว ข้อนิ้วถลอก เหมือนผ่านการต่อสู้อย่างหนัก และ${lay}`;
+    parts.push(lay);
+    if (isTrap && !b.moved && TRAP_BODY_POS[kase.trapType]) parts.push(`ร่างนอนอยู่${TRAP_BODY_POS[kase.trapType]}`);
+    if (med) {
+      parts.push(`ชนิดของที่ทำ: ${materialOf(w, wound)}`);
+      if (isTrap) parts.push(`${trapForensic(kase.trapType, wound)} ไม่มีร่องรอยการต่อสู้ — เหมือนไม่มีใครยืนอยู่ตรงหน้าเขาตอนเกิดเหตุ`);
+      else if (kase.cause === 'defense') parts.push('ลำดับแผลบอกว่าเขาเป็นฝ่ายเปิดฉากต่อสู้ก่อนแล้วแพ้');
+      else if (wound !== 'poison') parts.push(kase.messy ? 'หลายแผล ลงมือแบบรีบร้อน' : 'แผลเดียว ลงมือครั้งเดียวแม่นยำ');
     }
-    else if (kase.cause === 'defense') text = med ? 'รอยช้ำหลายแห่งและแผลที่ท้ายทอยจากการต่อสู้ ข้อนิ้วถลอก — เขาเป็นฝ่ายเปิดฉากต่อสู้ก่อนแล้วแพ้' : 'รอยช้ำเต็มตัว เหมือนผ่านการต่อสู้อย่างหนัก';
-    else if (w) {
-      // ร่องรอยใช้ตัวจำแนกเดียวกับตอนเล่าคดี (rules.woundOf) จะได้ไม่ขัดกัน: เชิงเทียน = ทุบ, ไขควง/ที่เปิดไวน์ = แทง, ผ้า = อุดหายใจ
-      const wound = woundOf(w);
-      const lay = { pierce: 'บาดแผลทะลุจากกระสุนหรือของแหลม', sharp: 'บาดแผลจากของมีคม', ligature: 'รอยรัดเป็นเส้นรอบคอ', smother: 'ไม่มีบาดแผล แต่ใบหน้าเขียวคล้ำและมีรอยช้ำรอบปากจมูก เหมือนถูกอุดหายใจ', blunt: 'บาดแผลจากของหนักทื่อ' };
-      const pro = { pierce: `บาดแผลทะลุตรงกับ${w.name}แน่นอน`, sharp: `บาดแผลตรงกับคมของ${w.name}แน่นอน`, ligature: `รอยรัดตรงกับ${w.name}แน่นอน`, smother: `เส้นใยจาก${w.name}ติดอยู่ในปากและจมูก ถูกอุดหายใจแน่นอน`, blunt: `รอยกระแทกตรงกับ${w.name}แน่นอน` };
-      text = med ? `${pro[wound] || `ร่องรอยตรงกับ${w.name}แน่นอน`} ลงมือ${kase.messy ? 'แบบรีบร้อน มีแผลหลายจุด' : 'ครั้งเดียวแม่นยำ'}` : lay[wound] || lay.blunt;
-    }
-    else text = med ? 'รอยช้ำที่ลำคอและท้ายทอยจากมือเปล่า คนลงมือต้องแข็งแรงพอสมควร' : 'รอยช้ำที่คอ ไม่เห็นอาวุธ';
     const ago = this.turn - b.turn;
-    const time = med ? `ตายมาแล้วราว ${Math.max(1, ago)} ชั่วโมง (วันที่ ${b.day} ชั่วโมงที่ ${b.hour})` : ago <= 1 ? 'ร่างยังอุ่น ตายไม่นาน' : ago <= 3 ? 'ร่างเริ่มเย็น ตายมาหลายชั่วโมงแล้ว' : 'ร่างเย็นและแข็งแล้ว ตายมานานมาก';
-    const moved = b.moved ? (med ? 'รอยเลือดตกค้างไม่ตรงกับท่าศพ — ศพถูกย้ายมาแน่นอน' : 'ท่าทางศพดูไม่เป็นธรรมชาติ') : med ? 'ศพไม่ได้ถูกย้าย ตายตรงนี้' : '';
-    this.logTo(p, `🔎 ตรวจศพ${this.nick(v)}ที่${this.zn(b.zoneId)}: ${text} · ${time}${moved ? ` · ${moved}` : ''}`, 'evidence');
+    parts.push(med ? `ตายมาแล้วราว ${Math.max(1, ago)} ชั่วโมง (วันที่ ${b.day} ชั่วโมงที่ ${b.hour})` : ago <= 1 ? 'ร่างยังอุ่น ตายไม่นาน' : ago <= 3 ? 'ร่างเริ่มเย็น ตายมาหลายชั่วโมงแล้ว' : 'ร่างเย็นและแข็งแล้ว ตายมานานมาก');
+    if (b.moved) parts.push(med ? 'รอยเลือดตกค้างไม่ตรงกับท่าศพ — ศพถูกย้ายมาแน่นอน' : 'ท่าทางศพดูไม่เป็นธรรมชาติ เหมือนถูกจัดท่าหรือย้ายมา');
+    else if (med) parts.push('ศพไม่ได้ถูกย้าย ตายตรงนี้');
+    this.logTo(p, `🔎 ตรวจศพ${this.nick(v)}ที่${this.zn(b.zoneId)}: ${parts.join(' · ')}`, 'evidence');
     this.recordEvent(`${this.nick(p)}ตรวจศพของ${this.nick(v)}`);
   }
 
@@ -2151,7 +2174,11 @@ export class Game {
     for (const b of list) {
       b.announced = true;
       const c = this.caseOf(b.caseId);
-      if (c) c.announced = true;
+      if (c) {
+        c.announced = true;
+        c.announcedDay = this.day;
+        c.announcedHour = this.hour;
+      }
       for (const p of this.players.values()) p.knownBodies.add(b.victimId);
     }
     return unseen;
@@ -2969,13 +2996,15 @@ export class Game {
     const b = this.bodies.get(c.victimId);
     return {
       id: c.id,
-      day: c.day,
-      hour: c.hour,
+      // ประกาศบอกแค่ใครตายและพบที่ไหน (เวลาตายต้องตรวจศพ) · announcedDay/Hour = เวลาที่ประกาศ
+      announcedDay: c.announcedDay ?? null,
+      announcedHour: c.announcedHour ?? null,
       victim: { playerId: v.id, playerName: v.name, characterName: this.charOf(v)?.name || v.name, nickname: this.nick(v) },
       zoneName: this.spotName(b?.zoneId || c.zoneId, b ? b.outside : c.outside),
       title: c.narrative?.title || 'คดีที่ยังไม่มีชื่อ',
-      bodyState: c.narrative?.bodyState || '',
-      sceneNotes: c.narrative?.sceneNotes || '',
+      // สภาพศพ/ความผิดปกติรอบศพจากผู้บรรยายเป็น "เฉลย" หลังคดีถูกตัดสินเท่านั้น — ระหว่างเกมต้องตรวจศพ/สำรวจห้องเอง
+      bodyState: c.judged ? c.narrative?.bodyState || '' : '',
+      sceneNotes: c.judged ? c.narrative?.sceneNotes || '' : '',
       judged: c.judged,
     };
   }

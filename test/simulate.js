@@ -157,7 +157,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
       }
       if (game.phase === PHASE.TRIAL) {
         assert(v.announcedCases.length >= 1, 'trial has announced cases');
-        for (const c of v.announcedCases) assert(c.bodyState && c.title, 'announced case has narrative');
+        for (const c of v.announcedCases) assert(c.title && (c.judged || (!c.bodyState && !c.sceneNotes && c.day === undefined)), 'an open case shows only its title, victim and place (no body state, scene notes or death time)');
         assert(v.lastResult === null, 'lastResult hidden during trial');
       }
       assert(v.hour === game.hour && v.day === game.day, 'view carries day/hour');
@@ -1745,8 +1745,94 @@ async function unitTests() {
     g12.phase = PHASE.ENDED;
     assert(g12.viewFor(c12.id).chat.some((m) => m.ghost), 'once the game ends everyone sees the ghost chat');
   }
+  // 17) นิติเวช: ประกาศบอกแค่ใคร/ที่ไหน · ตรวจศพไม่เอ่ยชื่อของ (คนทั่วไป = ชนิดแผล+ตำแหน่ง, การแพทย์ = ชนิดวัสดุ+ทิศทาง) · กับดักที่ทำงานแล้วเหลือแค่ของชิ้นที่ทำร้ายเป็นของธรรมดา
+  //     ร่องรอย (เลือด + อุปกรณ์ที่ค้าง) ต้องสำรวจ · เก็บอุปกรณ์แล้วเหลือเศษ (สายเงียบเชียบซ่อนเศษ) · ร่องรอยจากการลงมือไม่เอ่ยชื่อของ
+  {
+    const g13 = new Game({ code: 'UNIT13', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids13 = ['f1-xxxxxxxx', 'f2-xxxxxxxx', 'f3-xxxxxxxx', 'f4-xxxxxxxx', 'f5-xxxxxxxx'];
+    for (const [i, id] of ids13.entries()) g13.addPlayer({ id, name: `นิติ ${i + 1}` });
+    g13.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g13.start(ids13[0]);
+    g13.clearTimers();
+    const [a13, b13, c13, d13, e13] = ids13.map((id) => g13.players.get(id));
+    const mk13 = (name, kind, description = '', extra = {}) => ({ id: `it_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false, ...extra });
+    const R13 = [...g13.zones.values()].find((z) => z.id !== g13.location.sleepZoneId && !z.locked);
+    for (const p of [a13, b13, c13, d13, e13]) {
+      p.zoneId = R13.id;
+      p.outside = false;
+      p.inventory = [];
+    }
+    g13.phase = PHASE.DAY;
+    g13.step = STEP.ACT;
+    for (const [p, trait] of [[a13, 'none'], [b13, 'none'], [c13, 'none'], [d13, 'medical'], [e13, 'stealth']]) g13.charOf(p).ultimate.trait = trait;
+    const axe = mk13('ขวานดับเพลิง', 'weapon');
+    const driver = mk13('ไขควงชุดใหญ่', 'tool', 'ปลายแหลม');
+    a13.inventory = [axe, driver];
+    g13.do_craft(a13, { recipeId: 'door', itemId: axe.id, itemId2: driver.id });
+    const trap13 = a13.inventory.find((i) => i.kind === 'trap');
+    assert(trap13 && trap13.strikerKind === 'weapon' && trap13.weaponName === 'ขวานดับเพลิง', 'a crafted trap remembers what kind of item strikes');
+    R13.traps.push({ setterId: a13.id, item: a13.inventory.splice(a13.inventory.indexOf(trap13), 1)[0], turn: g13.turn, side: 'inside' });
+    g13.triggerTrap(R13, R13.traps[0], b13);
+    assert(!b13.alive, 'the door trap kills');
+    const device = R13.items.find((i) => i.deviceOf);
+    assert(device && device.name === 'ขวานดับเพลิง' && device.kind === 'weapon' && !R13.items.some((i) => i.kind === 'trap'), 'the sprung trap leaves only the striking item behind, as an ordinary item');
+    const devEv = R13.evidence.find((e) => e.deviceItemId === device.id);
+    assert(devEv && !devEv.hidden && devEv.text.includes('ขวานดับเพลิง') && /กลไก/.test(devEv.text), 'searching the room reveals the device rigged to the door');
+    assert(R13.evidence.some((e) => e.kind === 'blood' && /ประตู/.test(e.text)), 'blood near the door is left as evidence');
+    // ตอนพบศพเห็นตำแหน่งร่าง แต่ไม่เห็นกลไก
+    assert(/ธรณีประตู/.test(g13.bodyPosText(g13.bodies.get(b13.id))), 'the body of a door-trap victim lies at the doorway');
+    // ประกาศ: ไม่มีสภาพศพ/ร่องรอย/เวลาตาย จนกว่าจะตัดสิน
+    g13.announceBodies([g13.bodies.get(b13.id)]);
+    await g13.narrateCases();
+    const pc = g13.viewFor(c13.id).announcedCases.find((c) => c.victim.playerId === b13.id);
+    assert(pc && pc.title && pc.bodyState === '' && pc.sceneNotes === '' && pc.day === undefined && pc.announcedDay === g13.day, 'the announcement carries only who, where and when it was announced');
+    const kase13 = g13.cases.find((c) => c.victimId === b13.id);
+    kase13.judged = true;
+    assert(g13.publicCase(kase13).bodyState.length > 0 && g13.publicCase(kase13).sceneNotes.length > 0, 'once judged (the case card shown with the verdict) the narrator body state is revealed');
+    kase13.judged = false;
+    // ตรวจศพ: คนทั่วไป
+    g13.do_examine(c13, { victimId: b13.id });
+    const lay13 = c13.log.at(-1).text;
+    assert(!lay13.includes('ขวาน') && /ของมีคม/.test(lay13) && /ธรณีประตู/.test(lay13) && !/กับดัก|กลไก/.test(lay13), 'a layman learns the wound type and body position, never the item or the mechanism');
+    // ตรวจศพ: การแพทย์
+    g13.do_examine(d13, { victimId: b13.id });
+    const med13 = d13.log.at(-1).text;
+    assert(!med13.includes('ขวาน') && /ของมีคมขนาดใหญ่และหนัก/.test(med13) && /ระดับบานประตู/.test(med13) && /ชั่วโมง/.test(med13) && !/กับดัก/.test(med13), 'a medic names the material class and the angle, still not the item');
+    // เก็บอุปกรณ์ (คนทั่วไป): หลักฐานอุปกรณ์หาย เหลือเศษที่เห็นชัด
+    g13.instantItemAction(c13.id, { type: 'take', itemId: device.id });
+    assert(c13.inventory.includes(device) && !device.deviceOf && devEv.gone, 'taking the striking item removes the device evidence');
+    const res13 = R13.evidence.find((e) => e.kind === 'residue');
+    assert(res13 && !res13.hidden && /เศษ|รอย/.test(res13.text) && /ไม่มีอุปกรณ์/.test(res13.text), 'removing the device leaves visible residue');
+    e13.evidence = [];
+    const rr13 = Math.random;
+    Math.random = () => 0.99; // ของที่ซ่อนไม่เจอ แต่ของที่เห็นชัดเจอเสมอ
+    g13.do_search(e13, {});
+    Math.random = rr13;
+    assert(!e13.evidence.includes(devEv.id) && e13.evidence.includes(res13.id), 'a later searcher finds the residue, not the vanished device');
+    // สายเงียบเชียบเก็บเนียน: เศษถูกซ่อน
+    const hammer = mk13('ค้อนปอนด์', 'weapon');
+    const wrench13 = mk13('ประแจเหล็กใหญ่', 'tool');
+    a13.inventory = [hammer, wrench13];
+    g13.do_craft(a13, { recipeId: 'door', itemId: hammer.id, itemId2: wrench13.id });
+    const trap13b = a13.inventory.find((i) => i.kind === 'trap');
+    R13.traps.push({ setterId: a13.id, item: a13.inventory.splice(a13.inventory.indexOf(trap13b), 1)[0], turn: g13.turn, side: 'inside' });
+    g13.triggerTrap(R13, R13.traps[0], c13);
+    const device2 = R13.items.find((i) => i.deviceOf);
+    assert(device2 && device2.name === 'ค้อนปอนด์', 'the second trap leaves the hammer behind');
+    e13.inventory = [];
+    g13.instantItemAction(e13.id, { type: 'take', itemId: device2.id });
+    const res13b = R13.evidence.filter((e) => e.kind === 'residue').at(-1);
+    assert(res13b && res13b.hidden && e13.log.some((l) => /เนียน/.test(l.text)), 'a stealthy player removes the device cleanly: the residue is hidden');
+    // ร่องรอยจากการลงมือโดยตรงไม่เอ่ยชื่อของ
+    const knife = mk13('มีดหั่นขนมปัง', 'weapon');
+    const k13 = g13.killPlayer(d13, { cause: 'attack', killerId: a13.id, weapon: { name: knife.name, kind: 'weapon', tags: [...tagsOf(knife)] }, zoneId: R13.id, outside: false, messy: true, witnesses: [] });
+    g13.addKillEvidence(R13, k13, k13.weapon, true, a13);
+    const wev = R13.evidence.filter((e) => e.caseId === k13.id && e.kind === 'weapon');
+    assert(wev.length === 1 && !wev[0].text.includes('มีด') && /ของมีคม/.test(wev[0].text), 'kill evidence describes the kind of weapon, not its name');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class)');
 }
 
 try {
