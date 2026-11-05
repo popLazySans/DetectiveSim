@@ -49,7 +49,7 @@
   let state = null;
   let currentScreen = null;
   let countdownTimer = null;
-  const ui = { joinError: '', selectedZone: null, selectedAction: null, moveBodyTo: '', notebookOpen: true, seenAnnouncement: '', seenEventDay: 0, seenResultTurn: 0 };
+  const ui = { joinError: '', selectedZone: null, selectedAction: null, moveBodyTo: '', notebookOpen: true, ghostTab: 'watch', seenAnnouncement: '', seenEventDay: 0, seenResultTurn: 0 };
 
   const send = (event, payload = {}) =>
     new Promise((resolve) => {
@@ -207,6 +207,7 @@
             <li><b>ศพอยู่ที่ตาย:</b> จนกว่าจะมีคนย้าย เมื่อมีคนพบศพครบ 3 คน (ไม่นับคนฆ่า) จะประกาศและเข้าสู่รอบเก็บหลักฐาน <b>1 ชั่วโมง + 1 ชั่วโมงต่อศพ</b> (2 ศพ = 3 ชั่วโมง) ช่วงนี้ไม่มีใครตาย: ลงมือ วางกับดัก วางยา กินอาหารไม่ได้ และกับดักที่ตั้งไว้ไม่ทำงาน · คนที่สลบอยู่ตอนพบศพจะยังสลบต่อ (สืบสวนและโหวตไม่ได้จนกว่าจะฟื้น เวลาสลบนับตามปกติ) แล้วตัดสิน</li>
             <li><b>การตัดสิน:</b> เล่าหลักฐานที่แต่ละคนเจอในแชท แล้วโหวต — โหวตถูก: คนนั้นถูกประหาร (ใครก็เป็นฆาตกรได้พร้อมกันหลายคน ถ้ายังมีฆาตกรเหลือ ระบบบอกแค่ว่า "ยังมีอีก 1 คน" ไม่บอกจำนวน แล้วเก็บหลักฐาน-ตัดสินต่อในวันเดิมจนจับครบ) · โหวตผิด: คนร้ายรอด ทุกคนที่เหลือตาย เกมจบ · มีตัวเลือก "ไม่มีคนร้ายให้ลงโทษ" ถ้าคนร้ายตายไปแล้ว</li>
             <li>ทุกคนมี Ultimate ที่ให้ "trait" ใช้ได้จริง · 1–2 คนถูกซ่อนเป็น ??? และ 1 คนถือโรลปลอม — เจ้าตัวรู้ของจริงเสมอ และการ์ดของคุณจะบอกชัดว่าคนอื่นเห็นคุณเป็นอะไร</li>
+            <li><b>👻 ตายแล้วไม่เหงา:</b> ผีพิมพ์ในแชทได้เป็น \"แชทผี\" (คนเป็นมองไม่เห็นจนเกมจบ) เห็นทุกห้อง ทุกคน กับดัก ของที่ซ่อน เหตุการณ์จริง และโหวตของทุกคน · กด \"ตามดู\" คนเป็นทีละคนเพื่ออ่านสมุดบันทึกของเขา</li>
           </ol>
         </div>
       </div>`;
@@ -348,6 +349,7 @@
       ${sameZone ? `<div><span class="badge green">${me.outside ? 'ยืนหน้าประตูด้วยกัน' : 'อยู่ห้องเดียวกับคุณ'}</span></div>` : !isMe && p.zoneId && !me.alive ? `<div class="muted" style="font-size:.8rem">📍 ${esc(zoneName(p.zoneId))}</div>` : ''}
       ${p.knownDead && p.fate ? `<div class="muted" style="font-size:.8rem">${FATE_LABEL[p.fate]} · ${esc(timeText(p.eliminatedDay, p.eliminatedHour))}</div>` : ''}
       ${p.alive && p.ko ? '<div><span class="badge red">😵 สลบอยู่</span></div>' : ''}
+      ${!me.alive && s.phase === 'trial' && p.alive && p.vote ? `<div class="muted" style="font-size:.8rem">🗳 → ${esc(displayName(p.vote))}</div>` : ''}
       ${p.alive && p.revived ? '<div><span class="badge yellow">คืนชีพ</span></div>' : ''}
       ${s.runoff && p.alive && s.runoff.candidates.includes(p.id) ? '<div><span class="badge red">รอบตัดสิน</span></div>' : ''}
     </div>`;
@@ -588,15 +590,58 @@
     </div>`;
   }
 
+  // โหมดวิญญาณ: ผีเห็นทุกห้อง ทุกคน เหตุการณ์จริง ตามดูคนเป็นได้ทีละคน และคุยแชทผีกับผีด้วยกัน (คนเป็นมองไม่เห็น)
   function spectatorHtml(s) {
     const sp = s.me.spectator;
+    if (!sp) return '';
+    const w = sp.watching;
+    const tab = ui.ghostTab;
+    const tabBtn = (id, label) => `<button class="small ${tab === id ? 'selected' : 'ghost'}" data-action="ghost-tab" data-id="${id}">${label}</button>`;
+    const ghosts = sp.ghosts.map((g) => `${g.name}${g.isBot ? ' (บอท)' : ''}`).join(', ');
+    let body = '';
+    if (tab === 'watch') {
+      const btns = sp.positions.map((p) => `<button class="small ${w?.id === p.id ? 'selected' : 'ghost'}" data-action="follow" data-id="${esc(p.id)}" title="${esc(p.zoneName)}">${w?.id === p.id ? '👁 ' : ''}${esc(p.name)}</button>`).join('');
+      body = `<div class="followlist">${btns || '<span class="muted">ไม่มีใครเหลือให้ตามดู</span>'}</div>`;
+      body += w
+        ? `<div class="watchbox">
+            <div class="row"><b>👁 ${esc(w.name)}</b><span class="muted">(${esc(w.playerName)}${w.characterName ? ` · ${esc(w.characterName)}` : ''})</span><span class="spacer"></span><span class="badge">📍 ${esc(w.zoneName)}</span>${w.ko ? '<span class="badge red">😵 สลบ</span>' : ''}${w.kills ? `<span class="badge red">ฆ่าไปแล้ว ${w.kills}</span>` : ''}</div>
+            <div class="zone-facts">
+              <div><b>ชั่วโมงนี้:</b> ${w.moveChoice ? `เลือกไป ${esc(w.moveChoice)}` : 'ยังไม่เลือกห้อง'}${w.actionChoice ? ` · ทำ "${esc(w.actionChoice)}"` : ''}</div>
+              <div><b>ของในมือ:</b> ${w.inventory.length ? esc(w.inventory.map((i) => i.name).join(', ')) : '-'}</div>
+              <div><b>ภารกิจ:</b> ${w.objectives.length ? esc(w.objectives.map((o) => `${o.text} (เหลือ ${o.remainingHours} ชม.)`).join(' · ')) : '-'}</div>
+              <div><b>ทางออกที่รู้จัก:</b> ${w.exitsKnown.length ? esc(w.exitsKnown.join(', ')) : '-'}</div>
+            </div>
+            <div class="agtitle" style="margin-top:.6rem">📓 สมุดบันทึกของ ${esc(w.name)} (ล่าสุด)</div>
+            ${logGroupsHtml(w.log) || '<p class="muted">ยังไม่มีบันทึก</p>'}
+          </div>`
+        : '<p class="muted">เลือกคนที่อยากตามดู — จะเห็นสมุดบันทึก ของในมือ ภารกิจ และสิ่งที่เขาเลือกทำในชั่วโมงนี้ (กดชื่อเดิมอีกครั้งเพื่อเลิกตามดู)</p>';
+    } else if (tab === 'map') {
+      body = `<div class="ghostmap">${sp.rooms
+        .map(
+          (r) => `<div class="groom ${r.locked ? 'locked' : ''} ${r.bodies.length ? 'body' : ''}">
+          <div class="gname">${r.isSleep ? '🛏 ' : ''}${esc(r.name)} ${r.locked ? '<span class="badge red">🔒</span>' : ''}${r.broken ? '<span class="badge">ประตูพัง</span>' : ''}${r.dark ? '<span class="badge">🌑 ไฟดับ</span>' : ''}</div>
+          ${r.people.length ? `<div>🧍 ${esc(r.people.join(', '))}</div>` : ''}
+          ${r.bodies.length ? `<div class="bad">☠ ${esc(r.bodies.join(', '))}</div>` : ''}
+          ${r.traps.length ? `<div class="bad">🪤 ${esc(r.traps.map((t) => `${t.name}${t.door ? ' (ประตู)' : ''} ของ${t.setter}`).join(', '))}</div>` : ''}
+          ${r.items.length ? `<div class="muted">${esc(r.items.map((i) => `${i.hidden ? '🙈' : ''}${i.name}${i.poisoned ? ' ☠' : ''}`).join(', '))}</div>` : ''}
+          ${r.evidence ? `<div class="muted">🔍 ร่องรอย ${r.evidence}</div>` : ''}
+        </div>`,
+        )
+        .join('')}</div>
+        <p class="muted" style="font-size:.8rem">🙈 = ของที่ถูกซ่อน · ☠ หลังชื่ออาหาร = มีพิษ · กับดักทุกอันบอกว่าใครวาง</p>`;
+    } else {
+      const feed = [...sp.feed].reverse();
+      body = feed.length
+        ? `<div class="report-log">${feed.map((e) => `<div class="logent k-feed"><span class="muted">${esc(timeText(e.day, e.hour))}${e.phase === 'investigation' ? ' (เก็บหลักฐาน)' : ''}</span> ${esc(e.text)}</div>`).join('')}</div>`
+        : '<p class="muted">ยังไม่มีเหตุการณ์ที่น่าสนใจ — รอดูต่อไป</p>';
+    }
+    const votes = s.phase === 'trial' ? `<div class="zone-facts"><div><b>🗳 โหวตตอนนี้:</b> ${s.players.filter((p) => p.alive).map((p) => `${esc(p.character?.nickname || p.name)} → ${p.vote ? esc(displayName(p.vote)) : '…'}`).join(' · ')}</div></div>` : '';
     return `<div class="card spectator">
-      <h3>👻 คุณเสียชีวิตแล้ว (${esc(FATE_LABEL[s.me.fate] || '')}${s.me.deathCauseLabel ? ` — ${esc(s.me.deathCauseLabel)}` : ''})</h3>
-      <p class="muted">คุณเฝ้าดูจากอีกฟากได้ แต่พูดหรือทำอะไรไม่ได้ — เห็นตำแหน่งทุกคนและศพทั้งหมด (แต่ไม่รู้ว่าใครเป็นคนร้าย)</p>
-      ${sp ? `<div class="zone-facts">
-        <div><b>ตำแหน่งตอนนี้:</b> ${esc(sp.positions.map((p) => `${p.name} → ${p.zoneName}`).join(' · ')) || '-'}</div>
-        <div><b>ศพ:</b> ${sp.bodies.length ? esc(sp.bodies.map((b) => `${b.name} (${b.zoneName}${b.announced ? ', ประกาศแล้ว' : ', ยังไม่มีใครประกาศ'})`).join(' · ')) : '-'}</div>
-      </div>` : ''}
+      <h3>👻 โหมดวิญญาณ — คุณเสียชีวิตแล้ว (${esc(FATE_LABEL[s.me.fate] || '')}${s.me.deathCauseLabel && s.me.deathCauseLabel !== FATE_LABEL[s.me.fate] ? ` — ${esc(s.me.deathCauseLabel)}` : ''})</h3>
+      <p class="muted">พิมพ์ในแชทได้เลย — เป็น<b>แชทผี</b> คนเป็นมองไม่เห็น (ทุกคนจะเห็นเมื่อเกมจบ) · ผีด้วยกันตอนนี้: ${ghosts ? esc(ghosts) : 'ยังไม่มี คุณเป็นคนแรก'}</p>
+      ${votes}
+      <div class="gtabs">${tabBtn('watch', `👁 ตามดู${w ? ` ${esc(w.name)}` : ''}`)}${tabBtn('map', '🗺 ทุกห้อง')}${tabBtn('feed', `📜 เหตุการณ์จริง (${sp.feed.length})`)}</div>
+      ${body}
     </div>`;
   }
 
@@ -811,27 +856,31 @@
       default:
         body += `<p class="status">กรุณารอสักครู่...</p>`;
     }
+    if (s.config.debugCheats && me.alive && ['day', 'investigation', 'trial'].includes(s.phase)) body += `<p><button class="small danger" data-action="debug-die" title="เปิดอยู่เพราะ DEBUG_CHEATS=true">💀 (ทดสอบ) ตายทันที</button></p>`;
     return `<div class="card actions"><h3>การกระทำ</h3>${body}<p style="margin-top:.8rem"><button class="small ghost" data-action="leave">ออกจากห้อง</button></p></div>`;
   }
 
   function notebookHtml(s) {
     const log = s.me.log || [];
     if (!log.length) return '';
+    return `<div class="card notebook">
+      <div class="row"><h3>📓 สมุดบันทึก</h3><span class="spacer"></span><button class="small ghost" data-action="toggle-notebook">${ui.notebookOpen ? 'ซ่อน' : 'แสดง'} (${log.length})</button></div>
+      ${ui.notebookOpen ? logGroupsHtml(log) : '<p class="muted" style="font-size:.85rem">ทุกอย่างที่คุณเห็นและทำ มีแค่คุณที่รู้</p>'}
+    </div>`;
+  }
+
+  // บันทึกจัดกลุ่มตามชั่วโมง (ล่าสุดอยู่บน) — ใช้ทั้งสมุดบันทึกของตัวเองและสมุดของคนที่ผีตามดู
+  function logGroupsHtml(log) {
     const groups = new Map();
     for (const l of log) {
       const key = `${l.day}-${l.hour}-${l.phase}`;
       if (!groups.has(key)) groups.set(key, { day: l.day, hour: l.hour, phase: l.phase, entries: [] });
       groups.get(key).entries.push(l);
     }
-    const list = [...groups.values()].reverse();
-    return `<div class="card notebook">
-      <div class="row"><h3>📓 สมุดบันทึก</h3><span class="spacer"></span><button class="small ghost" data-action="toggle-notebook">${ui.notebookOpen ? 'ซ่อน' : 'แสดง'} (${log.length})</button></div>
-      ${ui.notebookOpen
-        ? list
-            .map((g) => `<div class="nbday"><div class="agtitle">${esc(timeText(g.day, g.hour))}${g.phase === 'investigation' ? ' · เก็บหลักฐาน' : ''}</div>${g.entries.map(logEntryHtml).join('')}</div>`)
-            .join('')
-        : '<p class="muted" style="font-size:.85rem">ทุกอย่างที่คุณเห็นและทำ มีแค่คุณที่รู้</p>'}
-    </div>`;
+    return [...groups.values()]
+      .reverse()
+      .map((g) => `<div class="nbday"><div class="agtitle">${esc(timeText(g.day, g.hour))}${g.phase === 'investigation' ? ' · เก็บหลักฐาน' : ''}</div>${g.entries.map(logEntryHtml).join('')}</div>`)
+      .join('');
   }
 
   function noticesHtml(s) {
@@ -852,9 +901,10 @@
   // ---------- chat ----------
   function canChat(s) {
     if (['lobby', 'ended'].includes(s.phase)) return true;
-    if (s.phase === 'generating') return false;
-    return s.me.alive;
+    return s.phase !== 'generating'; // คนเป็นคุยแชทปกติ ผีคุยแชทผี
   }
+
+  const inGhostChat = (s) => !s.me.alive && !['lobby', 'ended'].includes(s.phase);
 
   function renderChat() {
     const s = state;
@@ -865,7 +915,7 @@
       .map((m) =>
         m.system
           ? `<div class="msg system">${esc(m.text)}</div>`
-          : `<div class="msg ${m.playerId === s.me.id ? 'me' : ''}"><span class="who">${esc(m.name)}</span>${m.characterName ? `<span class="char">${esc(m.characterName)}</span>` : ''}<span>${esc(m.text)}</span></div>`,
+          : `<div class="msg ${m.ghost ? 'ghost' : ''} ${m.playerId === s.me.id ? 'me' : ''}">${m.ghost ? '<span class="gtag" title="แชทผี — คนเป็นมองไม่เห็นจนกว่าเกมจบ">👻</span>' : ''}<span class="who">${esc(m.name)}</span>${m.characterName ? `<span class="char">${esc(m.characterName)}</span>` : ''}<span>${esc(m.text)}</span></div>`,
       )
       .join('');
     if (log.dataset.lastHtml !== html) {
@@ -878,7 +928,8 @@
     if (input) {
       const ok = canChat(s);
       input.disabled = !ok;
-      input.placeholder = ok ? 'พิมพ์ข้อความ...' : s.me.alive ? 'ยังคุยไม่ได้ในช่วงนี้' : 'ผู้เสียชีวิตพูดไม่ได้';
+      input.placeholder = !ok ? 'ยังคุยไม่ได้ในช่วงนี้' : inGhostChat(s) ? '👻 แชทผี — คนเป็นมองไม่เห็น' : 'พิมพ์ข้อความ...';
+      input.classList.toggle('ghost-input', ok && inGhostChat(s));
     }
   }
 
@@ -1024,6 +1075,16 @@
         break;
       case 'ready':
         await act('day:ready');
+        break;
+      case 'follow':
+        await act('spectate:follow', { targetId: state.me.spectator?.watching?.id === id ? '' : id });
+        break;
+      case 'ghost-tab':
+        ui.ghostTab = id;
+        renderMain(state);
+        break;
+      case 'debug-die':
+        if (await confirmDialog('(ทดสอบ) ตายทันทีเพื่อดูโหมดวิญญาณ?')) await act('debug:die');
         break;
       case 'force-step':
         if (await confirmDialog('บังคับไปต่อเลย? คนที่ยังไม่เลือกจะถูกเลือกให้อัตโนมัติ')) await act('host:forceStep');

@@ -386,3 +386,19 @@ details.help summary { cursor: pointer; color: var(--cyan); }
 /* ถูกขังในห้องที่ล็อก: เลือกห้องอื่นไม่ได้ */
 .zone.disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.6); }
 .zone.disabled:hover { border-color: var(--line); }
+
+/* โหมดวิญญาณ */
+.msg.ghost, .msg.ghost .who { color: var(--purple); }
+.msg .gtag { margin-right: 0.3em; }
+.chat-form input.ghost-input { border-color: var(--purple); }
+.gtabs, .followlist { display: flex; gap: 0.35rem; flex-wrap: wrap; margin: 0.4rem 0 0.6rem; }
+.gtabs button.selected, .followlist button.selected { border-color: var(--purple); background: rgba(167, 139, 250, 0.15); color: var(--purple); }
+.ghostmap { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.45rem; }
+.groom { border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.6rem; font-size: 0.85rem; }
+.groom.locked { border-color: var(--red); }
+.groom.body { background: rgba(255, 77, 77, 0.08); }
+.groom .gname { font-family: var(--font-head); margin-bottom: 0.2rem; }
+.watchbox { border: 1px solid var(--purple); border-radius: 8px; padding: 0.5rem 0.7rem; margin-top: 0.3rem; }
+.watchbox .nbday { margin-top: 0.5rem; display: grid; gap: 0.25rem; }
+.watchbox .logent { font-size: 0.82rem; }
+.logent.k-feed { border-left-color: var(--purple); }

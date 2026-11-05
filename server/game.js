@@ -47,6 +47,10 @@ export const CONFIG = {
   KNOW_OWN_ULTIMATE_CHANCE: 1,
   // ขอของจาก "บอท" ที่อยู่ห้องเดียวกันได้ตอนพักชั่วโมง (ช่วยทดสอบเกม) ปิดด้วย BOT_REQUESTS=false
   BOT_REQUESTS: process.env.BOT_REQUESTS !== 'false',
+  // ผีบอท: ทักทายผีคนใหม่และบ่นเหตุการณ์เด็ด ๆ ในแชทผี ให้คนที่ตายแล้วไม่เหงาแม้เล่นกับบอท (พูดเฉพาะเมื่อมีผีที่เป็นคนจริง) ปิดด้วย BOT_GHOST_CHAT=false
+  BOT_GHOST_CHAT: process.env.BOT_GHOST_CHAT !== 'false',
+  // ชีตทดสอบ: ปุ่ม "ตายทันที" สำหรับดูโหมดวิญญาณ เปิดด้วย DEBUG_CHEATS=true เท่านั้น
+  DEBUG_CHEATS: process.env.DEBUG_CHEATS === 'true',
   // ตัวคูณความเร็วของบอท (ใช้ค่าน้อย ๆ ตอนเทสต์)
   BOT_DELAY_SCALE: Number(process.env.BOT_DELAY_SCALE || 1),
   // โหวตเสมอ → โหวตรอบตัดสินเฉพาะคนที่เสมอ ได้สูงสุดกี่รอบ ก่อนจะสุ่มตัดสิน
@@ -101,6 +105,22 @@ const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
 const sanitizeName = (name) => String(name || '').trim().replace(/\s+/g, ' ').slice(0, 24) || 'ผู้เล่นนิรนาม';
 const fill = (tpl, w) => String(tpl || '').replaceAll('{w}', w || 'ของหนัก');
 
+// ประโยคของผีบอทในแชทผี ({n} = ชื่อผีคนใหม่, {e} = เหตุการณ์จริงของชั่วโมงนี้)
+const GHOST_WELCOME = [
+  'ยินดีต้อนรับสู่ฝั่งนี้ {n} มานั่งดูด้วยกัน ที่นี่ไม่มีใครฆ่าใครได้แล้ว',
+  'โอ๊ะ {n} มาแล้วเหรอ นึกว่าจะอยู่ได้นานกว่านี้ซะอีก',
+  '{n} เสียใจด้วยนะ แต่ข้างล่างนี้เห็นทุกอย่างเลย สนุกกว่าข้างบนอีก',
+  'มาแล้ว {n}! ข้างบนยังไม่รู้เลยว่าใครทำ มาดูกันว่าพวกเขาจะหาเจอไหม',
+];
+const GHOST_ARRIVE = ['เฮ้ย ฉันก็มาอยู่ฝั่งนี้แล้ว… ข้างบนโหดจริง', 'ตายแล้วเหรอเนี่ย ไม่ทันตั้งตัวเลย ขอนั่งดูด้วยคน', 'โอเค ฉันมาแล้ว ใครเป็นคนทำ เล่าหน่อยสิ'];
+const GHOST_REACT = [
+  'เมื่อกี้เห็นไหม — {e}',
+  'โอ้โห {e} …ข้างบนไม่มีใครรู้เรื่องเลย',
+  '{e} ถ้าฉันยังอยู่คงเตือนไปแล้ว',
+  'ลุ้นเลย {e} การตัดสินรอบหน้าจะหาเจอไหมนะ',
+  'ดูสิ {e} แล้วทำหน้าไม่รู้ไม่ชี้ซะด้วย',
+];
+
 const freshPlayerState = () => ({
   characterId: null,
   alive: true,
@@ -126,6 +146,7 @@ const freshPlayerState = () => ({
   doorWork: null, // งานค้างที่ประตูที่ล็อก { zoneId, method: 'pick'|'break', need, progress }
   caseJudged: false, // คดีที่ตัวเองเป็นเหยื่อถูกตัดสินแล้ว (ใช้กับอีเวนต์คืนชีพ หลังศพถูกเก็บไปแล้ว)
   kills: 0,
+  follow: null, // ผี: id ของคนเป็นที่กำลังตามดู (โหมดวิญญาณ)
 });
 
 const makePlayer = (id, name, isBot) => ({ id, name, isBot, connected: true, joinedAt: Date.now(), ...freshPlayerState() });
@@ -162,6 +183,7 @@ export class Game {
     this.bodies = new Map();
     this.cases = [];
     this.timeline = [];
+    this.ghostWelcomed = new Set(); // ผีที่ผีบอทรับรู้แล้ว (ใช้ทักทายผีคนใหม่)
     this.moves = new Map();
     this.actions = new Map();
     this.presetKoMoves();
@@ -1383,6 +1405,7 @@ export class Game {
     }
     for (const p of this.alivePlayers()) p.forced = null;
     this.tickKo();
+    this.botGhostChat(); // ผีบอททักทายผีใหม่/บ่นเหตุการณ์ของชั่วโมงนี้
 
     if (this.phase === PHASE.DAY) {
       if (this.alivePlayers().length <= 1) return this.endGame('last_one');
@@ -2313,6 +2336,7 @@ export class Game {
       }
     }
     this.clearTimers();
+    this.botGhostChat(); // ผีบอททักทายคนที่เพิ่งถูกประหาร
     const judgedNow = open.filter((c) => c.judged);
     const remaining = open.filter((c) => !c.judged);
     const moreKillers = correct && remaining.length > 0;
@@ -2586,6 +2610,7 @@ export class Game {
     target.nextObjectiveTurn = 0;
     target.forced = null;
     target.ko = null;
+    target.follow = null;
     this.specialEvent = {
       type: 'revive',
       day: this.day + 1,
@@ -2677,10 +2702,109 @@ export class Game {
     text = String(text || '').trim().slice(0, 500);
     if (!text) return;
     const openPhase = this.phase === PHASE.LOBBY || this.phase === PHASE.ENDED;
-    if (!openPhase && !p.alive) throw new GameError('ผู้ที่ออกจากเกมแล้วไม่สามารถพูดได้');
     if (this.phase === PHASE.GENERATING) throw new GameError('ตอนนี้ยังคุยไม่ได้');
     const c = this.charOf(p);
-    this.pushChat({ playerId, name: p.name, characterName: c?.name || null, text });
+    // ผี (ตายแล้ว ระหว่างเกม) พิมพ์ได้เป็น "แชทผี" — คนเป็นมองไม่เห็นจนกว่าเกมจบ
+    this.pushChat({ playerId, name: p.name, characterName: c?.name || null, text, ghost: !openPhase && !p.alive });
+    this.emit();
+  }
+
+  // ---------- spectator (ghost) ----------
+  // โหมดวิญญาณ: ผีตามดูคนเป็นได้ทีละคน (เห็นสมุดบันทึก ของ ภารกิจ และสิ่งที่เขาเลือกในชั่วโมงนี้) · ตามดูตัวเอง/ผีด้วยกันไม่ได้ · คนเป็นใช้ไม่ได้
+  setFollow(playerId, targetId) {
+    const p = this.players.get(playerId);
+    if (!p) throw new GameError('ไม่พบผู้เล่น');
+    if (p.alive) throw new GameError('คนที่ยังมีชีวิตอยู่ตามดูคนอื่นไม่ได้');
+    if ([PHASE.LOBBY, PHASE.ENDED, PHASE.GENERATING].includes(this.phase)) throw new GameError('ตอนนี้ยังตามดูไม่ได้');
+    if (!targetId) {
+      p.follow = null;
+      this.emit();
+      return;
+    }
+    const t = this.players.get(targetId);
+    if (!t || !t.alive) throw new GameError('ตามดูได้เฉพาะคนที่ยังมีชีวิตอยู่');
+    p.follow = t.id;
+    this.emit();
+  }
+
+  // สิ่งที่ผีเห็น: ทุกห้อง (คน ศพ ของ ของที่ซ่อน กับดักและคนวาง) · เหตุการณ์จริงที่เกิดขึ้น · ผีด้วยกัน · คนที่กำลังตามดู
+  spectatorView(me) {
+    const alive = this.alivePlayers();
+    const bodies = [...this.bodies.values()].filter((b) => !b.judged);
+    const watched = me.follow ? this.players.get(me.follow) : null;
+    const w = watched?.alive ? watched : null;
+    const wc = w ? this.charOf(w) : null;
+    return {
+      ghosts: [...this.players.values()].filter((p) => !p.alive && p.id !== me.id).map((p) => ({ id: p.id, name: this.nick(p), isBot: p.isBot })),
+      positions: alive.map((p) => ({ id: p.id, name: `${this.nick(p)}${p.ko ? ' (สลบ)' : ''}`, zoneName: this.spotName(p.zoneId, p.outside) })),
+      bodies: bodies.map((b) => ({ name: this.nick(this.players.get(b.victimId)), zoneName: this.spotName(b.zoneId, b.outside), announced: b.announced })),
+      lockedZones: [...this.zones.values()].filter((z) => z.locked).map((z) => z.name),
+      rooms: [...this.zones.values()].map((z) => ({
+        id: z.id,
+        name: z.name,
+        isSleep: z.id === this.location.sleepZoneId,
+        locked: z.locked,
+        broken: z.broken,
+        dark: z.dark,
+        people: alive.filter((p) => p.zoneId === z.id).map((p) => `${this.nick(p)}${p.outside ? ' (หน้าประตู)' : ''}${p.ko ? ' (สลบ)' : ''}`),
+        bodies: bodies.filter((b) => b.zoneId === z.id).map((b) => `${this.nick(this.players.get(b.victimId))}${b.announced ? '' : ' (ยังไม่มีใครประกาศ)'}`),
+        items: z.items.map((i) => ({ name: i.name, hidden: !!i.hidden, poisoned: !!i.poisoned })),
+        traps: z.traps.map((t) => ({ name: t.item.name, setter: this.nick(this.players.get(t.setterId)), door: t.item.trapType === 'door' })),
+        evidence: z.evidence.length,
+      })),
+      feed: this.timeline.slice(-12).flatMap((t) => t.events.map((text) => ({ day: t.day, hour: t.hour, phase: t.phase, text }))).slice(-60),
+      watching: w
+        ? {
+            id: w.id,
+            name: this.nick(w),
+            playerName: w.name,
+            characterName: wc?.name || null,
+            zoneName: this.spotName(w.zoneId, w.outside),
+            ko: !!w.ko,
+            kills: w.kills,
+            moveChoice: this.moves.has(w.id) ? this.zoneName(this.moves.get(w.id)) : null,
+            actionChoice: this.actions.get(w.id)?.label || null,
+            inventory: w.inventory.map((i) => this.itemView(i)),
+            objectives: w.objectives.filter((o) => !o.done).map((o) => ({ text: o.text, remainingHours: Math.max(0, o.deadlineTurn - this.turn) })),
+            exitsKnown: [...this.exits.values()].filter((x) => knowsExit(w, x)).map((x) => x.name),
+            log: w.log.slice(-40),
+          }
+        : null,
+    };
+  }
+
+  // ผีบอท: ทักทายผีคนใหม่ที่เป็นคนจริง บอกว่าตัวเองมาถึงฝั่งนี้แล้ว และบ่นเหตุการณ์เด็ด ๆ ของชั่วโมงนี้ในแชทผี — ให้คนที่ตายแล้วมีเพื่อนคุยแม้เล่นกับบอท
+  botGhostChat() {
+    if (!CONFIG.BOT_GHOST_CHAT || this.phase === PHASE.ENDED || this.phase === PHASE.LOBBY) return;
+    const dead = [...this.players.values()].filter((p) => !p.alive);
+    const oldBots = dead.filter((p) => p.isBot && this.ghostWelcomed.has(p.id));
+    const oldHumans = dead.filter((p) => !p.isBot && this.ghostWelcomed.has(p.id));
+    const newcomers = dead.filter((p) => !this.ghostWelcomed.has(p.id));
+    for (const p of newcomers) this.ghostWelcomed.add(p.id);
+    if (!dead.some((p) => !p.isBot)) return; // ไม่มีผีที่เป็นคนจริง ไม่ต้องพูด
+    const say = (bot, text) => this.pushChat({ playerId: bot.id, name: bot.name, characterName: this.charOf(bot)?.name || null, text, ghost: true });
+    for (const p of newcomers) {
+      if (!p.isBot && oldBots.length) say(pick(oldBots), pick(GHOST_WELCOME).replace('{n}', this.nick(p)));
+      else if (p.isBot && oldHumans.length) say(p, pick(GHOST_ARRIVE));
+    }
+    const bots = dead.filter((p) => p.isBot);
+    const last = this.timeline.at(-1);
+    if (!bots.length || !last || last.turn !== this.turn || last.phase !== this.phase) return;
+    const juicy = last.events.filter((e) => /ฆ่า|สลบ|กับดัก|พิษ|สวนกลับ|เสียชีวิต|ย้ายศพ/.test(e));
+    if (juicy.length && chance(0.6)) say(pick(bots), pick(GHOST_REACT).replace('{e}', pick(juicy)));
+  }
+
+  // ชีตทดสอบ (DEBUG_CHEATS=true เท่านั้น): ตายทันทีตรงที่ยืนอยู่ เพื่อดูโหมดวิญญาณ
+  debugDie(playerId) {
+    if (!CONFIG.DEBUG_CHEATS) throw new GameError('ปิดชีตทดสอบอยู่');
+    const p = this.players.get(playerId);
+    if (!p?.alive || !this.location || [PHASE.LOBBY, PHASE.ENDED, PHASE.GENERATING].includes(this.phase)) throw new GameError('ตอนนี้ตายไม่ได้');
+    this.killPlayer(p, { cause: 'attack', killerId: null, weapon: { name: 'สิ่งลึกลับ', kind: 'weapon', tags: [] }, zoneId: p.zoneId, outside: p.outside, messy: false, witnesses: [] });
+    this.moves.delete(p.id);
+    this.actions.delete(p.id);
+    this.ready.delete(p.id);
+    this.recordEvent(`${this.nick(p)}ตายกะทันหันที่${this.zn(p.zoneId)} (ชีตทดสอบ)`);
+    this.systemMessage(`💀 (ทดสอบ) ${p.name} ตายกะทันหัน`);
     this.emit();
   }
 
@@ -2909,6 +3033,7 @@ export class Game {
         ready: this.ready.has(p.id),
         voteConfirmed: this.confirmedVotes.has(p.id) || (this.phase === PHASE.TRIAL && !!p.ko),
         hasVoted: this.votes.has(p.id),
+        vote: spectator && this.phase === PHASE.TRIAL ? this.votes.get(p.id) || null : null, // ผีเห็นว่าใครโหวตใคร
         ko: isMe || spectator || ended || sameZone ? !!p.ko : false,
         zoneId: isMe || spectator || ended || sameZone ? p.zoneId : null,
         outside: isMe || spectator || ended || sameZone ? !!p.outside : false,
@@ -2985,6 +3110,7 @@ export class Game {
         botRequests: CONFIG.BOT_REQUESTS,
         recipes: RECIPES.map((r) => ({ id: r.id, name: r.name, how: r.how, desc: r.desc, trait: r.trait, traitLabel: r.trait ? TRAITS[r.trait]?.label || r.trait : null })),
         traitEffects: TRAIT_EFFECTS,
+        debugCheats: CONFIG.DEBUG_CHEATS, // ปุ่ม "ตายทันที" สำหรับทดสอบโหมดวิญญาณ
         door: { pickHours: DOOR.PICK_HOURS, breakHours: DOOR.BREAK_HOURS },
       },
       me: me
@@ -3037,14 +3163,8 @@ export class Game {
               : [],
             eventPrivateNote: ev && ev.playerId === me.id ? ev.privateNote : null,
             notices: this.notices.get(me.id) || [],
-            // ผู้ชม (ตายแล้ว) เห็นตำแหน่งทุกคน ศพ และทางออกทั้งหมด แต่ไม่เห็นว่าใครเป็นคนร้าย
-            spectator: spectator
-              ? {
-                  positions: this.alivePlayers().map((p) => ({ name: `${this.nick(p)}${p.ko ? ' (สลบ)' : ''}`, zoneName: this.spotName(p.zoneId, p.outside) })),
-                  bodies: [...this.bodies.values()].filter((b) => !b.judged).map((b) => ({ name: this.nick(this.players.get(b.victimId)), zoneName: this.spotName(b.zoneId, b.outside), announced: b.announced })),
-                  lockedZones: [...this.zones.values()].filter((z) => z.locked).map((z) => z.name),
-                }
-              : null,
+            // ผี (ตายแล้ว) เห็นทุกอย่าง: ทุกห้อง ทุกคน เหตุการณ์จริง ผีด้วยกัน และคนที่กำลังตามดู (spectatorView)
+            spectator: spectator ? this.spectatorView(me) : null,
           }
         : null,
       players,
@@ -3059,7 +3179,7 @@ export class Game {
       lastResult: showResult ? this.lastResult : null,
       history: this.history,
       outcome: ended ? this.outcome : null,
-      chat: this.chat.slice(-150),
+      chat: this.chat.filter((m) => !m.ghost || spectator || ended).slice(-150), // แชทผีเห็นเฉพาะผี (ทุกคนเห็นเมื่อเกมจบ)
     };
   }
 }

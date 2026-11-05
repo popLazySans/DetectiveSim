@@ -1689,8 +1689,64 @@ async function unitTests() {
     assert(g11.itemActions(a11).length === 0, 'waiting outside a locked door offers no item actions');
     a11.outside = false;
   }
+  // 16) โหมดวิญญาณ: ผีคุยแชทผีกันได้ (คนเป็นไม่เห็นจนเกมจบ) · ตามดูคนเป็นได้ทีละคน (สมุดบันทึก ของ ภารกิจ) · เห็นทุกห้องและเหตุการณ์จริง · คนเป็นตามดูไม่ได้ ผีตามดูผีไม่ได้ · ผีบอททักทายและบ่นเหตุการณ์
+  {
+    const g12 = new Game({ code: 'UNIT12', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids12 = ['s1-xxxxxxxx', 's2-xxxxxxxx', 's3-xxxxxxxx'];
+    for (const [i, id] of ids12.entries()) g12.addPlayer({ id, name: `ผี ${i + 1}` });
+    g12.setBots(ids12[0], 1);
+    g12.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0, BOT_GHOST_CHAT: true });
+    await g12.start(ids12[0]);
+    g12.clearTimers();
+    const [a12, b12, c12] = ids12.map((id) => g12.players.get(id));
+    const bot12 = [...g12.players.values()].find((p) => p.isBot);
+    g12.phase = PHASE.DAY;
+    g12.step = STEP.ACT;
+    let threw12 = false;
+    try { g12.setFollow(b12.id, c12.id); } catch { threw12 = true; }
+    assert(threw12, 'a living player cannot follow anyone');
+    assert(!g12.viewFor(b12.id).me.spectator, 'the living get no ghost view');
+    // บอทตายก่อน (ผีบอทรับรู้ตัวเอง) แล้ว a12 ตายตามมา
+    bot12.alive = false; bot12.fate = 'victim'; bot12.deathCause = 'attack';
+    g12.botGhostChat();
+    assert(!g12.chat.some((m) => m.ghost), 'bot ghosts stay silent while no human ghost exists');
+    a12.alive = false; a12.fate = 'victim'; a12.deathCause = 'attack';
+    g12.sendChat(a12.id, 'บูว์');
+    const ghostMsg = g12.chat.at(-1);
+    assert(ghostMsg.ghost && ghostMsg.playerId === a12.id, 'a dead player sends ghost chat');
+    g12.sendChat(b12.id, 'ใครพูดน่ะ');
+    const lv = g12.viewFor(b12.id);
+    assert(!lv.chat.some((m) => m.ghost) && lv.chat.some((m) => m.playerId === b12.id), 'the living see normal chat but not ghost chat');
+    const gv = g12.viewFor(a12.id);
+    assert(gv.chat.some((m) => m.ghost) && gv.chat.some((m) => m.playerId === b12.id) && gv.me.spectator, 'ghosts see both ghost chat and normal chat');
+    threw12 = false;
+    try { g12.setFollow(a12.id, bot12.id); } catch { threw12 = true; }
+    assert(threw12 && !a12.follow, 'ghosts cannot follow another dead player');
+    g12.setFollow(a12.id, b12.id);
+    const sp12 = g12.viewFor(a12.id).me.spectator;
+    assert(sp12.watching?.id === b12.id && Array.isArray(sp12.watching.log) && Array.isArray(sp12.watching.inventory) && Array.isArray(sp12.watching.objectives) && Array.isArray(sp12.watching.exitsKnown), 'following a living player shows their notebook, items, objectives and known exits');
+    assert(sp12.rooms.length === g12.zones.size && sp12.rooms.some((r) => r.people.some((n) => n.includes(g12.nick(b12)))), 'the ghost map lists every room and who is in it');
+    assert(sp12.ghosts.some((x) => x.id === bot12.id) && !sp12.ghosts.some((x) => x.id === a12.id), 'other ghosts are listed (not yourself)');
+    g12.recordEvent(`${g12.nick(b12)}ฆ่า${g12.nick(c12)}ที่ห้องทดสอบ`);
+    assert(g12.viewFor(a12.id).me.spectator.feed.some((e) => /ฆ่า/.test(e.text)), 'ghosts see the true event feed');
+    Math.random = () => 0; // pick แรก + chance ผ่าน
+    g12.botGhostChat();
+    Math.random = realRandom;
+    const botMsgs = g12.chat.filter((m) => m.ghost && m.playerId === bot12.id);
+    assert(botMsgs.some((m) => m.text.includes(g12.nick(a12))) && botMsgs.some((m) => /ฆ่า/.test(m.text)), 'a bot ghost greets the new ghost and comments on the hour\'s events');
+    assert(!g12.viewFor(b12.id).chat.some((m) => m.ghost), 'bot ghost chat is hidden from the living too');
+    g12.phase = PHASE.TRIAL;
+    g12.votes.set(b12.id, c12.id);
+    assert(g12.viewFor(a12.id).players.find((p) => p.id === b12.id).vote === c12.id && g12.viewFor(c12.id).players.find((p) => p.id === b12.id).vote === null, 'ghosts see live votes, the living do not');
+    g12.phase = PHASE.DAY;
+    b12.alive = false; b12.fate = 'victim';
+    assert(g12.viewFor(a12.id).me.spectator.watching === null, 'the watch ends when the watched player dies');
+    g12.phase = PHASE.ENDED;
+    assert(g12.viewFor(c12.id).chat.some((m) => m.ghost), 'once the game ends everyone sees the ghost chat');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment)');
 }
 
 try {
