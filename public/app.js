@@ -201,6 +201,7 @@
             <li><b>เวลา:</b> ทุกครั้งที่เข้าห้อง = 1 ชั่วโมง (รวมรอบเก็บหลักฐาน) ตัดสินคดีเสร็จจึงขึ้นวันใหม่ ไม่มีเวลาจำกัดทั้งในเกมและเวลาจริง</li>
             <li><b>แต่ละชั่วโมง:</b> ทุกคนเลือกห้องพร้อมกัน (ไม่มีใครรู้ว่าใครเลือกอะไร) → เห็นว่าใครอยู่ห้องเดียวกับคุณ เห็นของในห้อง → <b>หยิบ/วาง/ซ่อนของทำได้ทันทีไม่กินชั่วโมง</b> (ทั้งตอนเลือกแอ็กชันและตอนพัก) แล้วเลือกทำได้อีก 1 อย่าง: สำรวจ ลงมือฆ่า วางกับดัก ย้ายศพ ทำลายหลักฐาน ตรวจศพ… ทุกอย่างมีโอกาสสำเร็จ/พลาด/สำเร็จแบบเลอะเทอะ → พักชั่วโมง: อ่านบันทึก และ<b>ให้ของ</b>กับคนในห้องเดียวกันได้ · เดินไปเจอห้องที่ล็อก = <b>ยืนรอหน้าประตู (ข้างนอก)</b> ทำอะไรกับห้องไม่ได้ ทำได้แค่กับคนที่ยืนอยู่หน้าประตูด้วยกัน · <b>กับดักประตู</b> (อาวุธ+เครื่องมือ) วางข้างใน = คนที่เปิดประตูเข้ามาตาย วางข้างนอก = คนที่เปิดประตูออกมาตาย คนที่ปลดล็อกโดนก่อน</li>
             <li><b>ของแต่ละชิ้นทำอะไรได้ดูจากป้ายกำกับ</b> (หนัก · มีคม · ยิงได้ · เครื่องมือช่าง · นำไฟฟ้า · ฉีดได้): ลงมือด้วยปืน 85% (กระสุนจำกัด ยิงแล้วทั้งตึกได้ยิน) · อาวุธมีคม/หนัก 70% · อาวุธเบา 50% · เครื่องมือที่หนักหรือปลายแหลม 55% · ผ้า (อุดหายใจ) / เชือก (รัดคอ) 50% · ยาพิษลงมือตรงต้องมี<b>เข็มฉีดยา</b> (65%) หรือเป็นสายการแพทย์ (80%) ไม่งั้นผสมอาหารได้อย่างเดียว · สมุด วิทยุ ไฟฉาย กล้อง กุญแจมือ ใช้ฆ่าหรือประกอบกับดักไม่ได้ · ยากลิ่นฉุนคนกินสังเกตง่าย (60%) ยาไร้สีไร้รสสังเกตยาก (5%) พิษที่ต้องเข้ากระแสเลือดผสมอาหารไม่ได้ · สูตรกับดักดูแท็ก: ใบมีดเหวี่ยง = อาวุธมีคม/หนัก + เชือก · ของหนักหล่น = ของหนัก + เชือก · ไฟช็อต = เครื่องมือช่าง + สายไฟจริง · กับดักประตู = ปืนมีกระสุน/มีคม/หนัก + เครื่องมือช่าง · ซ่อมทางออกและช่างเทคนิคสะเดาะต้องใช้เครื่องมือช่าง ทุบ/งัดต้องของหนักหรืออาวุธมีคม</li>
+            <li><b>ประตูที่ล็อก:</b> มีกุญแจต้องกด 🔑 ไขเอง (ทันที ไม่กินชั่วโมง) แล้วชั่วโมงถัดไปค่อยเข้า/ออก · ไม่มีกุญแจ: 🪛 สะเดาะ (ที่สะเดาะกุญแจ หรือช่างเทคนิค+เครื่องมือช่าง 2–3 ชม.) หรือ 💥 พังประตู (ใครก็ได้ 3–4 ชม. นักสู้ 1–2 ชม. เสียงดัง) เป็นแอ็กชันที่ต้องเลือกซ้ำทุกชั่วโมงจนสำเร็จ · 🫥 ซ่อนของใช้ 1 ชั่วโมงแต่ซ่อนได้หลายชิ้น (หยิบ/วางทำได้ทันที) · ไม่มีใครเห็นว่าใครเลือกแล้วหรือยัง · ครบ 23 ชั่วโมงโดยไม่มีการตัดสิน = ขึ้นวันใหม่เอง · ต่อยคนที่สลบอยู่ไม่ได้ (ต้องใช้ของที่ฆ่าได้) · สุดยอดนักเดินป่าถือของได้ 5 ชิ้น</li>
             <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
             <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 3–5 ชั่วโมง <b>ละเลยได้</b> แต่ถ้าครบกำหนดแล้วยังไม่ทำ จะโดนลงโทษ: <b>สลบ 1–3 ชั่วโมง</b> (ทำอะไรไม่ได้ ไม่รู้ว่ารอบตัวเกิดอะไรขึ้น) ของบางชิ้นหล่นในห้อง และระหว่างสลบใครลงมือกับคุณก็สำเร็จแน่นอน · ภารกิจที่ทำไม่ได้แล้วโดยไม่ใช่ความผิดคุณถูกยกเลิกโดยไม่มีโทษ</li>
             <li><b>ลงมือสำเร็จไม่ได้แปลว่าตาย:</b> โอกาสฆ่าขึ้นกับของ (ปืน 90% · มีคม 70% · หนัก 55% · เชือก 60% · ผ้า 35% · ยาพิษ 85% · ของเบา 25%) ที่เหลือเป้าหมายแค่ <b>สลบ 1–3 ชั่วโมง</b> · <b>มือเปล่า ยานอนหลับ ยาสลบ ทำให้สลบเท่านั้น</b> ฆ่าไม่ได้ (ยกเว้นนักสู้ต่อยฆ่าได้ 5%) · คนที่สลบอยู่ถูกลงมือสำเร็จแน่นอน (ของฆ่าได้ = ตาย) · ลงมือพลาดแล้วเป้าหมายสวนกลับได้ 25% (นักสู้ 50% · ถืออาวุธ +15%) ผลของการสวนกลับขึ้นกับของที่เขาถือ: ฆ่าคุณหรือทำให้คุณสลบ</li>
@@ -330,7 +331,7 @@
     const marks = [];
     if (p.isHost) marks.push('<span class="mark host" title="หัวห้อง">👑</span>');
     if (!p.connected && !p.isBot) marks.push('<span class="mark off" title="ออฟไลน์">⚡</span>');
-    if ((s.phase === 'day' || s.phase === 'investigation') && p.alive) {
+    if ((s.phase === 'day' || s.phase === 'investigation') && p.alive && (isMe || !me.alive)) { // คนอื่นไม่เห็นว่าใครเลือกแล้ว — ไม่งั้นคนตายที่ยังไม่ถูกพบจะถูกสังเกตว่าไม่ขยับ (ผีเห็น)
       if (s.step === 'move') marks.push(`<span class="mark ${p.moved ? 'ok' : ''}" title="เลือกห้อง">${p.moved ? '🚶' : '…'}</span>`);
       if (s.step === 'act') marks.push(`<span class="mark ${p.acted ? 'ok' : ''}" title="เลือกแอ็กชัน">${p.acted ? '✔' : '…'}</span>`);
       if (s.step === 'report') marks.push(`<span class="mark ${p.ready ? 'ok' : ''}" title="พร้อมไปต่อ">${p.ready ? '✔' : '…'}</span>`);
@@ -402,13 +403,13 @@
     const alive = s.players.filter((p) => p.alive);
     const moved = alive.filter((p) => p.moved).length;
     return `<div class="card">
-      <div class="row"><h2>🕐 วันที่ ${s.day} · ชั่วโมงที่ ${s.hour}</h2><span class="spacer"></span><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span></div>
+      <div class="row"><h2>🕐 วันที่ ${s.day} · ชั่วโมงที่ ${s.hour}</h2><span class="spacer"></span><span class="muted">ไม่มีใครเห็นว่าใครเลือกอะไร</span></div>
       <p class="muted">${esc(s.location.description)}</p>
       ${me.isDesignated ? `<div class="clue culprit"><span class="ctag">🔪 วันนี้เกมเลือกคุณเป็น "ฆาตกร" (มีแค่คุณที่รู้)</span>จะลงมือหรือไม่ก็ได้ — ถ้าลงมือในวันนี้โอกาสสำเร็จสูงขึ้น ดูรายละเอียดในสมุดบันทึก ถ้าคนอื่นลงมือก่อน คุณจะเป็นแค่คนที่อยู่ในเหตุการณ์</div>` : ''}
       ${me.ko ? `<div class="clue culprit"><span class="ctag">😵 คุณสลบอยู่</span>ฟื้นในอีก ${me.ko.hours} ชั่วโมง — ชั่วโมงนี้คุณอยู่ที่เดิมและทำอะไรไม่ได้ ไม่รู้ว่ารอบตัวเกิดอะไรขึ้น และใครลงมือกับคุณก็สำเร็จแน่นอน</div>` : ''}
-      ${me.door?.lockedIn ? `<div class="clue culprit"><span class="ctag">🔒 คุณถูกล็อกอยู่ใน${esc(me.zoneName || '')}</span>${me.door.means ? `ออกตามปกติไม่ได้ แต่คุณ${esc(me.door.means.label)} — เลือกห้องที่จะไป แล้วชั่วโมงนั้นจะหมดไปกับประตู (ใช้กี่ชั่วโมงแล้วแต่ดวง)${me.door.work ? ` · ทำไปแล้ว ${me.door.work.progress} ชม.` : ''}` : 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้ — เลือกได้แค่อยู่ห้องนี้ต่อ'}</div>` : ''}
-      ${me.outside ? `<div class="clue culprit"><span class="ctag">🚪 คุณยืนรออยู่หน้าประตู${esc(me.zoneName || '')} (ข้างนอก)</span>ประตูล็อกอยู่ เข้าไม่ได้ — ทำอะไรกับห้องไม่ได้ (ไม่มีสำรวจ/หยิบ/วาง) ทำได้เฉพาะกับคนที่ยืนอยู่หน้าประตูด้วยกัน${me.door?.means ? ` · คุณ${esc(me.door.means.label)} — เลือกห้องนี้อีกครั้งเพื่อทำต่อ` : ' · ต้องมีกุญแจหรือที่สะเดาะกุญแจ หรือรอให้ประตูเปิด'} · จะเดินไปห้องอื่นก็ได้</div>` : ''}
-      ${me.door?.work && !me.door.lockedIn ? `<div class="clue night-self"><span class="ctag">${me.door.work.method === 'break' ? '💥' : '🪛'} งานค้างที่ประตู</span>คุณกำลัง${me.door.work.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน'}<b>${esc(me.door.work.zoneName)}</b> (ทำไปแล้ว ${me.door.work.progress} ชม.) — เลือกห้องนั้นอีกครั้งเพื่อทำต่อ เลือกห้องอื่นแล้วต้องเริ่มใหม่</div>` : ''}
+      ${me.door?.lockedIn ? `<div class="clue culprit"><span class="ctag">🔒 คุณถูกล็อกอยู่ใน${esc(me.zoneName || '')}</span>ออกตามปกติไม่ได้ — เลือกอยู่ห้องนี้ต่อ แล้วในขั้นเลือกแอ็กชันเลือก ${esc(me.door.means?.label || 'สะเดาะ/พังประตู')} (ทำซ้ำทุกชั่วโมงจนสำเร็จ${me.door.work ? ` · ทำไปแล้ว ${me.door.work.progress} ชม.` : ''}) หรือรอให้คนข้างนอกมาเปิด</div>` : ''}
+      ${me.outside ? `<div class="clue culprit"><span class="ctag">🚪 คุณยืนรออยู่หน้าประตู${esc(me.zoneName || '')} (ข้างนอก)</span>ประตูล็อกอยู่ เข้าไม่ได้ — ทำอะไรกับห้องไม่ได้ (ไม่มีสำรวจ/หยิบ/วาง) ทำได้เฉพาะกับคนที่ยืนอยู่หน้าประตูด้วยกัน · ${me.door?.hasKeyHere ? 'คุณมีกุญแจ: กด 🔑 ไขกุญแจได้ทันที แล้วชั่วโมงถัดไปเลือกห้องนี้เพื่อเข้า' : `ในขั้นเลือกแอ็กชัน เลือก ${esc(me.door?.means?.label || 'สะเดาะ/พังประตู')} ทำซ้ำทุกชั่วโมงจนเปิด`} · หรือจะเดินไปห้องอื่นก็ได้</div>` : ''}
+      ${me.door?.work ? `<div class="clue night-self"><span class="ctag">${me.door.work.method === 'break' ? '💥' : '🪛'} งานค้างที่ประตู</span>คุณกำลัง${me.door.work.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน'}<b>${esc(me.door.work.zoneName)}</b> (ทำไปแล้ว ${me.door.work.progress} ชม.) — เลือกแอ็กชันเดิมอีกครั้งชั่วโมงหน้าเพื่อทำต่อ ย้ายไปประตูอื่นแล้วต้องเริ่มใหม่</div>` : ''}
       ${me.objectives.filter((o) => !o.done).map((o) => `<div class="clue night-self"><span class="ctag">📋 ภารกิจลับ (ละเลยได้ แต่ครบกำหนดแล้วไม่ทำ = สลบ 1–3 ชม.)</span>${esc(o.text)} ${objectiveBadge(o)}</div>`).join('')}
       ${s.config.objectives && me.nextObjectiveIn != null && !me.objectives.some((o) => !o.done) ? `<p class="muted" style="font-size:.85rem">📋 ภารกิจถัดไปจะมาใน${me.nextObjectiveIn ? `อีก ${me.nextObjectiveIn} ชั่วโมง` : 'ชั่วโมงหน้า'}</p>` : ''}
       <p class="muted" style="font-size:.85rem">เลือกห้องจากแผนที่ด้านล่าง — ไม่มีใครเห็นว่าใครเลือกอะไร จนกว่าจะเข้าห้องแล้วเจอกัน</p>
@@ -422,8 +423,9 @@
     const sel = chosen || ui.selectedZone;
     const alive = s.players.filter((p) => p.alive);
     const moved = alive.filter((p) => p.moved).length;
-    const stuck = !!(me.door?.lockedIn && !me.door.means); // ถูกขังและไม่มีทางออก → เลือกได้แค่ห้องนี้
+    const stuck = !!me.door?.lockedIn; // ถูกขัง (ไม่มีกุญแจ) → เลือกได้แค่ห้องนี้ แล้วสะเดาะ/พังในขั้นแอ็กชัน
     return `<div class="card">
+      ${doorNowHtml(s)}
       <div class="row"><h3>🗺 แผนที่ — ${esc(s.location.name)}</h3><span class="spacer"></span>${s.phase === 'investigation' ? `<span class="badge red">รอบเก็บหลักฐาน${s.investigation ? ` ชั่วโมงที่ ${s.investigation.hour}/${s.investigation.total}` : ''}</span>` : ''}</div>
       <div class="zones">${zones
         .map((z) => {
@@ -436,7 +438,7 @@
           if (mem?.broken) tags.push('<span class="badge" title="ประตูถูกพังแล้ว ล็อกไม่ได้อีก">🚪 ประตูพัง</span>');
           else if (mem?.locked) {
             const hasKey = me.inventory.some((i) => i.kind === 'key' && (i.unlocksZoneNames || []).includes(z.name));
-            const hint = hasKey ? 'คุณมีกุญแจ' : me.door?.means ? me.door.means.label : 'ต้องมีกุญแจหรือที่สะเดาะกุญแจ';
+            const hint = hasKey ? 'คุณมีกุญแจ — ไปยืนหน้าประตูแล้วกด 🔑 ไขกุญแจ (ทันที) ชั่วโมงถัดไปค่อยเข้า' : me.door?.means ? me.door.means.label : 'ต้องมีกุญแจหรือที่สะเดาะกุญแจ';
             tags.push(`<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูล็อกอยู่ (อาจเปลี่ยนไปแล้ว) · ${esc(hint)}">🔒 ล็อกอยู่ · ${esc(hint)}</span>`);
           }
           if (mem?.food) tags.push('<span class="badge">🍞 มีอาหาร</span>');
@@ -453,8 +455,8 @@
         .join('')}</div>
       <div class="row" style="margin-top:.8rem">
         ${chosen
-          ? `<p class="status">${me.ko ? '😵 คุณสลบอยู่ที่' : 'คุณเลือกไป'} <b>${esc(zoneName(chosen))}</b> ${me.ko ? '— ขยับไม่ได้' : 'แล้ว'} รอคนอื่น (${moved}/${alive.length})</p>`
-          : `<button class="primary" data-action="confirm-move" ${sel ? '' : 'disabled'}>${sel ? `🚶 ไป${esc(zoneName(sel))}` : 'เลือกห้องก่อน'}</button><span class="muted">เลือกห้องแล้ว ${moved}/${alive.length}</span>`}
+          ? `<p class="status">${me.ko ? '😵 คุณสลบอยู่ที่' : 'คุณเลือกไป'} <b>${esc(zoneName(chosen))}</b> ${me.ko ? '— ขยับไม่ได้' : 'แล้ว'} รอคนอื่น</p>`
+          : `<button class="primary" data-action="confirm-move" ${sel ? '' : 'disabled'}>${sel ? `🚶 ไป${esc(zoneName(sel))}` : 'เลือกห้องก่อน'}</button><span class="muted">ไม่มีใครเห็นว่าใครเลือกอะไร</span>`}
       </div>
     </div>`;
   }
@@ -479,8 +481,8 @@
 
   const ACTION_GROUPS = [
     ['ทางออก', ['exit', 'exit_power']],
-    ['ทั่วไป', ['search', 'eat', 'rest']],
-    ['ประตู', ['lock', 'unlock']],
+    ['ทั่วไป', ['search', 'hide', 'eat', 'rest']],
+    ['ประตู', ['doorwork']],
     ['ตรวจศพ', ['examine']],
     ['ความสามารถพิเศษ', ['steal', 'interrogate', 'sabotage']],
     ['ประกอบกับดัก', ['craft']],
@@ -488,6 +490,13 @@
   ];
 
   // หยิบ/วาง/ซ่อนของ ทำได้ทันที ไม่กินชั่วโมง (ทั้งตอนเลือกแอ็กชันและตอนพักชั่วโมง)
+  // ไขกุญแจ/ล็อกประตูด้วยกุญแจ ทำได้ทันที ไม่กินชั่วโมง (ทุกขั้น) — สะเดาะ/พังอยู่ในรายการแอ็กชัน "ประตู"
+  function doorNowHtml(s) {
+    const list = s.me.doorActions || [];
+    if (!s.me.alive || !list.length) return '';
+    return `<div class="agroup itemnow"><div class="agtitle">🔑 ประตู — ทำได้ทันที ไม่กินชั่วโมง</div><div class="alist">${list.map((a) => `<button class="act small" data-action="door-now" data-type="${esc(a.type)}" title="${esc(a.desc || '')}">${esc(a.label)}</button>`).join('')}</div></div>`;
+  }
+
   function itemNowHtml(s) {
     const me = s.me;
     const list = me.itemActions || [];
@@ -495,7 +504,7 @@
     const takes = list.filter((a) => a.type === 'take');
     const mine = list.filter((a) => a.type !== 'take');
     const btn = (a) => `<button class="act small ${a.type === 'take' ? '' : 'ghost'}" data-action="item-now" data-type="${esc(a.type)}" data-id="${esc(a.itemId)}" ${a.disabled ? 'disabled' : ''} title="${esc(a.reason || a.desc || '')}">${esc(a.label)}</button>`;
-    return `<div class="agroup itemnow"><div class="agtitle">⚡ หยิบ/วาง/ซ่อนของ — ทำได้ทันที ไม่กินชั่วโมง แล้วยังเลือกทำอย่างอื่นได้</div>
+    return `<div class="agroup itemnow"><div class="agtitle">⚡ หยิบ/วางของ — ทำได้ทันที ไม่กินชั่วโมง แล้วยังเลือกแอ็กชันหลักได้ (ซ่อนของอยู่ในรายการ "ทั่วไป": ใช้ชั่วโมง แต่ซ่อนได้หลายชิ้น)</div>
       ${takes.length ? `<div class="alist">${takes.map(btn).join('')}</div>` : '<p class="muted" style="font-size:.8rem">ไม่มีของให้หยิบในห้องนี้</p>'}
       ${mine.length ? `<div class="alist" style="margin-top:.3rem">${mine.map(btn).join('')}</div>` : ''}
     </div>`;
@@ -506,15 +515,15 @@
     const alive = s.players.filter((p) => p.alive);
     const acted = alive.filter((p) => p.acted).length;
     if (me.actionChoice) {
-      return `<div class="card"><h3>${me.actionChoice.busy ? '🪛 ชั่วโมงนี้คุณใช้เวลาไปกับประตู' : me.actionChoice.ko ? '😵 คุณสลบอยู่ — ชั่วโมงนี้ทำอะไรไม่ได้' : 'คุณเลือกแล้ว'}</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น (${acted}/${alive.length})</p><p class="muted">${me.actionChoice.busy ? 'สะเดาะ/พังประตูใช้ทั้งชั่วโมง ทำอย่างอื่นไม่ได้ — ถ้ายังไม่สำเร็จ เลือกห้องนั้นอีกครั้งชั่วโมงหน้า' : 'ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ'}</p>${itemNowHtml(s)}</div>`;
+      return `<div class="card"><h3>${me.actionChoice.busy ? '🪛 ชั่วโมงนี้คุณใช้เวลาไปกับประตู' : me.actionChoice.ko ? '😵 คุณสลบอยู่ — ชั่วโมงนี้ทำอะไรไม่ได้' : 'คุณเลือกแล้ว'}</h3><p class="status">${esc(me.actionChoice.label)} — รอคนอื่น</p><p class="muted">${me.actionChoice.busy ? 'สะเดาะ/พังประตูใช้ทั้งชั่วโมง ทำอย่างอื่นไม่ได้ — ถ้ายังไม่สำเร็จ เลือกห้องนั้นอีกครั้งชั่วโมงหน้า' : 'ผลจะปรากฏในสมุดบันทึกเมื่อทุกคนเลือกครบ'}</p>${itemNowHtml(s)}${doorNowHtml(s)}</div>`;
     }
     const list = me.availableActions || [];
     const selected = list.find((a) => actionKey(a) === ui.selectedAction) || null;
     const groups = ACTION_GROUPS.map(([title, types]) => [title, list.filter((a) => types.includes(a.type))]).filter(([, arr]) => arr.length);
     const zonesOther = s.location.zones.filter((z) => z.id !== me.zoneId);
     return `<div class="card">
-      <div class="row"><h3>เลือกสิ่งที่จะทำ (1 อย่าง)</h3><span class="spacer"></span><span class="muted">เลือกแล้ว ${acted}/${alive.length}</span></div>
-      ${itemNowHtml(s)}
+      <div class="row"><h3>เลือกสิ่งที่จะทำ (1 อย่าง)</h3></div>
+      ${itemNowHtml(s)}${doorNowHtml(s)}
       ${groups
         .map(
           ([title, arr]) => `<div class="agroup"><div class="agtitle">${esc(title)}</div><div class="alist">${arr
@@ -525,6 +534,7 @@
       <div class="apreview">
         ${selected
           ? `<div class="clue ${selected.danger ? 'culprit' : ''}"><span class="ctag">${esc(selected.label)}</span>${esc(selected.desc || '')}
+              ${selected.multiItems ? `<div class="hidepick">${(me.inventory || []).map((i) => `<label><input type="checkbox" class="hide-item" value="${esc(i.id)}" checked> ${esc(i.name)}</label>`).join('')}</div>` : ''}
               ${selected.needsZone ? `<p><label>ย้ายไปที่ <select id="move-body-to">${zonesOther.map((z) => `<option value="${esc(z.id)}" ${ui.moveBodyTo === z.id ? 'selected' : ''}>${esc(z.name)}</option>`).join('')}</select></label></p>` : ''}
             </div>
             <button class="primary" data-action="confirm-action">ยืนยัน: ${esc(selected.label)}</button>`
@@ -549,7 +559,7 @@
     const bots = (me.zonePeople || []).filter((p) => p.isBot);
     if (!bots.length) return '';
     const pairs = bots.flatMap((b) => (b.items || []).map((i) => ({ value: `${b.id}|${i.id}`, label: `${b.name}: ${KIND_ICON[i.kind] || '•'} ${i.name}${i.isPart ? ' ⭐' : ''}` })));
-    const full = me.inventory.length >= s.config.inventoryMax;
+    const full = me.inventory.length >= (me.inventoryMax || s.config.inventoryMax);
     return `<div class="give request">
       <div class="agtitle">🙏 ขอของจากบอทในห้องนี้ (บอทให้เสมอ — มีไว้ช่วยทดสอบเกม)</div>
       ${pairs.length
@@ -581,12 +591,12 @@
     const ready = alive.filter((p) => p.ready).length;
     const entries = (me.log || []).filter((l) => l.day === s.day && l.hour === s.hour && l.phase === 'day');
     return `<div class="card">
-      <div class="row"><h2>📓 บันทึก วันที่ ${s.day} ชั่วโมงที่ ${s.hour}</h2><span class="spacer"></span><span class="muted">พร้อมแล้ว ${ready}/${alive.length}</span></div>
+      <div class="row"><h2>📓 บันทึก วันที่ ${s.day} ชั่วโมงที่ ${s.hour}</h2><span class="spacer"></span><span class="muted">รอทุกคนกดพร้อม</span></div>
       <p class="muted">สิ่งที่คุณเห็นและทำในชั่วโมงนี้ — มีแค่คุณที่รู้ จะเล่าให้ใครฟังหรือเก็บไว้ก็ได้</p>
       <div class="report-log">${entries.map(logEntryHtml).join('') || '<p class="muted">ไม่มีอะไรเกิดขึ้น</p>'}</div>
       ${giveHtml(s)}
-      ${itemNowHtml(s)}
-      ${me.alive ? (me.ready ? `<p class="status">คุณพร้อมแล้ว รอคนอื่น (${ready}/${alive.length})</p>` : `<button class="primary" data-action="ready">พร้อมไปชั่วโมงถัดไป</button>`) : ''}
+      ${itemNowHtml(s)}${doorNowHtml(s)}
+      ${me.alive ? (me.ready ? `<p class="status">คุณพร้อมแล้ว รอคนอื่น</p>` : `<button class="primary" data-action="ready">พร้อมไปชั่วโมงถัดไป</button>`) : ''}
     </div>`;
   }
 
@@ -710,7 +720,7 @@
           <p>${esc(c.truthSummary)}</p>
           <ul class="obs">
             <li>ผู้ตาย: <b>${esc(c.victimName)}</b> (${esc(c.victimPlayer)}) · ที่${esc(c.zoneName)} · ${esc(timeText(c.day, c.hour))}</li>
-            <li>คนร้าย: <b>${c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName && !c.killerAlive && !r.executedId ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : ''}</li>
+            <li>คนร้าย: <b>${c.killerName ? `${esc(c.killerName)} (${esc(c.killerPlayer)})${c.killerUltimate ? ` — ${esc(c.killerUltimate)}` : ''}` : 'ไม่มี'}</b>${c.killerFakeUltimate ? ` <span class="badge purple">โรลปลอม! ประกาศไว้ว่า ${esc(c.killerFakeUltimate)}</span>` : ''}${c.cause === 'defense' ? ' <span class="badge yellow">ป้องกันตัว</span>' : ''}${c.killerName ? (c.killerFate === 'escaped' ? ' <span class="badge red">รอดไปได้ — โหวตผิด</span>' : c.killerFate === 'executed' ? ' <span class="badge">ถูกประหารรอบนี้</span>' : !c.killerAlive ? ' <span class="badge">ตายไปก่อนการตัดสิน</span>' : '') : ''}</li>
             ${c.weaponName ? `<li>อาวุธ: ${esc(c.weaponName)}${c.messy ? ' · ลงมือแบบเลอะเทอะ' : ' · ลงมือเงียบเชียบ'}${c.moved ? ' · ศพถูกย้าย' : ''}</li>` : ''}
             ${c.witnesses?.length ? `<li>คนที่เห็นตอนลงมือ: ${esc(c.witnesses.join(', '))}</li>` : ''}
             ${c.present?.length ? `<li>คนที่อยู่ในห้องตอนนั้น: ${esc(c.present.join(', '))}</li>` : ''}
@@ -773,7 +783,7 @@
     const inv = me.inventory || [];
     const objs = me.objectives || [];
     return `<div class="card inv">
-      <h3>🎒 ของที่ถือ (${inv.length}/${s.config.inventoryMax})</h3>
+      <h3>🎒 ของที่ถือ (${inv.length}/${me.inventoryMax || s.config.inventoryMax})</h3>
       ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''} ${i.kind === 'trap' ? 'trap' : ''}" title="${esc(i.description || '')}${i.tagText ? ` — ${esc(i.tagText)}` : ''}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}${i.ammo != null ? ` <small>(${i.ammo} นัด)</small>` : ''}${i.tagText ? ` <small class="muted">${esc(i.tagText)}</small>` : ''}${i.unlocksZoneNames?.length ? ` <small>(ไข${esc(i.unlocksZoneNames.join(', '))})</small>` : i.exitName ? ` <small>(${esc(i.exitName)})</small>` : ''}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
       ${exitsHtml(s)}
       ${s.config.objectives ? `<h3 style="margin-top:.7rem">📋 ภารกิจลับ</h3>
@@ -792,7 +802,7 @@
         ? exits.map((x) => `<div class="exitbox ${x.open ? 'open' : ''}">
             <div class="row"><b>${ROUTE_ICON[x.route] || '🚪'} ${esc(x.name)}</b><span class="spacer"></span><span class="badge yellow">${esc(x.zoneName)}</span></div>
             <div class="muted" style="font-size:.82rem">${esc(x.description)}</div>
-            <div style="font-size:.85rem;margin-top:.25rem"><b>${esc(x.routeLabel)}</b> · ผ่านแล้ว ${x.stepsDone ?? 0}/${x.steps?.length ?? 0} ขั้น</div>
+            <div style="font-size:.85rem;margin-top:.25rem"><b>${esc(x.routeLabel)}</b> · ผ่านแล้ว ${x.stepsDone ?? 0}/${x.steps?.length ?? 0} ขั้น</div><div class="muted" style="font-size:.78rem">ทำขั้นไหนก่อนก็ได้ ขั้นที่ ✅ แล้วไม่ต้องทำซ้ำ · ของที่ต้องถือ (กุญแจ/เศษรหัส/ชุดที่ประกอบ) ต้องอยู่ในมือตอนลงมือ · ไปที่ห้องนั้นแล้วเลือก "ลงมือกับทางออก" จะทำทุกขั้นที่ทำได้ในชั่วโมงเดียว</div>
             ${x.steps?.length ? `<ol class="obs" style="margin:.2rem 0 0 1.1rem;font-size:.82rem">${x.steps.map((st) => `<li>${st.done ? '✅' : '⬜'} ${esc(st.label)}${st.needed ? ` (${st.progress}/${st.needed})` : ''}</li>`).join('')}</ol>` : ''}
             ${x.items?.length ? `<div class="chips" style="margin-top:.3rem">${x.items.map((i) => `<span class="chip ${i.held ? 'part' : ''}" title="${i.held ? 'คุณถืออยู่' : 'ยังไม่ได้อยู่กับคุณ'}">${i.held ? '✅' : '⬜'} ${esc(i.name)}</span>`).join('')}</div>` : ''}
             ${x.route === 'breach' ? `<div class="muted" style="font-size:.82rem">ความคืบหน้า ${x.progress}/${x.progressNeeded}</div>` : ''}${x.route === 'power' ? `<div class="muted" style="font-size:.82rem">${x.powered ? '⚡ มีไฟแล้ว' : 'ยังไม่มีไฟ'}</div>` : ''}
@@ -817,15 +827,15 @@
         if (!s.step) body += '<p class="status">กำลังประมวลผล...</p>';
         else if (s.step === 'move') {
           const n = alive.filter((p) => p.moved).length;
-          body += me.alive ? `<p class="status">${me.moveChoice ? `${me.ko ? 'สลบอยู่ที่' : 'เลือกไป'} ${esc(zoneName(me.moveChoice))} แล้ว` : 'เลือกห้องจากแผนที่ตรงกลาง'} (${n}/${alive.length})</p>` : `<p class="status">รอทุกคนเลือกห้อง (${n}/${alive.length})</p>`;
+          body += me.alive ? `<p class="status">${me.moveChoice ? `${me.ko ? 'สลบอยู่ที่' : 'เลือกไป'} ${esc(zoneName(me.moveChoice))} แล้ว` : 'เลือกห้องจากแผนที่ตรงกลาง'}</p>` : `<p class="status">รอทุกคนเลือกห้อง</p>`;
           body += hostForce('บังคับไปต่อ (คนที่ยังไม่เลือกจะอยู่ที่เดิม)');
         } else if (s.step === 'act') {
           const n = alive.filter((p) => p.acted).length;
-          body += me.alive ? `<p class="status">${me.actionChoice ? `เลือก "${esc(me.actionChoice.label)}" แล้ว` : 'เลือกแอ็กชันตรงกลาง'} (${n}/${alive.length})</p>` : `<p class="status">รอทุกคนเลือกแอ็กชัน (${n}/${alive.length})</p>`;
+          body += me.alive ? `<p class="status">${me.actionChoice ? `เลือก "${esc(me.actionChoice.label)}" แล้ว` : 'เลือกแอ็กชันตรงกลาง'}</p>` : `<p class="status">รอทุกคนเลือกแอ็กชัน</p>`;
           body += hostForce('บังคับไปต่อ (คนที่ยังไม่เลือกจะอยู่เฉย ๆ)');
         } else {
           const n = alive.filter((p) => p.ready).length;
-          body += me.alive ? (me.ready ? `<p class="status">พร้อมแล้ว รอคนอื่น (${n}/${alive.length})</p>` : `<button class="primary" data-action="ready">พร้อมไปชั่วโมงถัดไป</button><p class="status">พร้อมแล้ว ${n}/${alive.length}</p>`) : `<p class="status">รอทุกคน (${n}/${alive.length})</p>`;
+          body += me.alive ? (me.ready ? `<p class="status">พร้อมแล้ว รอคนอื่น</p>` : `<button class="primary" data-action="ready">พร้อมไปชั่วโมงถัดไป</button><p class="status">รอคนอื่นกดพร้อม</p>`) : `<p class="status">รอทุกคน</p>`;
           body += hostForce('บังคับไปชั่วโมงถัดไป');
         }
         break;
@@ -1035,8 +1045,8 @@
         break;
       case 'pick-zone':
         if (state.me.moveChoice || !state.me.alive) break;
-        if (state.me.door?.lockedIn && !state.me.door.means && id !== state.me.zoneId) {
-          toast('🔒 คุณถูกล็อกอยู่ในห้องนี้ ออกไม่ได้ — ต้องมีกุญแจ ที่สะเดาะกุญแจ หรือรอคนมาเปิด', 'error');
+        if (state.me.door?.lockedIn && id !== state.me.zoneId) {
+          toast('🔒 คุณถูกล็อกอยู่ในห้องนี้ ออกไม่ได้ — เลือกห้องนี้ต่อ แล้วสะเดาะ/พังประตูในขั้นเลือกแอ็กชัน (หรือไขกุญแจถ้ามี)', 'error');
           break;
         }
         ui.selectedZone = id;
@@ -1054,6 +1064,7 @@
         if (!a) break;
         const payload = { type: a.type, itemId: a.itemId, itemId2: a.itemId2, targetId: a.targetId, victimId: a.victimId, recipeId: a.recipeId, exitId: a.exitId };
         if (a.needsZone) payload.toZoneId = $('#move-body-to')?.value || '';
+        if (a.multiItems) payload.itemIds = [...document.querySelectorAll('.hide-item:checked')].map((x) => x.value);
         if (a.danger && !(await confirmDialog(`ยืนยัน "${a.label}"? เลือกแล้วเปลี่ยนไม่ได้`))) break;
         await act('day:act', payload);
         break;
@@ -1074,6 +1085,9 @@
       }
       case 'item-now':
         if (await act('day:item', { type: btn.dataset.type, itemId: id })) toast('เรียบร้อย — ยังเลือกทำอย่างอื่นได้');
+        break;
+      case 'door-now':
+        if (await act('day:door', { type: btn.dataset.type })) toast('เรียบร้อย — ไม่กินชั่วโมง');
         break;
       case 'ready':
         await act('day:ready');

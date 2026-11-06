@@ -402,3 +402,6 @@ details.help summary { cursor: pointer; color: var(--cyan); }
 .watchbox .nbday { margin-top: 0.5rem; display: grid; gap: 0.25rem; }
 .watchbox .logent { font-size: 0.82rem; }
 .logent.k-feed { border-left-color: var(--purple); }
+
+.hidepick { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; margin: 0.4rem 0; font-size: 0.9rem; }
+.hidepick label { display: inline-flex; align-items: center; gap: 0.3rem; }

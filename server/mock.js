@@ -21,6 +21,7 @@ export const TRAITS = {
   tech: { label: 'ช่างเทคนิค', description: 'ตัดไฟ/กล้องในห้องที่มีแผงไฟ คราฟกับดักไฟช็อต กดรหัสทางออกด้วยเศษรหัสไม่ครบ และทุบ/งัดได้ไว' },
   social: { label: 'นักพูด', description: 'ซักถามคนในห้องเดียวกันเพื่อล้วงความจริง 1 ข้อ (เขาจะรู้ว่าถูกซักถาม)' },
   detective: { label: 'ช่างสังเกต', description: 'สำรวจเจอของที่ซ่อน หลักฐาน ทางออกที่ซ่อนอยู่ และกับดัก/ยาพิษได้ง่ายกว่าคนอื่นมาก' },
+  porter: { label: 'นักแบก', description: 'ถือของได้ 5 ชิ้น (คนอื่น 3)' },
   none: { label: 'ไม่มี', description: 'ไม่มีผลพิเศษกับแอ็กชัน' },
 };
 export const TRAIT_KEYS = Object.keys(TRAITS);
@@ -58,6 +59,7 @@ export const ULTIMATE_POOL = [
   { title: 'สุดยอดนักกายกรรม', hidden: false, trait: 'combat', description: 'ปีนป่ายและทรงตัวบนที่สูงได้อย่างง่ายดาย ตัวไวมาก', investigationEffect: 'หลบการจู่โจมได้ดีกว่าคนทั่วไป' },
   { title: 'สุดยอดนักโหราศาสตร์', hidden: false, trait: 'none', description: 'ทำนายดวงจากดวงดาว คนเชื่อครึ่งไม่เชื่อครึ่ง', investigationEffect: 'ไม่มีผลโดยตรง' },
   { title: 'สุดยอดนักบัญชี', hidden: false, trait: 'none', description: 'จำตัวเลขและลำดับเหตุการณ์ได้แม่นยำ', investigationEffect: 'ไม่มีผลโดยตรง' },
+  { title: 'สุดยอดนักเดินป่า', hidden: false, trait: 'porter', description: 'แบกสัมภาระหนักเดินข้ามภูเขาได้ทั้งวันโดยไม่บ่น', investigationEffect: 'ถือของได้ 5 ชิ้น (คนอื่น 3)' },
 ];
 
 export function mockUltimates(characters) {
