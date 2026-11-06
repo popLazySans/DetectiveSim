@@ -28,13 +28,13 @@ export const CONFIG = {
   STEP_TIMEOUT_MS: Number(process.env.STEP_TIMEOUT_MS || 0),
   // จำนวนชั่วโมงสูงสุดทั้งเกม (0 = ไม่จำกัด ค่าเริ่มต้น; ใช้ในเทสต์)
   MAX_HOURS: Number(process.env.MAX_HOURS || 0),
-  // ต้องมีคน "พบศพ" กี่คน (ไม่นับคนฆ่า) ถึงจะประกาศและเข้าสู่รอบเก็บหลักฐาน
+  // ต้องมีคน "พบศพ" กี่คน (คนที่ลงมือฆ่าเองนับเป็นคนแรก คนวางกับดัก/ยาพิษไม่นับจนกว่าจะเดินมาเห็นศพเอง) ถึงจะประกาศและเข้าสู่รอบเก็บหลักฐาน
   BODY_DISCOVERERS: Number(process.env.BODY_DISCOVERERS || 3),
   // ล็อกการฆาตกรรม (ปิดโดยค่าเริ่มต้น) เปิดด้วย MURDER_LOCK=true: ถ้ามีศพที่ยังไม่ถูกพบ คนที่ไม่ใช่คนร้ายของคดีนั้นลงมือ/วางกับดัก/วางยาไม่ได้
   // ปิดอยู่ = ใครก็ลงมือได้ทุกเมื่อ มีฆาตกรหลายคนในคดีเดียวได้ → ตอนตัดสินไล่จับทีละคน (ระบบไม่บอกจำนวน)
   MURDER_LOCK: process.env.MURDER_LOCK === 'true',
   INVENTORY_MAX: Number(process.env.INVENTORY_MAX || 3),
-  HOURS_PER_DAY: Number(process.env.HOURS_PER_DAY || 23), // ครบชั่วโมงนี้โดยไม่มีการตัดสิน → ขึ้นวันใหม่เอง (ทุกคนกลับห้องนอนรวม)
+  HOURS_PER_DAY: Number(process.env.HOURS_PER_DAY || 24), // ครบชั่วโมงนี้: มีศพที่ยังไม่ถูกพบ → ประกาศพบศพทันที · ไม่มี → ป็อปอัพขึ้นวันใหม่ (ทุกคนกลับห้องนอนรวม)
   // ห้องที่ล็อกไว้ตั้งแต่เริ่มเกม (-1 = อัตโนมัติ: ราว 1 ห้องต่อห้องสำรวจ 6 ห้อง ดู LOCKS.lockedZoneง)
   LOCKED_ZONES: process.env.LOCKED_ZONES !== undefined ? Number(process.env.LOCKED_ZONES) : -1,
   // โอกาสเจอของที่ซ่อนอยู่เมื่อ "สำรวจ" (ของทั่วไป / ของสำหรับทางออก) และโอกาสค้นพบทางออกที่ซ่อนในห้อง
@@ -185,6 +185,8 @@ export class Game {
     this.zones = new Map();
     this.exits = new Map();
     this.passages = []; // ทางลับ [{ id, a, b }]
+    this.dayPopup = null; // ป็อปอัพขึ้นวันใหม่ (ครบ 24 ชั่วโมงโดยไม่มีศพ)
+    this.searchedThisHour = new Set();
     this.blackout = null; // ไฟดับทั้งตึก { since, by } จนกว่าจะมีคนซ่อมเครื่องปั่นไฟ
     this.escaped = false;
     this.bodies = new Map();
@@ -998,7 +1000,7 @@ export class Game {
           const v = this.players.get(b.victimId);
           const first = !p.knownBodies.has(b.victimId);
           p.knownBodies.add(b.victimId);
-          if (b.killerId !== p.id) b.discoveredBy.add(p.id);
+          b.discoveredBy.add(p.id); // คนวางกับดัก/ยาพิษที่เดินมาเห็นศพเองก็นับ
           lines.push(first ? `☠ คุณพบศพของ${this.nick(v)}อยู่หน้าประตูนี้!${b.announced ? '' : ' ยังไม่มีการประกาศ — คุณจะบอกใครหรือไม่ก็ได้'}` : `☠ ศพของ${this.nick(v)}ยังอยู่หน้าประตูนี้`);
         }
         for (const e of z.evidence.filter((x) => x.outside && !x.hidden && !x.gone && !p.evidence.includes(x.id))) {
@@ -1033,7 +1035,7 @@ export class Game {
         const v = this.players.get(b.victimId);
         const first = !p.knownBodies.has(b.victimId);
         p.knownBodies.add(b.victimId);
-        if (b.killerId !== p.id) b.discoveredBy.add(p.id);
+        b.discoveredBy.add(p.id); // คนวางกับดัก/ยาพิษที่เดินมาเห็นศพเองก็นับ
         lines.push(first ? `☠ คุณพบศพของ${this.nick(v)}อยู่ที่นี่!${this.bodyPosText(b)}${b.announced ? '' : ' ยังไม่มีการประกาศ — คุณจะบอกใครหรือไม่ก็ได้'}` : `☠ ศพของ${this.nick(v)}ยังอยู่ที่นี่`);
       }
       for (const o of others) {
@@ -1059,7 +1061,7 @@ export class Game {
       this.checkObjectivesAfterMove(p);
     }
 
-    if (this.alivePlayers().length <= 1) return this.endGame('last_one');
+    if (this.checkEarlyEnd()) return;
     if (this.checkBodyThreshold()) return;
     this.step = STEP.ACT;
     // คนที่ใช้ชั่วโมงนี้ไปกับประตู (สะเดาะ/พัง) ทำอย่างอื่นไม่ได้
@@ -1167,6 +1169,11 @@ export class Game {
     if (kase.killerId) {
       const k = this.players.get(kase.killerId);
       if (k) k.kills++;
+      // คนที่ลงมือฆ่าเอง (ไม่ใช่กับดัก/ยาพิษ) เห็นศพเป็นคนแรก — นับเป็นผู้พบศพคนที่ 1 ของการประกาศ
+      if (k && info.cause !== 'trap') {
+        this.bodies.get(victim.id).discoveredBy.add(k.id);
+        k.knownBodies.add(victim.id);
+      }
     }
     return kase;
   }
@@ -1177,6 +1184,22 @@ export class Game {
     if (!c || c.cause !== 'trap' || b.moved) return '';
     const pos = TRAP_BODY_POS[c.trapType];
     return pos ? ` ร่างนอนอยู่${pos}` : '';
+  }
+
+  // จบเกมก่อนกำหนด: เหลือคนเดียว · เหลือน้อยกว่า ⌊ผู้เล่นทั้งหมด/3⌋ · หรือคนที่เหลือทุกคนล้วนเคยฆ่า → ผู้ที่เหลือรอดทันที
+  earlyEndReason() {
+    const alive = this.alivePlayers();
+    if (alive.length <= 1) return 'last_one';
+    if (alive.length < Math.floor(this.players.size / 3)) return 'few_left';
+    if (alive.every((p) => p.kills > 0)) return 'only_killers';
+    return null;
+  }
+
+  checkEarlyEnd() {
+    const reason = this.earlyEndReason();
+    if (!reason) return false;
+    this.endGame(reason);
+    return true;
   }
 
   bodyThreshold() {
@@ -1424,6 +1447,7 @@ export class Game {
 
   resolveActions() {
     this.clearTimers();
+    this.searchedThisHour = new Set();
     for (const p of this.alivePlayers()) if (!this.actions.has(p.id)) this.actions.set(p.id, { type: 'rest', auto: true });
     const order = { sabotage: 0, lock: 1, unlock: 1, doorwork: 1, attack: 2, mixFood: 4, wash: 6, grope: 9, repairPower: 11, steal: 3, poisonFood: 4, trap: 4, craft: 5, clean: 6, moveBody: 7, interrogate: 8, take: 9, drop: 10, hide: 10, exit_power: 11, search: 12, examine: 12, eat: 13, exit: 14, rest: 15 };
     const list = shuffle([...this.actions.entries()]).sort((a, b) => (order[a[1].type] ?? 20) - (order[b[1].type] ?? 20));
@@ -1444,6 +1468,7 @@ export class Game {
         this.log.error(`[room ${this.code}] action ${a.type} failed`, err);
       }
     }
+    this.shareDiscoveries(); // สำรวจร่วมกัน: คนที่อยู่ด้วยชี้ทางออก/ทางลับให้
     this.resolveRest();
     if (resolveExits(this, exitAttempts)) return;
     if (this.phase === PHASE.ENDED) return;
@@ -1469,7 +1494,7 @@ export class Game {
     this.botGhostChat(); // ผีบอททักทายผีใหม่/บ่นเหตุการณ์ของชั่วโมงนี้
 
     if (this.phase === PHASE.DAY) {
-      if (this.alivePlayers().length <= 1) return this.endGame('last_one');
+      if (this.checkEarlyEnd()) return;
       if (this.checkBodyThreshold()) return;
       this.step = STEP.REPORT;
       this.ready = new Set();
@@ -1499,6 +1524,34 @@ export class Game {
       p.ko.hours -= 1;
       if (p.ko.hours <= 0) this.wakeUp(p);
     }
+  }
+
+  // สำรวจร่วมกัน: คนที่สำรวจห้องนี้ในชั่วโมงนี้จะรู้ทางออก/ทางลับของห้องที่คนที่อยู่ด้วย (และมองเห็นกัน) รู้อยู่แล้วหรือเพิ่งเจอ — ไม่ต้องกระซิบบอกกันนอกเกม
+  shareDiscoveries() {
+    for (const id of this.searchedThisHour || []) {
+      const p = this.players.get(id);
+      if (!p?.alive || p.ko || p.outside || !this.canSee(p)) continue;
+      const z = this.zones.get(p.zoneId);
+      if (!z) continue;
+      const mates = this.awakeWith(p).filter((o) => o.id !== p.id && this.canSee(o));
+      if (!mates.length) continue;
+      for (const x of exitsIn(this, z.id)) {
+        if (x.open || knowsExit(p, x)) continue;
+        const guide = mates.find((o) => knowsExit(o, x));
+        if (!guide) continue;
+        discoverExit(this, p, x, `${this.nick(guide)}ที่สำรวจอยู่ด้วยกันชี้ให้คุณดู`);
+        this.recordEvent(`${this.nick(guide)}ชี้ทางออก "${x.name}" ให้${this.nick(p)}ที่${this.zn(z)}`);
+      }
+      for (const ps of this.passages.filter((x) => (x.a === z.id || x.b === z.id) && !p.knownPassages.has(x.id))) {
+        const guide = mates.find((o) => o.knownPassages.has(ps.id));
+        if (!guide) continue;
+        p.knownPassages.add(ps.id);
+        const other = ps.a === z.id ? ps.b : ps.a;
+        this.logTo(p, `🕳 ${this.nick(guide)}ที่สำรวจอยู่ด้วยกันชี้ให้คุณดูทางลับที่เชื่อมไป${this.zn(other)}`, 'escape');
+        this.recordEvent(`${this.nick(guide)}ชี้ทางลับให้${this.nick(p)}ที่${this.zn(z)}`);
+      }
+    }
+    this.searchedThisHour = new Set();
   }
 
   // ---------- แสงสว่าง / ไฟดับ ----------
@@ -2184,6 +2237,7 @@ export class Game {
 
   do_search(p) {
     const z = this.zones.get(p.zoneId);
+    (this.searchedThisHour ||= new Set()).add(p.id);
     const det = this.traitOf(p) === 'detective';
     const bonus = det ? ESCAPE.DETECTIVE_SEARCH_BONUS : 0;
     const lines = [];
@@ -2714,6 +2768,7 @@ export class Game {
             : ' · คดีทั้งหมดของวันนี้ปิดแล้ว ไม่มีฆาตกรเหลืออยู่'),
       );
       this.phase = PHASE.TRIAL_RESULT;
+      if (this.checkEarlyEnd()) return; // หลังประหาร: เหลือน้อยเกินไป/มีแต่คนที่เคยฆ่า → จบเกมทันที (หน้าจบยังโชว์เฉลยรอบนี้)
       this.emit();
     } else {
       this.systemMessage(`โหวตผิด! ${escaped.length ? `คนร้ายตัวจริงคือ ${escaped.map((id) => this.nick(this.players.get(id))).join(', ')} และรอดไปได้` : 'คดีนี้ไม่มีคนร้ายให้ลงโทษ'} — ทุกคนที่เหลือถูกประหาร เกมจบ`);
@@ -2807,9 +2862,17 @@ export class Game {
   // จบชั่วโมง → ชั่วโมงถัดไปในวันเดิม
   nextTurn() {
     if (this.phase === PHASE.ENDED) return;
-    if (this.alivePlayers().length <= 1) return this.endGame('last_one');
+    if (this.checkEarlyEnd()) return;
     if (CONFIG.MAX_HOURS && this.turn >= CONFIG.MAX_HOURS) return this.endGame('timeout');
-    if (this.hour >= CONFIG.HOURS_PER_DAY) return this.rolloverDay(); // ดึกแล้ว ไม่มีการตัดสิน → ขึ้นวันใหม่เอง
+    if (this.hour >= CONFIG.HOURS_PER_DAY) {
+      // ครบชั่วโมงสุดท้ายของวัน: มีศพที่ยังไม่ถูกพบ → ทุกคนรู้ว่ามีคนหายไป ศพถูกพบทันที (เข้ารอบเก็บหลักฐาน) · ไม่มีศพ → ป็อปอัพขึ้นวันใหม่
+      if ([...this.bodies.values()].some((b) => !b.judged && !b.announced)) {
+        this.systemMessage(`🌙 ครบ ${CONFIG.HOURS_PER_DAY} ชั่วโมงแล้ว — ตอนนับคนก่อนนอน พบว่ามีคนหายไป ทุกคนออกตามหาและพบศพทันที`);
+        this.startInvestigation().catch((e) => this.fail(e));
+        return;
+      }
+      return this.rolloverDay();
+    }
     for (const p of this.players.values()) if (p.stained !== null && p.stained < this.turn - 1) p.stained = null;
     this.beginTurn();
   }
@@ -2831,14 +2894,16 @@ export class Game {
         p.outside = false;
       }
     }
-    this.systemMessage(`🌙 ครบ ${CONFIG.HOURS_PER_DAY} ชั่วโมงแล้ว ดึกมาก ทุกคนกลับไปนอนที่ห้องนอนรวม — วันใหม่เริ่มขึ้น ร่องรอยทั่วไปถูกเก็บกวาด แต่ศพที่ยังไม่มีใครพบยังอยู่ที่เดิม`);
+    const text = `ครบ ${CONFIG.HOURS_PER_DAY} ชั่วโมงแล้วและไม่มีใครพบศพ ทุกคนกลับไปนอนที่ห้องนอนรวม — วันที่ ${this.day} เริ่มขึ้น ทุกคนฟื้นจากสลบ ร่องรอยทั่วไปถูกเก็บกวาด ของและประตูที่พังยังเป็นเหมือนเดิม`;
+    this.dayPopup = { day: this.day, turn: this.turn + 1, text };
+    this.systemMessage(`🌙 ${text}`);
     this.beginDay();
   }
 
   // หลังตัดสิน → วันใหม่
   nextDay() {
     if (this.phase === PHASE.ENDED) return;
-    if (this.alivePlayers().length <= 1) return this.endGame('last_one');
+    if (this.checkEarlyEnd()) return;
     if (CONFIG.MAX_HOURS && this.turn >= CONFIG.MAX_HOURS) return this.endGame('timeout');
     this.day++;
     this.resetAfterTrial();
@@ -2871,7 +2936,7 @@ export class Game {
   // ชั่วโมงถัดไปของรอบเก็บหลักฐาน (ยาวตามจำนวนศพ)
   nextInvestigationHour() {
     if (this.phase === PHASE.ENDED) return;
-    if (this.alivePlayers().length <= 1) return this.endGame('last_one');
+    if (this.checkEarlyEnd()) return;
     if (CONFIG.MAX_HOURS && this.turn >= CONFIG.MAX_HOURS) return this.endGame('timeout');
     this.investigation.hour++;
     this.hour++;
@@ -2890,7 +2955,7 @@ export class Game {
 
   continueHunt() {
     if (this.phase === PHASE.ENDED) return;
-    if (this.alivePlayers().length <= 1) return this.endGame('last_one');
+    if (this.checkEarlyEnd()) return;
     if (CONFIG.MAX_HOURS && this.turn >= CONFIG.MAX_HOURS) return this.endGame('timeout');
     this.collectJudgedCases(false);
     this.phase = PHASE.INVESTIGATION;
@@ -2993,6 +3058,8 @@ export class Game {
       escape: '🚪 ทุกคนที่ยังอยู่หนีออกมาได้! เกมจบ',
       wrong_vote: '☠ โหวตผิด — คนร้ายรอด ทุกคนที่เหลือถูกประหาร เกมจบ',
       last_one: '🏁 เหลือผู้รอดชีวิตเพียงคนเดียว เกมจบ',
+      few_left: '🏁 เหลือคนน้อยเกินกว่าจะเล่นต่อ (น้อยกว่าหนึ่งในสามของผู้เล่น) — ผู้ที่เหลือรอดชีวิต เกมจบ',
+      only_killers: '🩸 คนที่เหลือทุกคนล้วนเคยฆ่า ไม่มีใครให้สืบอีก — ผู้ที่เหลือรอดชีวิต เกมจบ',
       timeout: '⏳ ครบกำหนดชั่วโมงสูงสุด — ผู้ที่ยังมีชีวิตรอดได้รับการช่วยเหลือ เกมจบ',
     }[reason] || 'เกมจบแล้ว';
     this.systemMessage(msg);
@@ -3671,6 +3738,7 @@ export class Game {
       bodyThreshold: this.location ? this.bodyThreshold() : null,
       announcedCases: announced,
       announcement: this.announcement,
+      dayPopup: this.dayPopup,
       huntRound: this.huntRound,
       runoff: this.runoff ? { number: this.runoff.number, candidates: this.runoff.candidates, previousTally: this.runoff.previousTally } : null,
       specialEvent: ev ? { type: ev.type, day: ev.day, playerId: ev.playerId, playerName: ev.playerName, characterName: ev.characterName, title: ev.title, story: ev.story } : null,

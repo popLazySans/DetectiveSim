@@ -691,6 +691,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     }
   }
   if (game.endReason === 'last_one') assert(all.filter((p) => p.alive).length <= 1, 'last_one leaves ≤1 alive');
+  if (game.endReason === 'few_left') assert(all.filter((p) => p.alive).length < Math.floor(all.length / 3), 'few_left ends with fewer than a third alive');
+  if (game.endReason === 'only_killers') assert(all.filter((p) => p.alive).every((p) => p.kills > 0), 'only_killers ends when every survivor has killed');
   if (game.endReason === 'escape') {
     const uncaught = (p) => game.cases.some((c) => c.killerId === p.id && !c.judged);
     const survivors = all.filter((p) => p.fate === 'survivor');
@@ -1095,6 +1097,7 @@ async function unitTests() {
     // มีแค่ s1 ที่เดินมาเจอศพ v1 — ศพ v2 ยังไม่มีใครเห็น
     g4.bodies.get(v1.id).discoveredBy.add(s1.id);
     s1.knownBodies.add(v1.id);
+    g4.bodies.get(v2.id).discoveredBy.clear(); // คนลงมือเองนับเป็นผู้พบศพแล้ว — ล้างออกเพื่อจำลองศพที่ไม่มีใครเคยเห็น (เหมือนตายด้วยกับดัก)
     await g4.startInvestigation();
     assert(g4.phase === PHASE.INVESTIGATION && g4.huntRound === 1 && [...g4.bodies.values()].every((b) => b.announced) && g4.cases.every((c) => c.announced), 'finding one body announces every body');
     assert(g4.investigation.total === 3 && g4.investigation.hour === 1 && /3 ชั่วโมง/.test(g4.chat.at(-1).text), 'two bodies make a 3-hour investigation (1 + 1 per body)');
@@ -2236,8 +2239,140 @@ async function unitTests() {
     g18.clearTimers();
     assert(!food18.buff, 'a new day brings fresh food without the mixed-in medicine');
   }
+  // 22) สำรวจร่วมกัน (คนที่อยู่ด้วยชี้ทางออก/ทางลับให้ ไม่ได้ผลในความมืด) · คนฆ่าเองนับเป็นผู้พบศพ (กับดักไม่นับ) · ครบ 24 ชม. (มีศพ → ประกาศ · ไม่มี → ป็อปอัพวันใหม่) · จบเกมก่อนกำหนด
+  {
+    const g19 = new Game({ code: 'UNIT19', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids19 = ['v1-xxxxxxxx', 'v2-xxxxxxxx', 'v3-xxxxxxxx', 'v4-xxxxxxxx', 'v5-xxxxxxxx', 'v6-xxxxxxxx', 'v7-xxxxxxxx'];
+    for (const [i, id] of ids19.entries()) g19.addPlayer({ id, name: `ร่วม ${i + 1}` });
+    g19.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g19.start(ids19[0]);
+    g19.clearTimers();
+    const [a19, b19, c19, d19, e19, f19, h19] = ids19.map((id) => g19.players.get(id));
+    for (const p of [a19, b19, c19, d19, e19, f19, h19]) {
+      p.inventory = [];
+      p.outside = false;
+      g19.charOf(p).ultimate.trait = 'none';
+    }
+    g19.phase = PHASE.DAY;
+    g19.step = STEP.ACT;
+    const exit19 = [...g19.exits.values()][0];
+    const X19 = g19.zones.get(exit19.zoneId);
+    const ps19 = g19.passages[0];
+    for (const p of [a19, b19, c19, d19]) p.zoneId = X19.id;
+    exit19.discoveredBy.add(a19.id);
+    g19.searchedThisHour = new Set();
+    Math.random = () => 0.99; // สุ่มไม่เจอ
+    g19.do_search(b19);
+    Math.random = realRandom;
+    assert(!exit19.discoveredBy.has(b19.id), 'the roll itself fails');
+    g19.shareDiscoveries();
+    assert(exit19.discoveredBy.has(b19.id) && b19.log.at(-1).text.includes('ชี้ให้คุณดู'), 'searching next to someone who already knows the exit reveals it for sure');
+    assert(!exit19.discoveredBy.has(c19.id), 'people who did not search are not told');
+    // สำรวจพร้อมกัน: c เจอ (สุ่มติด) d ไม่เจอ → d รู้ตามเพราะ c
+    exit19.discoveredBy.delete(a19.id);
+    a19.zoneId = g19.location.sleepZoneId;
+    b19.zoneId = g19.location.sleepZoneId;
+    g19.searchedThisHour = new Set();
+    Math.random = () => 0.01;
+    g19.do_search(c19);
+    Math.random = () => 0.99;
+    g19.do_search(d19);
+    Math.random = realRandom;
+    assert(exit19.discoveredBy.has(c19.id) && !exit19.discoveredBy.has(d19.id), 'only one of the two searchers rolled a find');
+    g19.shareDiscoveries();
+    assert(exit19.discoveredBy.has(d19.id), 'searching together shares the find in the same hour');
+    // ทางลับก็แบ่งกัน · ในความมืดไม่มีการชี้ให้ดู
+    const P19 = g19.zones.get(ps19.a);
+    e19.zoneId = f19.zoneId = P19.id;
+    e19.knownPassages.add(ps19.id);
+    g19.searchedThisHour = new Set();
+    Math.random = () => 0.99;
+    g19.do_search(f19);
+    Math.random = realRandom;
+    g19.blackout = { since: g19.turn, by: null };
+    g19.shareDiscoveries();
+    assert(!f19.knownPassages.has(ps19.id), 'in the dark nobody can point anything out');
+    g19.blackout = null;
+    g19.searchedThisHour = new Set([f19.id]);
+    g19.shareDiscoveries();
+    assert(f19.knownPassages.has(ps19.id) && /ทางลับ/.test(f19.log.at(-1).text), 'a known passage is shared the same way');
+    // คนฆ่าเองนับเป็นผู้พบศพคนแรก · กับดักไม่นับ
+    const R19 = [...g19.zones.values()].find((z) => z.id !== g19.location.sleepZoneId && z.id !== X19.id && z.id !== P19.id);
+    a19.zoneId = h19.zoneId = R19.id;
+    a19.inventory = [{ id: 'kn19', name: 'มีดทดสอบ', description: 'คมกริบ', kind: 'weapon', portable: true, hidden: false, isPart: false }];
+    Math.random = () => 0;
+    g19.do_attack(a19, { targetId: h19.id });
+    Math.random = realRandom;
+    assert(!h19.alive && g19.bodies.get(h19.id).discoveredBy.has(a19.id) && g19.bodies.get(h19.id).discoveredBy.size === 1, 'a hands-on killer counts as the first body discoverer');
+    const T19 = g19.zones.get(ps19.b);
+    T19.traps.push({ setterId: b19.id, item: { id: 'trap19', name: 'กับดักทดสอบ', kind: 'trap', trapType: 'blade', wound: 'sharp', weaponName: 'ขวานทดสอบ', strikerTags: ['sharp'], strikerKind: 'weapon', otherPart: { name: 'เชือก', kind: 'rope', description: '' } }, turn: g19.turn, side: 'inside' });
+    g19.triggerTrap(T19, T19.traps[0], f19);
+    assert(!f19.alive && !g19.bodies.get(f19.id).discoveredBy.has(b19.id), 'a trap setter does not count until he sees the body himself');
+    b19.zoneId = T19.id;
+    g19.moves = new Map([...g19.alivePlayers().map((p) => [p.id, p.zoneId])]);
+    g19.step = STEP.MOVE;
+    g19.resolveMoves();
+    assert(g19.bodies.get(f19.id).discoveredBy.has(b19.id), 'the trap setter counts once he walks in and sees the body');
+    g19.clearTimers();
+    // ครบ 24 ชั่วโมงโดยมีศพที่ยังไม่ถูกพบ → ประกาศพบศพทันที
+    g19.phase = PHASE.DAY;
+    g19.step = STEP.REPORT;
+    g19.hour = CONFIG.HOURS_PER_DAY;
+    g19.nextTurn();
+    await new Promise((r) => setTimeout(r, 30));
+    g19.clearTimers();
+    assert(g19.phase === PHASE.INVESTIGATION && [...g19.bodies.values()].every((b) => b.announced) && g19.chat.some((m) => m.system && /มีคนหายไป/.test(m.text)), 'at the end of the day hidden bodies are found at once');
+    // ครบ 24 ชั่วโมงโดยไม่มีศพ → ป็อปอัพขึ้นวันใหม่
+    const g20 = new Game({ code: 'UNIT20', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids20 = ['y1-xxxxxxxx', 'y2-xxxxxxxx', 'y3-xxxxxxxx'];
+    for (const [i, id] of ids20.entries()) g20.addPlayer({ id, name: `วัน ${i + 1}` });
+    g20.onChange = () => {};
+    await g20.start(ids20[0]);
+    g20.clearTimers();
+    g20.phase = PHASE.DAY;
+    g20.step = STEP.REPORT;
+    g20.hour = CONFIG.HOURS_PER_DAY;
+    const day20 = g20.day;
+    g20.nextTurn();
+    g20.clearTimers();
+    assert(g20.day === day20 + 1 && g20.hour === 1 && g20.dayPopup?.day === g20.day && g20.viewFor(ids20[0]).dayPopup?.text.includes('ไม่มีใครพบศพ'), 'with no bodies the day rolls over with a popup');
+    // จบเกมก่อนกำหนด: เหลือน้อยกว่า ⌊9/3⌋ = 3
+    const g21 = new Game({ code: 'UNIT21', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids21 = Array.from({ length: 9 }, (_, i) => `n${i + 1}-xxxxxxxx`);
+    for (const [i, id] of ids21.entries()) g21.addPlayer({ id, name: `จบ ${i + 1}` });
+    g21.onChange = () => {};
+    await g21.start(ids21[0]);
+    g21.clearTimers();
+    g21.phase = PHASE.DAY;
+    g21.step = STEP.ACT;
+    const ps21 = ids21.map((id) => g21.players.get(id));
+    const Z21 = [...g21.zones.values()].find((z) => z.id !== g21.location.sleepZoneId);
+    for (const p of ps21) p.zoneId = Z21.id;
+    for (const v of ps21.slice(2, 8)) g21.killPlayer(v, { cause: 'attack', killerId: ps21[0].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z21.id, outside: false, messy: false, witnesses: [] });
+    assert(g21.alivePlayers().length === 3 && !g21.checkEarlyEnd() && g21.phase !== PHASE.ENDED, 'three of nine alive is still enough to keep playing');
+    g21.killPlayer(ps21[8], { cause: 'attack', killerId: ps21[1].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z21.id, outside: false, messy: false, witnesses: [] });
+    assert(g21.checkEarlyEnd() && g21.phase === PHASE.ENDED && g21.endReason === 'few_left' && ps21[0].fate === 'survivor' && ps21[1].fate === 'survivor', 'fewer than a third alive ends the game at once with the rest as survivors');
+    // จบเกมก่อนกำหนด: คนที่เหลือล้วนเคยฆ่า
+    const g22 = new Game({ code: 'UNIT22', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids22 = ['o1-xxxxxxxx', 'o2-xxxxxxxx', 'o3-xxxxxxxx', 'o4-xxxxxxxx', 'o5-xxxxxxxx', 'o6-xxxxxxxx'];
+    for (const [i, id] of ids22.entries()) g22.addPlayer({ id, name: `ฆ่า ${i + 1}` });
+    g22.onChange = () => {};
+    await g22.start(ids22[0]);
+    g22.clearTimers();
+    g22.phase = PHASE.DAY;
+    g22.step = STEP.ACT;
+    const ps22 = ids22.map((id) => g22.players.get(id));
+    const Z22 = [...g22.zones.values()].find((z) => z.id !== g22.location.sleepZoneId);
+    for (const p of ps22) p.zoneId = Z22.id;
+    g22.killPlayer(ps22[3], { cause: 'attack', killerId: ps22[0].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z22.id, outside: false, messy: false, witnesses: [] });
+    g22.killPlayer(ps22[4], { cause: 'attack', killerId: ps22[1].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z22.id, outside: false, messy: false, witnesses: [] });
+    assert(!g22.checkEarlyEnd(), 'an innocent survivor keeps the game going');
+    g22.killPlayer(ps22[5], { cause: 'attack', killerId: ps22[2].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z22.id, outside: false, messy: false, witnesses: [] });
+    assert(g22.checkEarlyEnd() && g22.endReason === 'only_killers' && ps22.slice(0, 3).every((p) => p.fate === 'survivor'), 'when everyone left has killed, the game ends and they survive');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers)');
 }
 
 try {
