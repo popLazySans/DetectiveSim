@@ -15,11 +15,12 @@ export const KIND_LABEL = {
   clue: 'แผนผัง/บันทึก',
   part: 'ชิ้นส่วนสำหรับทางออก',
   trap: 'กับดักที่ประกอบแล้ว',
+  medicine: 'ยาบำรุง/ยารักษา (ผสมอาหารแล้วคนกินได้บัฟ)',
   power: 'แผงไฟ/กล้อง (ติดตั้งถาวร)',
   fixture: 'ของติดตั้งถาวร',
 };
 // ชนิดที่ใช้พกพาได้ (power/fixture/food เป็นของกลางในห้อง)
-export const PORTABLE_KINDS = new Set(['weapon', 'poison', 'tool', 'rope', 'key', 'lockpick', 'cloth', 'clue', 'part', 'trap']);
+export const PORTABLE_KINDS = new Set(['weapon', 'poison', 'tool', 'rope', 'key', 'lockpick', 'cloth', 'clue', 'part', 'trap', 'medicine']);
 
 // สายที่นำไฟฟ้าได้จริง (ใช้ประกอบกับดักไฟช็อต) — ดูจากชื่อ: สายไฟ/สายพ่วง/เคเบิล ส่วนเชือก สายรัด และเทปพันสายไฟ (ฉนวน) ไม่นับ
 export const isConductive = (item) => !!item && item.kind === 'rope' && /สายไฟ|สายพ่วง|เคเบิล|ไฟฟ้า|ทองแดง|สายชาร์จ/.test(String(item.name || '')) && !/เทป/.test(String(item.name || ''));
@@ -149,7 +150,7 @@ export const POISON_NOTICE = { medical: 0.5, detective: 0.5, default: 0.15 }; //
 // heavy = หนักพอจะทุบ/ถ่วง · sharp = มีคม/ปลายแหลม · firearm = ยิงได้ (กระสุนจำกัด) · fastener = เครื่องมือช่างที่ยึด/ขัน/ตอก/ปอกสายได้
 // conductive = สายไฟที่นำไฟฟ้า · cord = เส้นที่ผูก/ขึงได้ (เชือกทุกเส้น) · injector = เข็มฉีดยา (พาหะวางยาตรง)
 // pungent = ยากลิ่น/รสชัด (คนกินสังเกตง่าย) · tasteless = ไร้สีไร้รส (สังเกตยาก) · bloodOnly = พิษที่ต้องเข้ากระแสเลือด (ผสมอาหารไม่ได้) · sedative = ยานอนหลับ/ยาสลบ ทำให้สลบเท่านั้น
-export const TAG_LABEL = { heavy: 'หนัก', sharp: 'มีคม', firearm: 'ยิงได้', fastener: 'เครื่องมือช่าง', conductive: 'นำไฟฟ้า', injector: 'ฉีดได้', pungent: 'กลิ่นฉุน', tasteless: 'ไร้สีไร้รส', bloodOnly: 'ต้องเข้ากระแสเลือด', sedative: 'ทำให้สลบ', light: 'ส่องสว่าง', nightvision: 'มองในที่มืด (คนเดียว)', rod: 'ค้ำประตูได้' };
+export const TAG_LABEL = { heavy: 'หนัก', sharp: 'มีคม', firearm: 'ยิงได้', fastener: 'เครื่องมือช่าง', conductive: 'นำไฟฟ้า', injector: 'ฉีดได้', pungent: 'กลิ่นฉุน', tasteless: 'ไร้สีไร้รส', bloodOnly: 'ต้องเข้ากระแสเลือด', sedative: 'ทำให้สลบ', light: 'ส่องสว่าง', nightvision: 'มองในที่มืด (คนเดียว)', rod: 'ค้ำประตูได้', tonic: 'บำรุง: ภารกิจถัดไป +1 ชม.', remedy: 'รักษา: ต้านทานสลบ 1 ครั้ง' };
 const TAG_RX = {
   heavy: /ถัง|ประแจ|ค้อน|กระทะ|พลั่ว|ฟืน|ท่อน|เครื่องเงิน|กาน้ำ|ลูกบอล|โคมไฟ|เบสบอล|ที่เขี่ย|ขวด|เชิงเทียน|ขวาน|หิน|ตุ้ม|ดัมเบล|สมอ|แท่ง|ไม้กอล์ฟ|ตะบอง|กระบอง|หนัก/,
   sharp: /มีด|กรรไกร|ขวาน|แหลม|ผ่าตัด|ตัดเนื้อ|ไขควง|เปิดไวน์|ดาบ|หอก|เคียว|เลื่อย|สว่าน|ง่าม|คมกริบ|คมมาก|คมและ|มีคม|ใบคม|ปลายคม|สิ่ว|ตะขอ/, // ไม่ใช้ "คม" เดี่ยว ๆ เพราะจะไปจับ "โคมไฟ"
@@ -163,6 +164,8 @@ const TAG_RX = {
   light: /เทียน|ไฟฉาย|ไฟแช็ก|ตะเกียง|คบเพลิง|โคมไฟ|ไฟฉุกเฉิน|ไม้ขีด|ส่องสว่าง/, // ของส่องสว่าง: ถือไว้แล้วทุกคนในห้องมองเห็นตอนไฟดับ
   nightvision: /มองกลางคืน|มองในที่มืด|night ?vision|อินฟราเรด/, // แว่น/หมวกมองกลางคืน: เห็นคนเดียว
   rod: /แท่งเหล็ก|เหล็กเส้น|ท่อเหล็ก|ท่อนเหล็ก|ชะแลง|เบสบอล|ไม้คิว|คานเหล็ก|ท่อนไม้|กระบอง|ไม้ตีพรม|ด้ามไม้ยาว/, // ใช้ค้ำประตูจากข้างใน
+  tonic: /บำรุง|วิตามิน|ชูกำลัง|โสม|เสริมพลัง|น้ำผึ้ง|เกลือแร่/, // ยาบำรุง: ภารกิจถัดไป +1 ชั่วโมง
+  remedy: /ยาแก้|ยารักษา|ยาสามัญ|ปฏิชีวนะ|ยาดม|ยาหม่อง|แอสไพริน|พาราเซตามอล|ยาลดไข้/, // ยารักษา: ต้านทานการสลบ 1 ครั้ง
 };
 export function tagsOf(item) {
   if (!item) return new Set();
@@ -183,6 +186,11 @@ export function tagsOf(item) {
   if (item.kind === 'rope') {
     out.add('cord');
     if (isConductive(item)) out.add('conductive');
+  }
+  if (item.kind === 'medicine') {
+    test('tonic');
+    test('remedy');
+    if (!out.size) out.add('tonic');
   }
   if (item.kind === 'poison') {
     test('pungent');

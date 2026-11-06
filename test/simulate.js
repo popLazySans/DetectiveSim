@@ -2186,8 +2186,58 @@ async function unitTests() {
     g17.do_repairPower(a17);
     assert(!g17.blackout && g17.canSee(b17), 'a tech repairs the generator in one hour and the lights return');
   }
+  // 21) ยาในอาหาร: ยาบำรุง → คนกินได้ภารกิจถัดไป +1 ชม. · ยารักษา → ฝืนไม่สลบ 1 ครั้ง · ยาพิษ/ยาสลบทำงานเหมือนเดิม
+  {
+    const g18 = new Game({ code: 'UNIT18', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids18 = ['h1-xxxxxxxx', 'h2-xxxxxxxx', 'h3-xxxxxxxx'];
+    for (const [i, id] of ids18.entries()) g18.addPlayer({ id, name: `ยา ${i + 1}` });
+    g18.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: true, LOCKED_ZONES: 0 });
+    await g18.start(ids18[0]);
+    g18.clearTimers();
+    const [a18, b18, c18] = ids18.map((id) => g18.players.get(id));
+    const zones18 = [...g18.zones.values()];
+    assert(zones18.flatMap((z) => z.items).some((i) => i.kind === 'medicine' && tagsOf(i).has('tonic')) && zones18.flatMap((z) => z.items).some((i) => i.kind === 'medicine' && tagsOf(i).has('remedy')), 'the world has a tonic and a remedy');
+    const F18 = zones18.find((z) => z.items.some((i) => i.kind === 'food' && !i.poisoned));
+    const food18 = F18.items.find((i) => i.kind === 'food');
+    for (const p of [a18, b18, c18]) {
+      p.zoneId = F18.id;
+      p.outside = false;
+      p.inventory = [];
+      p.objectives = [];
+      p.ko = null;
+      g18.charOf(p).ultimate.trait = 'none';
+    }
+    g18.phase = PHASE.DAY;
+    g18.step = STEP.ACT;
+    const tonic = { id: 'tonic18', name: 'ยาบำรุงกำลังทดสอบ', description: '', kind: 'medicine', portable: true, hidden: false, isPart: false };
+    const remedy = { id: 'remedy18', name: 'ยาแก้ปวดทดสอบ', description: '', kind: 'medicine', portable: true, hidden: false, isPart: false };
+    assert(tagsOf(tonic).has('tonic') && tagsOf(remedy).has('remedy'), 'medicines are tagged by their names');
+    a18.inventory = [tonic];
+    assert(g18.availableActions(a18).some((x) => x.type === 'mixFood' && x.itemId === tonic.id), 'a medicine can be mixed into the food');
+    g18.do_mixFood(a18, { itemId: tonic.id });
+    assert(food18.buff?.kind === 'tonic' && a18.inventory.length === 0, 'the tonic is in the food');
+    g18.do_eat(b18);
+    assert(b18.buffs.questPlus === 1 && g18.viewFor(b18.id).me.buffs.questPlus === 1, 'eating the food grants the quest-time buff');
+    b18.nextObjectiveTurn = 0;
+    g18.assignObjective(b18);
+    const ob = b18.objectives.at(-1);
+    assert(ob && ob.deadlineTurn - g18.turn === ob.hours && b18.buffs.questPlus === 0 && b18.log.some((l) => /ยาบำรุงที่กินไว้/.test(l.text)), 'the next objective gets the extra hour and the buff is used up');
+    food18.buff = null;
+    c18.inventory = [remedy];
+    g18.do_mixFood(c18, { itemId: remedy.id });
+    g18.do_eat(a18);
+    assert(a18.buffs.koResist === 1, 'eating remedy-laced food grants knockout resistance');
+    const dropped18 = g18.knockOut(a18, 2, { cause: 'attack', by: b18.id });
+    assert(!a18.ko && dropped18.length === 0 && a18.buffs.koResist === 0 && a18.log.some((l) => /ฝืนไม่สลบ/.test(l.text)), 'the first knockout is shrugged off and nothing drops');
+    g18.knockOut(a18, 2, { cause: 'attack', by: b18.id });
+    assert(a18.ko?.hours === 2, 'the second knockout works normally');
+    g18.rolloverDay();
+    g18.clearTimers();
+    assert(!food18.buff, 'a new day brings fresh food without the mixed-in medicine');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day)');
 }
 
 try {

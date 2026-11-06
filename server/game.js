@@ -144,6 +144,7 @@ const freshPlayerState = () => ({
   evidence: [],
   knownBodies: new Set(),
   knownPassages: new Set(), // ทางลับที่ค้นพบแล้ว (id)
+  buffs: { questPlus: 0, koResist: 0 }, // บัฟจากยาที่ผสมในอาหาร: ภารกิจถัดไป +ชั่วโมง · ต้านทานสลบ (ครั้ง)
   powerWork: null, // งานซ่อมเครื่องปั่นไฟค้างอยู่ { need, progress }
   zoneMemory: {},
   stained: null,
@@ -329,6 +330,14 @@ export class Game {
   knockOut(p, hours, { cause = 'attack', by = null } = {}) {
     const z = this.zones.get(p.zoneId);
     const dropped = [];
+    if (p.buffs?.koResist > 0 && !p.ko) {
+      // ยารักษาที่กินไว้: ฝืนไม่สลบ 1 ครั้ง (ของไม่หล่น)
+      p.buffs.koResist--;
+      this.logTo(p, '💊 ยาที่คุณกินไว้ช่วยให้คุณฝืนไม่สลบ — ตัวยังชา แต่ยังขยับได้', 'action');
+      for (const o of this.awakeWith(p)) if (o.id !== p.id) this.logTo(o, `👀 ${this.nick(p)}โซเซไปครู่หนึ่งแล้วตั้งหลักได้ ไม่สลบ`, 'witness');
+      this.recordEvent(`${this.nick(p)}ฝืนไม่สลบได้เพราะยาที่กินไว้`);
+      return dropped;
+    }
     if (!p.ko) {
       const n = Math.ceil(p.inventory.length / 2);
       for (const it of shuffle(p.inventory).slice(0, n)) {
@@ -702,6 +711,9 @@ export class Game {
       pick(explore).items.push({ id: `it_${nextId()}`, name, description, kind: 'tool', portable: true, hidden: false, isPart: false });
       lights++;
     }
+    // ยาบำรุง/ยารักษา (ผสมอาหารเพื่อบัฟ): อย่างน้อยอย่างละ 1 ชิ้นต่อสถานที่
+    const MEDS = [['ยาบำรุงกำลัง', 'ขวดสีเหลือง ดื่มแล้วกระปรี้กระเปร่า'], ['ยาแก้ปวดสามัญ', 'แผงยาสามัญประจำบ้าน ช่วยให้ทนอาการมึนงง']];
+    for (const [name, description] of MEDS) if (!allItems().some((i) => i.kind === 'medicine' && tagsOf(i).has(tagsOf({ name, description, kind: 'medicine' }).values().next().value))) pick(explore).items.push({ id: `it_${nextId()}`, name, description, kind: 'medicine', portable: true, hidden: false, isPart: false });
     if (!allItems().some((i) => tagsOf(i).has('nightvision'))) pick(explore).items.push({ id: `it_${nextId()}`, name: 'แว่นมองกลางคืน', description: 'มองเห็นในที่มืดได้ — เฉพาะคนที่ใส่', kind: 'tool', portable: true, hidden: true, isPart: false });
     // กุญแจ: ทั้งเกมมี 1–2 ดอก (LOCKS.MAX_KEYS) ดอกหนึ่งไขได้ 1–3 ห้อง (LOCKS.ROOMS_PER_KEY) แต่ละห้องมีกุญแจที่ไขได้ไม่เกินดอกเดียว
     // ห้องที่ล็อกตั้งแต่เริ่มมีกุญแจเสมอ ห้องอื่นบางห้องไม่มีกุญแจเลย (ล็อกไม่ได้ เข้าได้เสมอ) · กุญแจวางให้เห็นในห้องที่ไม่ได้ล็อกและไม่ใช่ห้องที่มันไข
@@ -800,6 +812,12 @@ export class Game {
   assignObjective(p) {
     const o = makeObjective(this, p);
     if (!o) return;
+    if (p.buffs?.questPlus) {
+      o.hours += p.buffs.questPlus;
+      o.deadlineTurn += p.buffs.questPlus;
+      this.logTo(p, `💊 ยาบำรุงที่กินไว้ให้เวลาภารกิจเพิ่ม ${p.buffs.questPlus} ชั่วโมง`, 'objective');
+      p.buffs.questPlus = 0;
+    }
     p.objectives.push(o);
     if (p.objectives.length > 4) p.objectives.splice(0, p.objectives.length - 4);
     p.nextObjectiveTurn = o.deadlineTurn;
@@ -1332,6 +1350,12 @@ export class Game {
           out.push({ type: 'trap', itemId: it.id, label: `🪤 วางกับดัก "${it.name}" ที่ทางเข้าห้องนี้`, desc: `${TRAP_TYPES[it.trapType]?.label || ''} — คนต่อไปที่เข้ามา (ที่ไม่ใช่คุณ) มีโอกาสโดน ${Math.round(TRAP_TRIGGER_CHANCE * 100)}% ถ้าเขาตาย คุณคือคนร้าย`, danger: true, disabled: !ok, reason: ok ? '' : `วางได้เฉพาะห้องที่มี${KIND_LABEL[r.placeNeeds]}` });
         }
       }
+      if (food && !food.buff) {
+        for (const it of p.inventory.filter((i) => i.kind === 'medicine')) {
+          const tonic = tagsOf(it).has('tonic');
+          out.push({ type: 'mixFood', itemId: it.id, label: `💊 ผสม${it.name}ลงใน${food.name}`, desc: tonic ? 'ใครมากินอาหารนี้จะได้เวลาภารกิจถัดไป +1 ชั่วโมง (รวมตัวคุณเองถ้ากิน)' : 'ใครมากินอาหารนี้จะต้านทานการสลบได้ 1 ครั้ง (รวมตัวคุณเองถ้ากิน)' });
+        }
+      }
       if (food && !food.poisoned) {
         for (const it of p.inventory.filter((i) => i.kind === 'poison' && !tagsOf(i).has('bloodOnly'))) {
           // พิษที่ต้องเข้ากระแสเลือด (พิษแมงกะพรุน) ผสมอาหารไม่ได้ · ยากลิ่นฉุนสังเกตง่าย ยาไร้สีไร้รสสังเกตยาก
@@ -1401,7 +1425,7 @@ export class Game {
   resolveActions() {
     this.clearTimers();
     for (const p of this.alivePlayers()) if (!this.actions.has(p.id)) this.actions.set(p.id, { type: 'rest', auto: true });
-    const order = { sabotage: 0, lock: 1, unlock: 1, doorwork: 1, attack: 2, wash: 6, grope: 9, repairPower: 11, steal: 3, poisonFood: 4, trap: 4, craft: 5, clean: 6, moveBody: 7, interrogate: 8, take: 9, drop: 10, hide: 10, exit_power: 11, search: 12, examine: 12, eat: 13, exit: 14, rest: 15 };
+    const order = { sabotage: 0, lock: 1, unlock: 1, doorwork: 1, attack: 2, mixFood: 4, wash: 6, grope: 9, repairPower: 11, steal: 3, poisonFood: 4, trap: 4, craft: 5, clean: 6, moveBody: 7, interrogate: 8, take: 9, drop: 10, hide: 10, exit_power: 11, search: 12, examine: 12, eat: 13, exit: 14, rest: 15 };
     const list = shuffle([...this.actions.entries()]).sort((a, b) => (order[a[1].type] ?? 20) - (order[b[1].type] ?? 20));
     const exitAttempts = [];
     for (const [pid, a] of list) {
@@ -1775,6 +1799,22 @@ export class Game {
   }
 
   // ผสมยาพิษลงในอาหารกลางห้อง
+  // ผสมยาบำรุง/ยารักษาลงอาหารกลางห้อง: ใครกินได้บัฟ (ยาบำรุง = ภารกิจถัดไป +1 ชม. · ยารักษา = ต้านทานสลบ 1 ครั้ง)
+  do_mixFood(p, a) {
+    const z = this.zones.get(p.zoneId);
+    const food = z.items.find((i) => i.kind === 'food');
+    const idx = p.inventory.findIndex((i) => i.id === a.itemId && i.kind === 'medicine');
+    if (!food || idx < 0) return this.logTo(p, 'ผสมยาไม่ได้ที่นี่', 'danger');
+    if (food.buff) return this.logTo(p, `${food.name}มีคนผสมยาไว้ก่อนแล้ว`, 'danger');
+    const med = p.inventory.splice(idx, 1)[0];
+    const kind = tagsOf(med).has('remedy') ? 'remedy' : 'tonic';
+    food.buff = { setterId: p.id, name: med.name, kind, turn: this.turn };
+    const who = this.who(p, z);
+    this.logTo(p, `💊 คุณผสม${med.name}ลงใน${food.name}ที่${this.zn(z)} — ใครมากิน${kind === 'tonic' ? 'จะได้เวลาภารกิจถัดไป +1 ชั่วโมง' : 'จะต้านทานการสลบได้ 1 ครั้ง'}`, 'action');
+    for (const o of this.witnessesOf(p, z)) if (this.seen(p, 0.35)) this.logTo(o, `👀 คุณเห็น${who}ใส่อะไรบางอย่างลงใน${food.name}`, 'witness');
+    this.recordEvent(`${this.nick(p)}ผสม${med.name}ลงใน${food.name}ที่${this.zn(z)}`);
+  }
+
   do_poisonFood(p, a) {
     const z = this.zones.get(p.zoneId);
     const food = z.items.find((i) => i.kind === 'food');
@@ -1832,6 +1872,16 @@ export class Game {
       food.poisoned = null; // อาหารชุดนั้นถูกทิ้ง/รู้แล้วว่ามีพิษ
       this.recordEvent(`${this.nick(p)}กินอาหารมีพิษ (${kase.weapon.name}) ของ${setter ? this.nick(setter) : '?'}ที่${this.zn(z)}และเสียชีวิต`);
       return;
+    }
+    if (food.buff) {
+      // ยาที่ผสมไว้ออกฤทธิ์กับคนกิน (ไม่หมดไปจากอาหาร จนกว่าจะขึ้นวันใหม่)
+      if (food.buff.kind === 'tonic') {
+        p.buffs.questPlus = Math.min(2, (p.buffs.questPlus || 0) + 1);
+        this.logTo(p, `💊 กินแล้วรู้สึกกระปรี้กระเปร่าผิดปกติ — ภารกิจถัดไปของคุณจะมีเวลาเพิ่ม ${p.buffs.questPlus} ชั่วโมง`, 'action');
+      } else {
+        p.buffs.koResist = 1;
+        this.logTo(p, '💊 กินแล้วรู้สึกหัวโล่งแจ่มใส — คุณจะฝืนไม่สลบได้ 1 ครั้ง', 'action');
+      }
     }
     this.logTo(p, `🍞 คุณกิน${food.name}และพักสักครู่ที่${this.zn(z)}${food.poisoned ? ' (คุณรู้ว่าต้องเลี่ยงส่วนไหน)' : ''}`, 'action');
     for (const o of this.witnessesOf(p, z)) if (chance(0.5)) this.logTo(o, `👀 คุณเห็น${who}นั่งกินอาหารอยู่ที่${this.zn(z)}`, 'witness');
@@ -2770,6 +2820,7 @@ export class Game {
     if (this.phase === PHASE.ENDED) return;
     this.day++;
     this.collectJudgedCases(true);
+    for (const z of this.zones.values()) for (const f of z.items) if (f.kind === 'food') f.buff = null; // อาหารชุดใหม่ของวัน
     for (const p of this.players.values()) {
       p.stained = null;
       p.doorWork = null;
@@ -2867,6 +2918,7 @@ export class Game {
   // ขึ้นวันใหม่ได้ต่อเมื่อทุกคดีของวันถูกตัดสินแล้ว (ไล่จับฆาตกรทีละคน) จึงไม่มีศพเหลือข้ามวัน · อาหารที่ยังมีพิษและประตูที่พังคงอยู่
   resetAfterTrial() {
     this.collectJudgedCases(true);
+    for (const z of this.zones.values()) for (const f of z.items) if (f.kind === 'food') f.buff = null; // อาหารชุดใหม่ของวัน
     for (const p of this.players.values()) {
       p.stained = null;
       p.doorWork = null;
@@ -3585,6 +3637,7 @@ export class Game {
             isDesignated: this.phase === PHASE.DAY && this.designatedId === me.id,
             inventory: me.inventory.map((i) => this.itemView(i)),
             inventoryMax: this.invMax(me),
+            buffs: { questPlus: me.buffs?.questPlus || 0, koResist: me.buffs?.koResist || 0 },
             objectives: me.objectives
               .filter((o) => !o.done || this.turn < me.nextObjectiveTurn || o.doneTurn === this.turn)
               .slice(-2)
