@@ -2882,8 +2882,8 @@ export class Game {
   rolloverDay() {
     if (this.phase === PHASE.ENDED) return;
     this.day++;
+    const trapsReset = this.resetTrapsAndFood();
     this.collectJudgedCases(true);
-    for (const z of this.zones.values()) for (const f of z.items) if (f.kind === 'food') f.buff = null; // อาหารชุดใหม่ของวัน
     for (const p of this.players.values()) {
       p.stained = null;
       p.doorWork = null;
@@ -2894,7 +2894,7 @@ export class Game {
         p.outside = false;
       }
     }
-    const text = `ครบ ${CONFIG.HOURS_PER_DAY} ชั่วโมงแล้วและไม่มีใครพบศพ ทุกคนกลับไปนอนที่ห้องนอนรวม — วันที่ ${this.day} เริ่มขึ้น ทุกคนฟื้นจากสลบ ร่องรอยทั่วไปถูกเก็บกวาด ของและประตูที่พังยังเป็นเหมือนเดิม`;
+    const text = `ครบ ${CONFIG.HOURS_PER_DAY} ชั่วโมงแล้วและไม่มีใครพบศพ ทุกคนกลับไปนอนที่ห้องนอนรวม — วันที่ ${this.day} เริ่มขึ้น ทุกคนฟื้นจากสลบ ร่องรอยทั่วไปถูกเก็บกวาด${trapsReset ? ` กับดักทุกชิ้น (${trapsReset}) ถูกถอดเป็นของธรรมดาวางไว้ที่เดิม` : ''} อาหารทุกห้องเป็นชุดใหม่ (ยาที่ผสมไว้หมดฤทธิ์) ประตูที่พังยังพังอยู่`;
     this.dayPopup = { day: this.day, turn: this.turn + 1, text };
     this.systemMessage(`🌙 ${text}`);
     this.beginDay();
@@ -2981,9 +2981,48 @@ export class Game {
   // วันใหม่หลังคดีปิดครบ: ทุกอย่างที่เกี่ยวกับคดีหายไปเหมือนไม่เคยเกิดขึ้น (ศพ หลักฐาน รอยเปื้อน ความจำเรื่องศพ)
   // ของของผู้ตายยังตกอยู่ตรงจุดที่ตาย (ถูกวางไว้ตั้งแต่ตอนตาย) ของในมือคนเป็นยังอยู่ ทุกคนกลับไปเริ่มที่ห้องนอนรวม
   // ขึ้นวันใหม่ได้ต่อเมื่อทุกคดีของวันถูกตัดสินแล้ว (ไล่จับฆาตกรทีละคน) จึงไม่มีศพเหลือข้ามวัน · อาหารที่ยังมีพิษและประตูที่พังคงอยู่
+  // ขึ้นวันใหม่: กับดักทุกชิ้น (ที่วางไว้ รวมกับดักประตู และที่ประกอบแล้วแต่ยังไม่วาง ทั้งในห้องและในกระเป๋า) ถูกถอดเป็นของธรรมดาวางไว้ตรงที่เดิม
+  // (ชิ้นที่ทำร้ายกลับเข้ากระเป๋าคนถือ ส่วนเครื่องมือ/เชือกวางในห้องนั้น) และยาที่ผสมในอาหารหมดฤทธิ์ — ฆาตกรเมื่อวานเอาแผนเดิมมาฆ่าคนวันนี้ไม่ได้ · คืนจำนวนกับดักที่ถอด
+  resetTrapsAndFood() {
+    const dismantle = (trap, z, holder) => {
+      const striker = { id: `it_${nextId()}`, name: trap.weaponName || trap.name, description: trap.strikerDesc || '', kind: trap.strikerKind || 'weapon', portable: true, hidden: false, isPart: false, originZoneId: z.id };
+      if (Number.isInteger(trap.strikerAmmo)) striker.ammo = trap.strikerAmmo;
+      const other = trap.otherPart ? { id: `it_${nextId()}`, name: trap.otherPart.name, description: trap.otherPart.description || '', kind: trap.otherPart.kind || 'tool', portable: true, hidden: false, isPart: false, originZoneId: z.id } : null;
+      if (holder) holder.inventory.push(striker);
+      else z.items.push(striker);
+      if (other) z.items.push(other);
+    };
+    let n = 0;
+    for (const z of this.zones.values()) {
+      for (const t of z.traps) {
+        dismantle(t.item, z, null);
+        n++;
+      }
+      z.traps = [];
+      for (const it of z.items.filter((i) => i.kind === 'trap')) {
+        z.items.splice(z.items.indexOf(it), 1);
+        dismantle(it, z, null);
+        n++;
+      }
+      for (const f of z.items) {
+        if (f.kind !== 'food') continue;
+        f.poisoned = null;
+        f.buff = null;
+      }
+    }
+    for (const p of this.players.values()) {
+      for (const it of p.inventory.filter((i) => i.kind === 'trap')) {
+        p.inventory.splice(p.inventory.indexOf(it), 1);
+        dismantle(it, this.zones.get(p.zoneId) || this.zones.get(this.location.sleepZoneId), p);
+        n++;
+      }
+    }
+    return n;
+  }
+
   resetAfterTrial() {
+    const trapsReset = this.resetTrapsAndFood(); // กับดักทุกชิ้นถูกถอด ยาในอาหารหมดฤทธิ์ — ฆาตกรเมื่อวานใช้แผนเดิมในวันนี้ไม่ได้
     this.collectJudgedCases(true);
-    for (const z of this.zones.values()) for (const f of z.items) if (f.kind === 'food') f.buff = null; // อาหารชุดใหม่ของวัน
     for (const p of this.players.values()) {
       p.stained = null;
       p.doorWork = null;
@@ -2994,7 +3033,7 @@ export class Game {
         p.outside = false;
       }
     }
-    this.systemMessage('🌅 เช้าวันใหม่ ทุกคนตื่นขึ้นที่ห้องนอนรวม — ร่องรอยของคดีเมื่อวานถูกเก็บกวาดจนเหมือนไม่เคยเกิดขึ้น ของของผู้เสียชีวิตยังตกอยู่ตรงจุดที่เขาล้มลง');
+    this.systemMessage(`🌅 เช้าวันใหม่ ทุกคนตื่นขึ้นที่ห้องนอนรวม — ร่องรอยของคดีเมื่อวานถูกเก็บกวาดจนเหมือนไม่เคยเกิดขึ้น ของของผู้เสียชีวิตยังตกอยู่ตรงจุดที่เขาล้มลง${trapsReset ? ` · กับดักทุกชิ้น (${trapsReset}) ถูกถอดเป็นของธรรมดาวางไว้ที่เดิม` : ''} อาหารทุกห้องเป็นชุดใหม่ (ยาที่ผสมไว้หมดฤทธิ์)`);
   }
 
   // อีเวนต์พิเศษ: ผู้ตายบางคนอาจ "ไม่ได้ตายจริง" และกลับเข้าเกม (เฉพาะคดีที่ตัดสินแล้ว)

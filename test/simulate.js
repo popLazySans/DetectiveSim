@@ -600,7 +600,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               const rv = game.viewFor(ids[0]);
               assert(rv.lastResult?.cases?.length === r.cases.length, 'result visible after trial');
               const dayBefore = game.day;
-              const invBefore = new Map(game.alivePlayers().map((p) => [p.id, p.inventory.map((i) => i.id).join(',')]));
+              const invBefore = new Map(game.alivePlayers().filter((p) => !p.inventory.some((i) => i.kind === 'trap')).map((p) => [p.id, p.inventory.map((i) => i.id).join(',')])); // กับดักในกระเป๋าถูกถอดตอนขึ้นวันใหม่ (ชิ้นที่ทำร้ายกลับมาเป็นของใหม่)
               const autoAll = () => game.chat.filter((m) => m.system && /ทุกคนที่ยังอยู่สลบหมด/.test(m.text)).length;
               const autoBefore = autoAll();
               await game.nextRound(host);
@@ -2159,7 +2159,7 @@ async function unitTests() {
     assert(g17.doorActions(a17).some((x) => x.type === 'breakPower'), 'the generator can be broken instantly');
     g17.instantDoorAction(a17.id, 'breakPower');
     assert(g17.blackout && g17.darkAt(PZ.id) && !g17.canSee(a17) && b17.log.at(-1).text.includes('ไฟทั้งอาคารดับ'), 'breaking the generator blacks out the whole building');
-    const D17 = O17;
+    const D17 = zones17.find((z) => z.id !== PZ.id && z.id !== g17.location.sleepZoneId); // ห้องมืดที่ไม่ใช่ห้องเครื่องปั่นไฟ (a17 ยืนอยู่ที่นั่น)
     D17.items.push(mk17('ของในความมืด', 'tool'));
     b17.zoneId = c17.zoneId = D17.id;
     g17.moves = new Map([[a17.id, PZ.id], [b17.id, D17.id], [c17.id, D17.id], [d17.id, P17.id]]);
@@ -2180,7 +2180,7 @@ async function unitTests() {
     assert(b17.inventory.length === invB + 1, 'groping grabs one random item');
     assert(g17.witnessesOf(b17).length === 0, 'nobody witnesses anything in the dark');
     c17.inventory.push(mk17('เทียนไขทดสอบ', 'tool', 'จุดส่องสว่างได้'));
-    assert(g17.canSee(b17) && g17.canSee(c17) && g17.witnessesOf(b17).length === 1 && g17.availableActions(b17).some((x) => x.type === 'search'), 'one candle in the room lets everyone there see again');
+    assert(g17.canSee(b17) && g17.canSee(c17) && g17.witnessesOf(b17).length === 1 && g17.availableActions(b17).some((x) => x.type === 'search'), `one candle in the room lets everyone there see again (seeB=${g17.canSee(b17)} seeC=${g17.canSee(c17)} wit=${JSON.stringify(g17.witnessesOf(b17).map((o) => `${o.name}${o.ko ? '(ko)' : ''}@${o.zoneId}`))} here=${JSON.stringify(g17.alivePlayers().filter((o) => o.zoneId === D17.id).map((o) => `${o.name}${o.outside ? '(out)' : ''}${o.ko ? '(ko)' : ''}`))} acts=${JSON.stringify(g17.availableActions(b17).map((x) => x.type))} inv=${JSON.stringify(b17.inventory.map((i) => i.name))})`);
     c17.inventory = [mk17('แว่นมองกลางคืนทดสอบ', 'tool')];
     assert(g17.canSee(c17) && !g17.canSee(b17), 'night-vision goggles help only the wearer');
     g17.actions = new Map();
@@ -2298,7 +2298,8 @@ async function unitTests() {
     g19.shareDiscoveries();
     assert(f19.knownPassages.has(ps19.id) && /ทางลับ/.test(f19.log.at(-1).text), 'a known passage is shared the same way');
     // คนฆ่าเองนับเป็นผู้พบศพคนแรก · กับดักไม่นับ
-    const R19 = [...g19.zones.values()].find((z) => z.id !== g19.location.sleepZoneId && z.id !== X19.id && z.id !== P19.id);
+    const R19 = [...g19.zones.values()].find((z) => z.id !== g19.location.sleepZoneId && z.id !== X19.id && z.id !== ps19.a && z.id !== ps19.b);
+    c19.zoneId = d19.zoneId = e19.zoneId = g19.location.sleepZoneId; // ห้องทางลับอาจเป็นห้องทางออก — ย้ายคนออกไม่ให้ศพถูกพบครบ 3 คนก่อนเวลา
     a19.zoneId = h19.zoneId = R19.id;
     a19.inventory = [{ id: 'kn19', name: 'มีดทดสอบ', description: 'คมกริบ', kind: 'weapon', portable: true, hidden: false, isPart: false }];
     Math.random = () => 0;
@@ -2371,8 +2372,54 @@ async function unitTests() {
     g22.killPlayer(ps22[5], { cause: 'attack', killerId: ps22[2].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z22.id, outside: false, messy: false, witnesses: [] });
     assert(g22.checkEarlyEnd() && g22.endReason === 'only_killers' && ps22.slice(0, 3).every((p) => p.fate === 'survivor'), 'when everyone left has killed, the game ends and they survive');
   }
+  // 23) ขึ้นวันใหม่ถอดกับดักทุกชิ้น (ที่วางไว้/ในห้อง/ในกระเป๋า) เป็นของธรรมดาวางที่เดิม และยาในอาหารหมดฤทธิ์ — ทั้งทางหลังตัดสินและครบ 24 ชม.
+  {
+    const g23 = new Game({ code: 'UNIT23', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids23 = ['t1-xxxxxxxx', 't2-xxxxxxxx', 't3-xxxxxxxx'];
+    for (const [i, id] of ids23.entries()) g23.addPlayer({ id, name: `รีเซ็ต ${i + 1}` });
+    g23.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g23.start(ids23[0]);
+    g23.clearTimers();
+    const [a23, b23] = ids23.map((id) => g23.players.get(id));
+    const zones23 = [...g23.zones.values()];
+    const R23 = zones23.find((z) => z.id !== g23.location.sleepZoneId && !z.locked);
+    const F23 = zones23.find((z) => z.items.some((i) => i.kind === 'food'));
+    const mkt = (name, kind, description = '') => ({ id: `it_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false });
+    g23.phase = PHASE.DAY;
+    g23.step = STEP.ACT;
+    a23.zoneId = R23.id;
+    a23.inventory = [mkt('ขวานทดสอบ', 'weapon'), mkt('ไขควงทดสอบ', 'tool', 'ปลายแหลม')];
+    g23.do_craft(a23, { recipeId: 'door', itemId: a23.inventory[0].id, itemId2: a23.inventory[1].id });
+    const trapA = a23.inventory.find((i) => i.kind === 'trap');
+    Math.random = () => 0.5;
+    g23.do_trap(a23, { itemId: trapA.id });
+    Math.random = realRandom;
+    assert(R23.traps.length === 1, 'a door trap is armed');
+    b23.inventory = [mkt('ค้อนทดสอบ', 'weapon'), mkt('เชือกทดสอบ', 'rope')];
+    b23.zoneId = R23.id;
+    g23.do_craft(b23, { recipeId: 'blade', itemId: b23.inventory[0].id, itemId2: b23.inventory[1].id });
+    assert(b23.inventory.some((i) => i.kind === 'trap'), 'b holds an assembled trap');
+    const food23 = F23.items.find((i) => i.kind === 'food');
+    food23.poisoned = { setterId: a23.id, poisonName: 'ยาเบื่อหนู', poisonTags: ['tasteless'], turn: g23.turn };
+    food23.buff = { setterId: b23.id, name: 'ยาบำรุง', kind: 'tonic', turn: g23.turn };
+    g23.hour = CONFIG.HOURS_PER_DAY;
+    g23.step = STEP.REPORT;
+    g23.nextTurn();
+    g23.clearTimers();
+    assert(zones23.every((z) => z.traps.length === 0) && !zones23.some((z) => z.items.some((i) => i.kind === 'trap')) && !b23.inventory.some((i) => i.kind === 'trap'), 'the new day dismantles every trap, armed or carried');
+    assert(R23.items.some((i) => i.name === 'ขวานทดสอบ' && i.kind === 'weapon') && R23.items.some((i) => i.name === 'ไขควงทดสอบ' && i.kind === 'tool'), 'the armed door trap leaves its axe and screwdriver as ordinary items in that room');
+    assert(b23.inventory.some((i) => i.name === 'ค้อนทดสอบ') && R23.items.some((i) => i.name === 'เชือกทดสอบ'), 'a carried trap gives the striker back to its owner and drops the rope where he stood');
+    assert(!food23.poisoned && !food23.buff, 'mixed-in poison and medicine wear off with the new day');
+    assert(g23.chat.some((m) => m.system && /กับดักทุกชิ้น/.test(m.text)), 'players are told traps were dismantled');
+    // ทางหลังตัดสินก็รีเซ็ตเหมือนกัน
+    R23.traps.push({ setterId: a23.id, item: { id: 'tr23', name: 'กับดักทดสอบ', kind: 'trap', trapType: 'blade', wound: 'sharp', weaponName: 'มีดทดสอบ', strikerKind: 'weapon', strikerDesc: '', otherPart: { name: 'เชือกทดสอบ2', kind: 'rope', description: '' } }, turn: g23.turn, side: 'inside' });
+    food23.poisoned = { setterId: a23.id, poisonName: 'ยาเบื่อหนู', poisonTags: ['tasteless'], turn: g23.turn };
+    g23.resetAfterTrial();
+    assert(R23.traps.length === 0 && R23.items.some((i) => i.name === 'มีดทดสอบ') && !food23.poisoned, 'the post-trial reset dismantles traps and cleans the food too');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers), new day dismantles every trap and cleans mixed food');
 }
 
 try {
