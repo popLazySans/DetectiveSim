@@ -405,3 +405,8 @@ details.help summary { cursor: pointer; color: var(--cyan); }
 
 .hidepick { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; margin: 0.4rem 0; font-size: 0.9rem; }
 .hidepick label { display: inline-flex; align-items: center; gap: 0.3rem; }
+
+.msg.system.debug { white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; color: var(--cyan); opacity: 1; }
+.chip.bloody { border-color: var(--red); }
+.bagcheck { margin-top: 0.6rem; }
+.bagcheck select { max-width: 11rem; }

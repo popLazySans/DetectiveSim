@@ -133,6 +133,8 @@ io.on('connection', (socket) => {
   // การตัดสิน
   socket.on('vote:cast', handle(({ targetId }) => game().castVote(me(), String(targetId || ''))));
   socket.on('vote:confirm', handle(() => game().confirmVote(me())));
+  socket.on('trial:bagRequest', handle(({ targetId }) => game().requestBagCheck(me(), String(targetId || '')))); // ขอตรวจกระเป๋า
+  socket.on('trial:bagReply', handle(({ id, accept }) => game().replyBagCheck(me(), String(id || ''), !!accept)));
   socket.on('host:forceVote', handle(() => game().forceVote(me())));
   socket.on('host:nextRound', handle(async () => { await game().nextRound(me()); }));
   socket.on('host:restart', handle(() => game().restart(me())));

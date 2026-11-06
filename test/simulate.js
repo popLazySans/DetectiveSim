@@ -1979,8 +1979,77 @@ async function unitTests() {
     const rc15 = g15.lastResult.cases.find((c) => c.id === k15.id);
     assert(g15.phase === PHASE.ENDED && rc15.killerFate === 'escaped' && rc15.killerAlive === false && a15.fate === 'escaped', 'a wrong vote lets the killer escape and the verdict says so (not "died before trial")');
   }
+  // 19) เครื่องมือสืบสวน: อาวุธที่ใช้ฆ่าเปื้อนเลือด (เห็นในกระเป๋า/ในห้อง) ล้างได้ที่ห้องที่มีน้ำ (ใช้ชั่วโมง อ่างเก็บคราบ)
+  //     · ขอตรวจกระเป๋าตอนตัดสิน (เจ้าของยอม/ไม่ยอม บอทตอบเอง) · คำสั่ง /find /rooms (DEBUG_CHEATS) เห็นเฉพาะคนพิมพ์
+  {
+    const g16 = new Game({ code: 'UNIT16', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids16 = ['q1-xxxxxxxx', 'q2-xxxxxxxx', 'q3-xxxxxxxx', 'q4-xxxxxxxx'];
+    for (const [i, id] of ids16.entries()) g16.addPlayer({ id, name: `สืบ ${i + 1}` });
+    g16.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0, DEBUG_CHEATS: false });
+    await g16.start(ids16[0]);
+    g16.clearTimers();
+    const [a16, b16, c16, d16] = ids16.map((id) => g16.players.get(id));
+    const mk16 = (name, kind, description = '') => ({ id: `it_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false });
+    const R16 = [...g16.zones.values()].find((z) => z.id !== g16.location.sleepZoneId && !z.locked);
+    for (const p of [a16, b16, c16, d16]) {
+      p.zoneId = R16.id;
+      p.outside = false;
+      p.inventory = [];
+      g16.charOf(p).ultimate.trait = 'none';
+    }
+    g16.phase = PHASE.DAY;
+    g16.step = STEP.ACT;
+    const knife16 = mk16('มีดหั่นขนมปัง', 'weapon');
+    a16.inventory = [knife16];
+    Math.random = () => 0; // สำเร็จ + ฆ่า
+    g16.do_attack(a16, { targetId: c16.id });
+    Math.random = realRandom;
+    assert(!c16.alive && knife16.bloody === true && g16.itemView(knife16).bloody, 'the knife used to kill is bloodstained');
+    assert(!g16.availableActions(a16).some((x) => x.type === 'wash') || R16.water, 'washing is only offered where there is water');
+    const W16 = [...g16.zones.values()].find((z) => z.water && z.id !== R16.id) || (() => { R16.water = true; return R16; })();
+    a16.zoneId = W16.id;
+    a16.outside = false;
+    assert(g16.availableActions(a16).some((x) => x.type === 'wash'), 'a room with water offers washing');
+    g16.do_wash(a16);
+    assert(!knife16.bloody && W16.evidence.some((e) => e.kind === 'wash' && e.hidden), 'washing cleans the blade but the sink keeps a faint hidden trace');
+    assert(!g16.availableActions(a16).some((x) => x.type === 'wash'), 'nothing left to wash');
+    // ขอตรวจกระเป๋า
+    g16.phase = PHASE.TRIAL;
+    b16.inventory = [mk16('ประแจทดสอบ', 'tool')];
+    g16.requestBagCheck(d16.id, b16.id);
+    const nb = (g16.notices.get(b16.id) || []).find((n) => n.kind === 'bagRequest');
+    assert(nb && nb.fromId === d16.id && /ขอตรวจกระเป๋า/.test(g16.chat.at(-1).text), 'the owner gets a request to answer and everyone sees the request');
+    let dup16 = false;
+    try { g16.requestBagCheck(d16.id, b16.id); } catch { dup16 = true; }
+    assert(dup16, 'no duplicate requests while one is pending');
+    g16.replyBagCheck(b16.id, nb.id, true);
+    assert(/เปิดกระเป๋า/.test(g16.chat.at(-1).text) && g16.chat.at(-1).text.includes('ประแจทดสอบ') && !(g16.notices.get(b16.id) || []).some((n) => n.kind === 'bagRequest'), 'accepting shows the bag to everyone and clears the request');
+    g16.requestBagCheck(d16.id, a16.id);
+    const na = (g16.notices.get(a16.id) || []).find((n) => n.kind === 'bagRequest');
+    g16.replyBagCheck(a16.id, na.id, false);
+    assert(/ไม่ยอม/.test(g16.chat.at(-1).text), 'refusing is announced');
+    d16.isBot = true;
+    g16.requestBagCheck(b16.id, d16.id);
+    assert(/เปิดกระเป๋า|ไม่ยอม/.test(g16.chat.at(-1).text), 'bots answer bag checks by themselves');
+    d16.isBot = false;
+    // คำสั่งตรวจสอบ
+    g16.phase = PHASE.DAY;
+    g16.sendChat(a16.id, '/find มีดหั่น');
+    assert(!g16.chat.at(-1).debug, 'slash commands are plain chat unless DEBUG_CHEATS is on');
+    CONFIG.DEBUG_CHEATS = true;
+    g16.sendChat(a16.id, '/find มีดหั่น');
+    const dm = g16.chat.at(-1);
+    assert(dm.debug && dm.to === a16.id && dm.text.includes('มีดหั่นขนมปัง') && dm.text.includes(g16.nick(a16)), 'the find command locates the knife in the right hands');
+    assert(g16.viewFor(a16.id).chat.some((m) => m.debug) && !g16.viewFor(b16.id).chat.some((m) => m.debug), 'debug answers are private to the sender');
+    g16.sendChat(a16.id, '/rooms');
+    assert(g16.chat.at(-1).text.includes(W16.name) && /🚿/.test(g16.chat.at(-1).text), 'the rooms command lists every room with its flags');
+    g16.sendChat(a16.id, '/players');
+    assert(g16.chat.at(-1).text.includes(a16.name) && g16.chat.at(-1).text.includes('มีดหั่นขนมปัง'), 'the players command lists everyone with their items');
+    CONFIG.DEBUG_CHEATS = false;
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands)');
 }
 
 try {

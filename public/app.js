@@ -202,6 +202,7 @@
             <li><b>แต่ละชั่วโมง:</b> ทุกคนเลือกห้องพร้อมกัน (ไม่มีใครรู้ว่าใครเลือกอะไร) → เห็นว่าใครอยู่ห้องเดียวกับคุณ เห็นของในห้อง → <b>หยิบ/วาง/ซ่อนของทำได้ทันทีไม่กินชั่วโมง</b> (ทั้งตอนเลือกแอ็กชันและตอนพัก) แล้วเลือกทำได้อีก 1 อย่าง: สำรวจ ลงมือฆ่า วางกับดัก ย้ายศพ ทำลายหลักฐาน ตรวจศพ… ทุกอย่างมีโอกาสสำเร็จ/พลาด/สำเร็จแบบเลอะเทอะ → พักชั่วโมง: อ่านบันทึก และ<b>ให้ของ</b>กับคนในห้องเดียวกันได้ · เดินไปเจอห้องที่ล็อก = <b>ยืนรอหน้าประตู (ข้างนอก)</b> ทำอะไรกับห้องไม่ได้ ทำได้แค่กับคนที่ยืนอยู่หน้าประตูด้วยกัน · <b>กับดักประตู</b> (อาวุธ+เครื่องมือ) วางข้างใน = คนที่เปิดประตูเข้ามาตาย วางข้างนอก = คนที่เปิดประตูออกมาตาย คนที่ปลดล็อกโดนก่อน</li>
             <li><b>ของแต่ละชิ้นทำอะไรได้ดูจากป้ายกำกับ</b> (หนัก · มีคม · ยิงได้ · เครื่องมือช่าง · นำไฟฟ้า · ฉีดได้): ลงมือด้วยปืน 85% (กระสุนจำกัด ยิงแล้วทั้งตึกได้ยิน) · อาวุธมีคม/หนัก 70% · อาวุธเบา 50% · เครื่องมือที่หนักหรือปลายแหลม 55% · ผ้า (อุดหายใจ) / เชือก (รัดคอ) 50% · ยาพิษลงมือตรงต้องมี<b>เข็มฉีดยา</b> (65%) หรือเป็นสายการแพทย์ (80%) ไม่งั้นผสมอาหารได้อย่างเดียว · สมุด วิทยุ ไฟฉาย กล้อง กุญแจมือ ใช้ฆ่าหรือประกอบกับดักไม่ได้ · ยากลิ่นฉุนคนกินสังเกตง่าย (60%) ยาไร้สีไร้รสสังเกตยาก (5%) พิษที่ต้องเข้ากระแสเลือดผสมอาหารไม่ได้ · สูตรกับดักดูแท็ก: ใบมีดเหวี่ยง = อาวุธมีคม/หนัก + เชือก · ของหนักหล่น = ของหนัก + เชือก · ไฟช็อต = เครื่องมือช่าง + สายไฟจริง · กับดักประตู = ปืนมีกระสุน/มีคม/หนัก + เครื่องมือช่าง · ซ่อมทางออกและช่างเทคนิคสะเดาะต้องใช้เครื่องมือช่าง ทุบ/งัดต้องของหนักหรืออาวุธมีคม</li>
             <li><b>ประตูที่ล็อก:</b> มีกุญแจต้องกด 🔑 ไขเอง (ทันที ไม่กินชั่วโมง) แล้วชั่วโมงถัดไปค่อยเข้า/ออก · ไม่มีกุญแจ: 🪛 สะเดาะ (ที่สะเดาะกุญแจ หรือช่างเทคนิค+เครื่องมือช่าง 2–3 ชม.) หรือ 💥 พังประตู (ใครก็ได้ 3–4 ชม. นักสู้ 1–2 ชม. เสียงดัง) เป็นแอ็กชันที่ต้องเลือกซ้ำทุกชั่วโมงจนสำเร็จ · 🫥 ซ่อนของใช้ 1 ชั่วโมงแต่ซ่อนได้หลายชิ้น (หยิบ/วางทำได้ทันที) · ไม่มีใครเห็นว่าใครเลือกแล้วหรือยัง · ครบ 23 ชั่วโมงโดยไม่มีการตัดสิน = ขึ้นวันใหม่เอง · ต่อยคนที่สลบอยู่ไม่ได้ (ต้องใช้ของที่ฆ่าได้) · สุดยอดนักเดินป่าถือของได้ 5 ชิ้น</li>
+            <li><b>🩸 อาวุธเปื้อนเลือด:</b> ของที่ใช้ฆ่าจนเกิดแผล (ของมีคม/ของหนัก/ปืน) จะติดคราบเลือด ใครเห็นในมือ ในห้อง หรือตอนตรวจกระเป๋าก็รู้ · ต้องไปห้องที่มีน้ำ (ห้องน้ำ ครัว ซักล้าง สระ ฯลฯ) แล้วเลือก "ล้าง" (ใช้ชั่วโมง) แต่อ่างอาจเก็บคราบจาง ๆ ไว้ · ตอนตัดสิน <b>ขอตรวจกระเป๋า</b>คนอื่นได้ ถ้าเจ้าของยอม ของทั้งหมดจะถูกประกาศในแชท</li>
             <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
             <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 3–5 ชั่วโมง <b>ละเลยได้</b> แต่ถ้าครบกำหนดแล้วยังไม่ทำ จะโดนลงโทษ: <b>สลบ 1–3 ชั่วโมง</b> (ทำอะไรไม่ได้ ไม่รู้ว่ารอบตัวเกิดอะไรขึ้น) ของบางชิ้นหล่นในห้อง และระหว่างสลบใครลงมือกับคุณก็สำเร็จแน่นอน · ภารกิจที่ทำไม่ได้แล้วโดยไม่ใช่ความผิดคุณถูกยกเลิกโดยไม่มีโทษ</li>
             <li><b>ลงมือสำเร็จไม่ได้แปลว่าตาย:</b> โอกาสฆ่าขึ้นกับของ (ปืน 90% · มีคม 70% · หนัก 55% · เชือก 60% · ผ้า 35% · ยาพิษ 85% · ของเบา 25%) ที่เหลือเป้าหมายแค่ <b>สลบ 1–3 ชั่วโมง</b> · <b>มือเปล่า ยานอนหลับ ยาสลบ ทำให้สลบเท่านั้น</b> ฆ่าไม่ได้ (ยกเว้นนักสู้ต่อยฆ่าได้ 5%) · คนที่สลบอยู่ถูกลงมือสำเร็จแน่นอน (ของฆ่าได้ = ตาย) · ลงมือพลาดแล้วเป้าหมายสวนกลับได้ 25% (นักสู้ 50% · ถืออาวุธ +15%) ผลของการสวนกลับขึ้นกับของที่เขาถือ: ฆ่าคุณหรือทำให้คุณสลบ</li>
@@ -473,6 +474,7 @@
       <div class="zone-facts">
         <div><b>${me.outside ? 'คนที่ยืนหน้าประตูด้วย' : 'คนที่อยู่ที่นี่'}:</b> ${people.length ? esc(people.join(', ')) : '<span class="muted">ไม่มีใครนอกจากคุณ</span>'}</div>
         <div><b>ของที่เห็น:</b> ${me.outside ? '<span class="muted">มองไม่เห็นข้างใน — ประตูล็อกอยู่</span>' : mem.items?.length ? esc(mem.items.join(', ')) : '<span class="muted">ไม่เห็นของเป็นพิเศษ</span>'}</div>
+        ${z?.water ? '<div class=\"muted\" style=\"font-size:.8rem\">🚿 ห้องนี้มีน้ำ — ล้างคราบเลือดออกจากของที่ถือได้ (ใช้ชั่วโมง อ่างอาจเก็บคราบไว้)</div>' : ''}
         ${bodies.length ? `<div class="danger-text">☠ <b>ศพ:</b> ${esc(bodies.map((b) => b.name).join(', '))}</div>` : ''}
       </div>
       ${recentLogHtml(s, 'สิ่งที่เกิดขึ้นตอนเข้ามา')}
@@ -633,7 +635,7 @@
           ${r.people.length ? `<div>🧍 ${esc(r.people.join(', '))}</div>` : ''}
           ${r.bodies.length ? `<div class="bad">☠ ${esc(r.bodies.join(', '))}</div>` : ''}
           ${r.traps.length ? `<div class="bad">🪤 ${esc(r.traps.map((t) => `${t.name}${t.door ? ' (ประตู)' : ''} ของ${t.setter}`).join(', '))}</div>` : ''}
-          ${r.items.length ? `<div class="muted">${esc(r.items.map((i) => `${i.hidden ? '🙈' : ''}${i.name}${i.poisoned ? ' ☠' : ''}`).join(', '))}</div>` : ''}
+          ${r.items.length ? `<div class="muted">${esc(r.items.map((i) => `${i.hidden ? '🙈' : ''}${i.name}${i.poisoned ? ' ☠' : ''}${i.bloody ? ' 🩸' : ''}`).join(', '))}</div>` : ''}
           ${r.evidence ? `<div class="muted">🔍 ร่องรอย ${r.evidence}</div>` : ''}
         </div>`,
         )
@@ -784,7 +786,7 @@
     const objs = me.objectives || [];
     return `<div class="card inv">
       <h3>🎒 ของที่ถือ (${inv.length}/${me.inventoryMax || s.config.inventoryMax})</h3>
-      ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''} ${i.kind === 'trap' ? 'trap' : ''}" title="${esc(i.description || '')}${i.tagText ? ` — ${esc(i.tagText)}` : ''}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}${i.ammo != null ? ` <small>(${i.ammo} นัด)</small>` : ''}${i.tagText ? ` <small class="muted">${esc(i.tagText)}</small>` : ''}${i.unlocksZoneNames?.length ? ` <small>(ไข${esc(i.unlocksZoneNames.join(', '))})</small>` : i.exitName ? ` <small>(${esc(i.exitName)})</small>` : ''}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
+      ${inv.length ? `<div class="chips">${inv.map((i) => `<span class="chip ${i.isPart ? 'part' : ''} ${i.kind === 'trap' ? 'trap' : ''} ${i.bloody ? 'bloody' : ''}" title="${esc(i.description || '')}${i.tagText ? ` — ${esc(i.tagText)}` : ''}">${KIND_ICON[i.kind] || '•'} ${esc(i.name)}${i.bloody ? ' 🩸' : ''}${i.ammo != null ? ` <small>(${i.ammo} นัด)</small>` : ''}${i.tagText ? ` <small class="muted">${esc(i.tagText)}</small>` : ''}${i.unlocksZoneNames?.length ? ` <small>(ไข${esc(i.unlocksZoneNames.join(', '))})</small>` : i.exitName ? ` <small>(${esc(i.exitName)})</small>` : ''}</span>`).join('')}</div>` : '<p class="muted">มือเปล่า</p>'}
       ${exitsHtml(s)}
       ${s.config.objectives ? `<h3 style="margin-top:.7rem">📋 ภารกิจลับ</h3>
       ${objs.length ? objs.map((o) => `<div class="objective ${o.done ? 'done' : o.remainingHours <= 1 ? 'due' : ''}">${o.done ? (o.forgiven ? '➖' : '✅') : '•'} ${esc(o.text)} ${objectiveBadge(o)}</div>`).join('') : '<p class="muted">ไม่มีภารกิจค้าง</p>'}
@@ -857,6 +859,7 @@
               <p class="status">ยืนยันแล้ว ${done}/${alive.length}</p>`;
           }
         } else body += `<p class="status">รอทุกคนโหวต (${done}/${alive.length})</p>`;
+        if (me.alive && !me.ko) body += `<div class="bagcheck"><label>👜 ขอตรวจกระเป๋า <select id="bag-target">${alive.filter((p) => p.id !== me.id).map((p) => `<option value="${esc(p.id)}">${esc(p.character?.nickname || p.name)}</option>`).join('')}</select></label> <button class="small" data-action="bag-request">ขอดู</button><div class="muted" style="font-size:.78rem">เจ้าของต้องยอม ผล (ของทุกชิ้น รวมคราบเลือด) ประกาศในแชทให้ทุกคนเห็น</div></div>`;
         if (me.isHost) body += `<hr style="border-color:var(--line);border-style:solid none none"><button class="small danger" data-action="force-vote">ปิดโหวตตอนนี้</button>`;
         break;
       }
@@ -899,7 +902,7 @@
     const list = s.me.notices || [];
     if (!list.length) return '';
     return list
-      .map((n) => `<div class="notice ${esc(n.kind)}"><span>${esc(n.text)}</span><span class="spacer"></span><button class="small ghost" data-action="dismiss-notice" data-id="${esc(n.id)}">✕</button></div>`)
+      .map((n) => `<div class="notice ${esc(n.kind)}"><span>${esc(n.text)}</span><span class="spacer"></span>${n.kind === 'bagRequest' ? `<button class="small" data-action="bag-reply" data-id="${esc(n.id)}" data-accept="1">✅ ให้ดู</button><button class="small danger" data-action="bag-reply" data-id="${esc(n.id)}" data-accept="0">❌ ไม่ให้</button>` : `<button class="small ghost" data-action="dismiss-notice" data-id="${esc(n.id)}">✕</button>`}</div>`)
       .join('');
   }
 
@@ -926,7 +929,7 @@
     const html = s.chat
       .map((m) =>
         m.system
-          ? `<div class="msg system">${esc(m.text)}</div>`
+          ? `<div class="msg system ${m.debug ? 'debug' : ''}">${esc(m.text)}</div>`
           : `<div class="msg ${m.ghost ? 'ghost' : ''} ${m.playerId === s.me.id ? 'me' : ''}">${m.ghost ? '<span class="gtag" title="แชทผี — คนเป็นมองไม่เห็นจนกว่าเกมจบ">👻</span>' : ''}<span class="who">${esc(m.name)}</span>${m.characterName ? `<span class="char">${esc(m.characterName)}</span>` : ''}<span>${esc(m.text)}</span></div>`,
       )
       .join('');
@@ -1120,6 +1123,14 @@
         break;
       case 'restart':
         if (await confirmDialog('เริ่มเกมใหม่กับผู้เล่นชุดเดิม?')) await act('host:restart');
+        break;
+      case 'bag-request': {
+        const targetId = $('#bag-target')?.value;
+        if (targetId) await act('trial:bagRequest', { targetId });
+        break;
+      }
+      case 'bag-reply':
+        await act('trial:bagReply', { id, accept: btn.dataset.accept === '1' });
         break;
       case 'dismiss-notice':
         await act('notice:dismiss', { id });

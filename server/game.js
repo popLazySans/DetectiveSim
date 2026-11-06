@@ -5,7 +5,7 @@ import { CHARACTERS } from './characters.js';
 import { ULTIMATE_POOL, TRAITS } from './mock.js';
 import { makeObjective, objectiveOutcome, objectiveTargetZone, hasFood } from './objectives.js';
 import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, tagsOf, attackBaseOf, partMatches, trapTexts, poisonNoticeChance, ammoOf, canBreachWith, TAG_LABEL, INVESTIGATION, tagSetOf, WOUND_LAY, materialOf, trapForensic, TRAP_BODY_POS, TRAP_SCENE, weaponTrace } from './rules.js';
-import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView, craftAssemblyOptions, doCraftAssembly, exitReadyFor, exitUsefulFor } from './escape.js';
+import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView, craftAssemblyOptions, doCraftAssembly, exitReadyFor, exitUsefulFor, requirementText } from './escape.js';
 
 export const PHASE = {
   LOBBY: 'lobby',
@@ -105,6 +105,7 @@ let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
 const sanitizeName = (name) => String(name || '').trim().replace(/\s+/g, ' ').slice(0, 24) || 'ผู้เล่นนิรนาม';
 const fill = (tpl, w) => String(tpl || '').replaceAll('{w}', w || 'ของหนัก');
+const BLOOD_WOUNDS = ['sharp', 'blunt', 'pierce']; // แผลที่ทำให้ของที่ใช้เปื้อนเลือด (รัด/อุด/พิษ ไม่เปื้อน)
 
 // ประโยคของผีบอทในแชทผี ({n} = ชื่อผีคนใหม่, {e} = เหตุการณ์จริงของชั่วโมงนี้)
 const GHOST_WELCOME = [
@@ -390,6 +391,11 @@ export class Game {
   }
 
   // ถือกุญแจที่ไขห้องนี้ได้ไหม (กุญแจประจำห้อง หรือกุญแจผู้ดูแลที่ไขได้ทุกห้อง)
+  // ของที่ใช้ฆ่าแล้วเกิดแผลมีเลือด (มีคม/ทุบ/ยิง) ติดคราบเลือด — ใครเห็นในมือหรือในห้องก็รู้ จนกว่าจะเอาไปล้างที่ห้องที่มีน้ำ
+  stainWeapon(w, rec) {
+    if (w && BLOOD_WOUNDS.includes(woundOf(rec || w))) w.bloody = true;
+  }
+
   // ถือของได้กี่ชิ้น: สายนักแบกถือได้ 5 คนอื่นตาม INVENTORY_MAX
   invMax(p) {
     return this.traitOf(p) === 'porter' ? CONFIG.INVENTORY_MAX + 2 : CONFIG.INVENTORY_MAX;
@@ -462,11 +468,11 @@ export class Game {
     this.pushChat({ system: true, text });
   }
 
-  notify(playerId, text, kind = 'info') {
+  notify(playerId, text, kind = 'info', extra = {}) {
     const p = this.players.get(playerId);
     if (!p || p.isBot) return;
     if (!this.notices.has(playerId)) this.notices.set(playerId, []);
-    this.notices.get(playerId).push({ id: nextId(), text, kind, ts: Date.now() });
+    this.notices.get(playerId).push({ id: nextId(), text, kind, ts: Date.now(), ...extra });
   }
 
   dismissNotice(playerId, noticeId) {
@@ -661,6 +667,7 @@ export class Game {
         traps: [],
         evidence: [],
         dark: false,
+        water: /ห้องน้ำ|ครัว|อ่าง|ซักล้าง|ซักรีด|สระ|น้ำพุ|พยาบาล|แล็บ|ล้างฟิล์ม|ห้องเครื่อง/.test(z.name), // มีน้ำใช้ล้างคราบเลือดออกจากของได้
         lockable: z.id !== loc.sleepZoneId,
         locked: false,
         broken: false, // ประตูถูกพังแล้ว ล็อกไม่ได้อีก
@@ -969,7 +976,7 @@ export class Game {
       if (stayed && z.locked && !knewLocked) lines.push(this.hasKeyFor(p, z.id) ? '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณมีกุญแจ จะปลดล็อกหรือเดินออกไปก็ได้' : `🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้จากข้างนอก — คุณถูกขังอยู่ ${this.doorMeansText(p) || 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้'}`);
       if (stayed && !z.locked && knewLocked) lines.push('🔓 คุณสังเกตว่าประตูห้องนี้ไม่ได้ล็อกแล้ว');
       lines.push(others.length ? `คนที่อยู่ที่นี่ด้วย: ${others.map((o) => `${this.nick(o)}${o.ko ? ' (นอนสลบอยู่ — ใครลงมือกับเขาสำเร็จแน่นอน)' : ''}`).join(', ')}` : 'ไม่มีใครอยู่ที่นี่นอกจากคุณ');
-      lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => `${i.name}${i.isPart ? ' ⭐' : ''}${this.tagText(i) ? ` (${this.tagText(i)})` : ''}`).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
+      lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => `${i.name}${i.isPart ? ' ⭐' : ''}${i.bloody ? ' 🩸เปื้อนเลือด' : ''}${this.tagText(i) ? ` (${this.tagText(i)})` : ''}`).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
       for (const b of bodies) {
         const v = this.players.get(b.victimId);
         const first = !p.knownBodies.has(b.victimId);
@@ -988,7 +995,7 @@ export class Game {
         hour: this.hour,
         phase: this.phase,
         people: others.map((o) => `${this.nick(o)}${o.ko ? ' (สลบ)' : ''}`),
-        items: visibleItems.map((i) => i.name),
+        items: visibleItems.map((i) => `${i.name}${i.bloody ? ' 🩸' : ''}`),
         bodies: bodies.map((b) => this.nick(this.players.get(b.victimId))),
         locked: z.locked,
         broken: z.broken,
@@ -1028,7 +1035,7 @@ export class Game {
     // ร่องรอยในห้อง (ต้องสำรวจถึงเจอ): เลือด/รอยไหม้ตรงประตู + ตัวอุปกรณ์ที่ยังค้างอยู่ตรงนั้น — กับดักที่ทำงานแล้วเหลือแค่ "ของชิ้นที่ทำร้าย" เป็นของธรรมดาในห้อง
     // (ตอนเข้าห้องเห็นแค่ "ขวานดับเพลิง" ไม่ใช่ "กับดักประตู") ใครเก็บมันไปจะเหลือเศษร่องรอยแทน ดู markDeviceTaken
     const scene = TRAP_SCENE[trap.item.trapType];
-    const device = { id: `it_${nextId()}`, name: w, description: trap.item.strikerDesc || '', kind: trap.item.strikerKind || 'weapon', portable: true, hidden: false, isPart: false, originZoneId: z.id, deviceOf: { caseId: kase.id, trapType: trap.item.trapType } };
+    const device = { id: `it_${nextId()}`, name: w, description: trap.item.strikerDesc || '', kind: trap.item.strikerKind || 'weapon', portable: true, hidden: false, isPart: false, originZoneId: z.id, deviceOf: { caseId: kase.id, trapType: trap.item.trapType }, bloody: BLOOD_WOUNDS.includes(trap.item.wound) };
     if (Number.isInteger(trap.item.strikerAmmo)) device.ammo = Math.max(0, trap.item.strikerAmmo - (trap.item.wound === 'pierce' ? 1 : 0)); // ปืนที่ลั่นไปแล้วเสียกระสุน 1 นัด
     z.items.push(device);
     // เครื่องมือที่ใช้ยึดกลไก (ไขควง/ประแจ) ยังตกอยู่ตรงนั้น — เชือก/สายถือว่าถูกตัด/ใช้ไปกับกลไก
@@ -1242,6 +1249,7 @@ export class Game {
     const inDay = this.phase === PHASE.DAY;
     if (!outside) out.push({ type: 'search', label: '🔍 สำรวจห้องอย่างละเอียด', desc: 'หาของที่ซ่อนอยู่ ทางออกที่ซ่อนอยู่ หลักฐาน และสังเกตว่ามีอะไรหายไปจากห้อง' });
     // หยิบ/วางของทำได้ทันทีผ่าน itemActions()/instantItemAction() · ซ่อนของใช้ชั่วโมง แต่ซ่อนจากกระเป๋ากี่ชิ้นก็ได้ในครั้งเดียว
+    if (!outside && z.water && p.inventory.some((i) => i.bloody)) out.push({ type: 'wash', label: '🚿 ล้างคราบเลือดออกจากของที่ถือ', desc: 'ใช้ทั้งชั่วโมง ล้างทุกชิ้นที่เปื้อน — อ่าง/ร่องท่ออาจเหลือคราบจาง ๆ ให้คนที่สำรวจละเอียดเจอ (50%) และคนในห้องอาจเห็นคุณล้าง', danger: true });
     if (!outside && p.inventory.length) out.push({ type: 'hide', multiItems: true, label: '🫥 ซ่อนของไว้ในห้องนี้ (เลือกได้หลายชิ้น)', desc: 'ใช้ทั้งชั่วโมง ซ่อนของจากกระเป๋ากี่ชิ้นก็ได้ — คนอื่นต้องสำรวจละเอียดถึงจะเจอ (คนในห้องอาจเห็นคุณซ่อน 30%)' });
     const food = outside ? null : z.items.find((i) => i.kind === 'food');
     if (food && inDay) out.push({ type: 'eat', label: `🍞 กินอาหาร/ดื่มน้ำ (${food.name})`, desc: 'พักกินอะไรสักหน่อย — ใช้ทำภารกิจ "ไปกินอาหาร" ได้ · ระวัง ถ้ามีคนผสมยาพิษไว้คุณอาจไม่รู้ตัว' });
@@ -1347,7 +1355,7 @@ export class Game {
   resolveActions() {
     this.clearTimers();
     for (const p of this.alivePlayers()) if (!this.actions.has(p.id)) this.actions.set(p.id, { type: 'rest', auto: true });
-    const order = { sabotage: 0, lock: 1, unlock: 1, doorwork: 1, attack: 2, steal: 3, poisonFood: 4, trap: 4, craft: 5, clean: 6, moveBody: 7, interrogate: 8, take: 9, drop: 10, hide: 10, exit_power: 11, search: 12, examine: 12, eat: 13, exit: 14, rest: 15 };
+    const order = { sabotage: 0, lock: 1, unlock: 1, doorwork: 1, attack: 2, wash: 6, steal: 3, poisonFood: 4, trap: 4, craft: 5, clean: 6, moveBody: 7, interrogate: 8, take: 9, drop: 10, hide: 10, exit_power: 11, search: 12, examine: 12, eat: 13, exit: 14, rest: 15 };
     const list = shuffle([...this.actions.entries()]).sort((a, b) => (order[a[1].type] ?? 20) - (order[b[1].type] ?? 20));
     const exitAttempts = [];
     for (const [pid, a] of list) {
@@ -1477,6 +1485,7 @@ export class Game {
       if (kills) {
         const kase = this.killPlayer(target, { cause: 'attack', killerId: p.id, weapon: wrec, zoneId: z.id, outside: p.outside, messy, witnesses: saw.map((o) => o.id) });
         this.addKillEvidence(z, kase, wrec, messy, p);
+        this.stainWeapon(w, wrec);
         if (messy) p.stained = this.turn;
         this.logTo(
           p,
@@ -1534,6 +1543,7 @@ export class Game {
       if (chance(tLethal)) {
         const kase = this.killPlayer(p, { cause: 'defense', killerId: target.id, weapon: twrec, zoneId: z.id, outside: p.outside, messy: true, witnesses: awake.map((o) => o.id) });
         this.addKillEvidence(z, kase, twrec, true, target);
+        this.stainWeapon(tw, twrec);
         target.stained = this.turn;
         this.logTo(target, `⚔ ${who}จู่โจมคุณ${wtxt}ที่${this.zn(z)}! คุณสวนกลับ${twtxt}สุดชีวิต และ... ${this.nick(p)}ล้มลงไม่ขยับ เขาตายแล้ว ตามกติกาของที่นี่ คุณคือ "คนร้าย" ของคดีนี้ แม้จะเป็นการป้องกันตัว`, 'culprit');
         this.logTo(p, `💀 คุณจู่โจม${this.nick(target)} แต่เขาสวนกลับ${twtxt} คุณเป็นฝ่ายตายเสียเอง...`, 'death');
@@ -1563,6 +1573,7 @@ export class Game {
       if (kills) {
         const kase = this.killPlayer(wrong, { cause: 'wrongTarget', killerId: p.id, weapon: wrec, zoneId: z.id, outside: p.outside, messy: true, witnesses: [target.id, ...rest.map((o) => o.id)] });
         this.addKillEvidence(z, kase, wrec, true, p);
+        this.stainWeapon(w, wrec);
         this.logTo(p, `💥 คุณพุ่งเข้าใส่${this.nick(target)} แต่เขาหลบทัน และ${w ? w.name : 'แรงของคุณ'}ไปลง${this.nick(wrong)}เต็ม ๆ... ${this.nick(wrong)}ตายทันที ทุกคนในห้องเห็นหมด คุณคือคนร้ายของคดีนี้`, 'culprit');
         this.logTo(wrong, `💀 ${who}ตั้งใจเล่นงาน${this.nick(target)} แต่พลาดมาโดนคุณ... คุณเสียชีวิต`, 'death');
         this.logTo(target, `😱 ${who}พุ่งเข้าใส่คุณ${wtxt}! คุณหลบทัน แต่${this.nick(wrong)}ที่อยู่ข้าง ๆ รับไปเต็ม ๆ และตายต่อหน้าคุณ`, 'witness');
@@ -1772,6 +1783,19 @@ export class Game {
     p.zoneMemory[z.id] = { ...(p.zoneMemory[z.id] || {}), locked: false };
     this.logTo(p, `🔓 คุณปลดล็อกประตู${this.zn(z)}แล้ว ใครก็เข้าได้${p.outside ? ' — ชั่วโมงถัดไปเลือกห้องนี้เพื่อเข้าไป' : ''} · คนอื่นในห้องจะสังเกตเห็นตอนชั่วโมงถัดไป`, 'action');
     this.recordEvent(`${this.nick(p)}ปลดล็อก${this.zn(z)}`);
+  }
+
+  // ล้างคราบเลือดออกจากของที่ถือ (ห้องที่มีน้ำ) — อ่างเก็บคราบจาง ๆ ไว้ (ซ่อนอยู่ สำรวจละเอียดถึงเจอ)
+  do_wash(p) {
+    const z = this.zones.get(p.zoneId);
+    const dirty = p.inventory.filter((i) => i.bloody);
+    if (!z?.water || !dirty.length) return this.logTo(p, 'ไม่มีอะไรให้ล้างที่นี่', 'action');
+    for (const i of dirty) i.bloody = false;
+    z.evidence.push(this.makeEvidence(z.id, 'คราบเลือดจาง ๆ ติดอยู่ตามขอบอ่างและร่องท่อ เหมือนเพิ่งมีคนล้างอะไรสักอย่าง', true, null, 'wash'));
+    const who = this.who(p, z);
+    this.logTo(p, `🚿 คุณล้าง${dirty.map((i) => i.name).join(', ')}จนไม่เหลือคราบเลือด — แต่อ่างอาจเก็บคราบจาง ๆ ไว้ให้คนสำรวจละเอียดเจอ`, 'culprit');
+    for (const o of this.witnessesOf(p, z)) if (this.seen(p, 0.6)) this.logTo(o, `👀 คุณเห็น${who}ขัดล้างอะไรบางอย่างที่อ่างอย่างเร่งรีบ น้ำที่ไหลออกมามีสีคล้ำ`, 'witness');
+    this.recordEvent(`${this.nick(p)}ล้างคราบเลือดจาก${dirty.map((i) => i.name).join(', ')}ที่${this.zn(z)}`);
   }
 
   // ---------- ประตู (ทำเอง) ----------
@@ -2036,7 +2060,7 @@ export class Game {
     if (chance(0.7)) {
       const it = t.inventory.splice(Math.floor(Math.random() * t.inventory.length), 1)[0];
       p.inventory.push(it);
-      this.logTo(p, `🕵 คุณล้วง${it.name}${it.isPart ? ' ⭐' : ''}มาจาก${this.nick(t)}ได้โดยที่เขาไม่รู้ตัว`, 'culprit');
+      this.logTo(p, `🕵 คุณล้วง${it.name}${it.isPart ? ' ⭐' : ''}${it.bloody ? ' (เปื้อนเลือด!)' : ''}มาจาก${this.nick(t)}ได้โดยที่เขาไม่รู้ตัว`, 'culprit');
       onObtainItem(this, p, it);
       this.recordEvent(`${this.nick(p)}ขโมย${it.name}จาก${this.nick(t)}`);
       this.checkObjectivesAfterTake(p, it);
@@ -2059,7 +2083,10 @@ export class Game {
     const facts = [];
     const prev = [...this.timeline].reverse().find((tl) => tl.turn < this.turn);
     if (prev?.positions[t.id]) facts.push(`ชั่วโมงก่อน (วันที่ ${prev.day} ชั่วโมงที่ ${prev.hour}) ${this.nick(t)}อยู่ที่${this.posName(prev.positions[t.id])}`);
-    if (t.inventory.length) facts.push(`${this.nick(t)}พก${pick(t.inventory).name}อยู่กับตัว`);
+    if (t.inventory.length) {
+      const pk = pick(t.inventory);
+      facts.push(`${this.nick(t)}พก${pk.name}${pk.bloody ? 'ที่เปื้อนเลือด' : ''}อยู่กับตัว`);
+    }
     const obj = t.objectives.find((o) => !o.done);
     if (obj) facts.push(`ภารกิจลับของ${this.nick(t)}ตอนนี้คือ "${obj.text}"`);
     if (t.knownBodies.size) facts.push(`${this.nick(t)}รู้ว่า${this.nick(this.players.get([...t.knownBodies][0]))}ตายแล้ว`);
@@ -2802,6 +2829,114 @@ export class Game {
     this.emit();
   }
 
+  // ---------- ขอตรวจกระเป๋า (ตอนตัดสิน) ----------
+  // ใครก็ขอตรวจกระเป๋าคนอื่นได้ตอนตัดสิน เจ้าของต้องยอม ผล (ของทุกชิ้น รวมคราบเลือด) ประกาศในแชทให้ทุกคนเห็น · บอทตอบเอง
+  requestBagCheck(playerId, targetId) {
+    this.assertPhase(PHASE.TRIAL);
+    const p = this.alivePlayer(playerId);
+    if (p.ko) throw new GameError('😵 คุณสลบอยู่');
+    const t = this.players.get(targetId);
+    if (!t?.alive || t.id === p.id) throw new GameError('เลือกคนที่ยังอยู่ในเกม');
+    if ((this.notices.get(t.id) || []).some((n) => n.kind === 'bagRequest' && n.fromId === p.id)) throw new GameError('คุณขอไปแล้ว รอเขาตอบ');
+    this.systemMessage(`👜 ${this.nick(p)}ขอตรวจกระเป๋าของ${this.nick(t)}ต่อหน้าทุกคน — รอ${this.nick(t)}ตอบ`);
+    this.recordEvent(`${this.nick(p)}ขอตรวจกระเป๋า${this.nick(t)}`);
+    if (t.isBot) {
+      const suspicious = t.inventory.some((i) => i.bloody || i.kind === 'poison' || i.kind === 'trap');
+      this.answerBagCheck(t, p, suspicious ? chance(0.3) : chance(0.85));
+    } else this.notify(t.id, `${this.nick(p)}ขอตรวจกระเป๋าของคุณต่อหน้าทุกคน — จะยอมให้ดูไหม?`, 'bagRequest', { fromId: p.id });
+    this.emit();
+  }
+
+  replyBagCheck(playerId, noticeId, accept) {
+    this.assertPhase(PHASE.TRIAL);
+    const t = this.alivePlayer(playerId);
+    const list = this.notices.get(t.id) || [];
+    const n = list.find((x) => x.id === noticeId && x.kind === 'bagRequest');
+    if (!n) throw new GameError('ไม่มีคำขอนี้แล้ว');
+    list.splice(list.indexOf(n), 1);
+    this.answerBagCheck(t, this.players.get(n.fromId), !!accept);
+    this.emit();
+  }
+
+  answerBagCheck(t, from, accept) {
+    const who = from ? this.nick(from) : 'ใครบางคน';
+    if (!accept) {
+      this.systemMessage(`🙅 ${this.nick(t)}ไม่ยอมให้${who}ตรวจกระเป๋า`);
+      this.recordEvent(`${this.nick(t)}ไม่ยอมให้ตรวจกระเป๋า`);
+      return;
+    }
+    const items = t.inventory.map((i) => `${i.name}${i.bloody ? ' 🩸เปื้อนเลือด' : ''}${i.kind === 'trap' ? ' (กับดักที่ประกอบแล้ว)' : ''}`);
+    this.systemMessage(`👜 ${this.nick(t)}เปิดกระเป๋าให้ทุกคนดู: ${items.length ? items.join(', ') : 'ไม่มีของเลย'}`);
+    this.recordEvent(`${this.nick(t)}เปิดกระเป๋าให้ตรวจ: ${items.join(', ') || 'ว่าง'}`);
+  }
+
+  // ---------- คำสั่งตรวจสอบ (DEBUG_CHEATS=true) ----------
+  // พิมพ์ในแชท: /help /rooms /players /items /bodies /exits /find <คำ> — คำตอบเห็นเฉพาะคนพิมพ์ (ใช้ทดสอบ/ตามหาของ)
+  debugCommand(p, text) {
+    const [cmd, ...rest] = text.slice(1).trim().split(/\s+/);
+    const q = rest.join(' ');
+    const name = (id) => this.nick(this.players.get(id));
+    const itemTxt = (i) => `${i.name}${i.hidden ? ' (ซ่อน)' : ''}${i.bloody ? ' 🩸' : ''}${i.poisoned ? ' ☠' : ''}${i.isPart || i.role ? ' ⭐' : ''}${Number.isInteger(i.ammo) ? ` [${i.ammo} นัด]` : ''}`;
+    const where = (id) => {
+      for (const z of this.zones.values()) {
+        const it = z.items.find((i) => i.id === id);
+        if (it) return `${z.name}${it.hidden ? ' (ซ่อน)' : ''}`;
+      }
+      for (const o of this.players.values()) if (o.inventory.some((i) => i.id === id)) return `ในมือ ${this.nick(o)}${o.alive ? '' : ' (ตายแล้ว)'}`;
+      return '— ไม่พบ —';
+    };
+    let out = '';
+    switch ((cmd || '').toLowerCase()) {
+      case 'rooms':
+        out = [...this.zones.values()]
+          .map((z) => {
+            const people = this.alivePlayers().filter((o) => o.zoneId === z.id).map((o) => `${this.nick(o)}${o.outside ? '(หน้าประตู)' : ''}${o.ko ? '(สลบ)' : ''}`);
+            const bodies = [...this.bodies.values()].filter((b) => b.zoneId === z.id).map((b) => `☠${name(b.victimId)}${b.announced ? '' : '(ยังไม่ประกาศ)'}`);
+            const flags = [z.locked ? '🔒ล็อก' : '', z.broken ? 'ประตูพัง' : '', z.dark ? '🌑ไฟดับ' : '', z.water ? '🚿น้ำ' : ''].filter(Boolean).join(' ');
+            const ev = z.evidence.filter((e) => !e.gone);
+            return `▪ ${z.name} ${flags}\n   คน: ${people.join(', ') || '-'}${bodies.length ? `\n   ศพ: ${bodies.join(', ')}` : ''}\n   ของ: ${z.items.map(itemTxt).join(', ') || '-'}${z.traps.length ? `\n   กับดัก: ${z.traps.map((t) => `${t.item.name} (${name(t.setterId)}, ${t.side || 'inside'})`).join(', ')}` : ''}${ev.length ? `\n   ร่องรอย ${ev.length}: ${ev.map((e) => `${e.kind}${e.hidden ? '(ซ่อน)' : ''}`).join(', ')}` : ''}`;
+          })
+          .join('\n');
+        break;
+      case 'players':
+        out = [...this.players.values()]
+          .map((o) => `▪ ${o.name} = ${this.nick(o)} [${this.traitOf(o)}] ${o.alive ? `อยู่ที่ ${this.spotName(o.zoneId, o.outside)}${o.ko ? ` สลบ ${o.ko.hours} ชม.` : ''}` : `ตายแล้ว (${o.fate})`} · ฆ่า ${o.kills}\n   ของ: ${o.inventory.map(itemTxt).join(', ') || '-'}${o.objectives.filter((x) => !x.done).length ? `\n   ภารกิจ: ${o.objectives.filter((x) => !x.done).map((x) => x.text).join(' · ')}` : ''}`)
+          .join('\n');
+        break;
+      case 'items': {
+        const rows = [];
+        for (const z of this.zones.values()) for (const i of z.items) rows.push(`${itemTxt(i)} → ${z.name}`);
+        for (const o of this.players.values()) for (const i of o.inventory) rows.push(`${itemTxt(i)} → ในมือ ${this.nick(o)}${o.alive ? '' : ' (ตายแล้ว)'}`);
+        out = rows.sort().join('\n');
+        break;
+      }
+      case 'bodies':
+        out = [...this.bodies.values()].map((b) => `☠ ${name(b.victimId)} ที่ ${this.spotName(b.zoneId, b.outside)} · ตายวันที่ ${b.day} ชม. ${b.hour} · ${b.announced ? 'ประกาศแล้ว' : 'ยังไม่ประกาศ'} · ${b.judged ? 'ตัดสินแล้ว' : 'ยังเปิดอยู่'} · คนร้าย: ${b.killerId ? name(b.killerId) : '-'} · ผู้พบ: ${[...b.discoveredBy].map(name).join(', ') || '-'}`).join('\n') || 'ไม่มีศพ';
+        break;
+      case 'exits':
+        out = [...this.exits.values()].map((x) => `🚪 ${x.name} ที่ ${this.zoneName(x.zoneId)} [${x.route}]${x.open ? ' เปิดแล้ว' : ''}\n   ของ: ${x.items.map((i) => `${i.name} (${i.role}) → ${where(i.id)}${i.assembled ? ' ประกอบแล้ว' : ''}`).join(', ')}\n   ขั้น: ${requirementText(this, x)}`).join('\n') || 'ไม่มีทางออก';
+        break;
+      case 'find': {
+        const rx = q.toLowerCase();
+        if (!rx) {
+          out = 'ใช้: /find <คำ>';
+          break;
+        }
+        const rows = [];
+        for (const z of this.zones.values()) for (const i of z.items) if (i.name.toLowerCase().includes(rx)) rows.push(`${itemTxt(i)} → ${z.name}`);
+        for (const o of this.players.values()) for (const i of o.inventory) if (i.name.toLowerCase().includes(rx)) rows.push(`${itemTxt(i)} → ในมือ ${this.nick(o)}${o.alive ? '' : ' (ตายแล้ว)'}`);
+        for (const z of this.zones.values()) if (z.name.toLowerCase().includes(rx)) rows.push(`ห้อง ${z.name}: ${z.items.map(itemTxt).join(', ') || '-'}`);
+        for (const o of this.players.values()) if (o.name.toLowerCase().includes(rx) || this.nick(o).toLowerCase().includes(rx)) rows.push(`${this.nick(o)} (${o.name}) อยู่ที่ ${this.spotName(o.zoneId, o.outside)} ของ: ${o.inventory.map(itemTxt).join(', ') || '-'}`);
+        out = rows.join('\n') || `ไม่พบ "${q}"`;
+        break;
+      }
+      default:
+        out = 'คำสั่งตรวจสอบ (เห็นเฉพาะคุณ): /rooms ทุกห้อง · /players ทุกคน · /items ของทุกชิ้นอยู่ไหน · /bodies ศพ · /exits ทางออก · /find <คำ> ค้นหาของ/ห้อง/คน';
+    }
+    this.pushChat({ system: true, debug: true, to: p.id, text: `🛠 /${cmd || 'help'}\n${out}` });
+    this.emit();
+  }
+
   // ---------- chat ----------
   sendChat(playerId, text) {
     const p = this.players.get(playerId);
@@ -2810,6 +2945,7 @@ export class Game {
     if (!text) return;
     const openPhase = this.phase === PHASE.LOBBY || this.phase === PHASE.ENDED;
     if (this.phase === PHASE.GENERATING) throw new GameError('ตอนนี้ยังคุยไม่ได้');
+    if (text.startsWith('/') && CONFIG.DEBUG_CHEATS && this.location) return this.debugCommand(p, text); // คำสั่งตรวจสอบ (เฉพาะโหมดทดสอบ)
     const c = this.charOf(p);
     // ผี (ตายแล้ว ระหว่างเกม) พิมพ์ได้เป็น "แชทผี" — คนเป็นมองไม่เห็นจนกว่าเกมจบ
     this.pushChat({ playerId, name: p.name, characterName: c?.name || null, text, ghost: !openPhase && !p.alive });
@@ -2855,7 +2991,7 @@ export class Game {
         dark: z.dark,
         people: alive.filter((p) => p.zoneId === z.id).map((p) => `${this.nick(p)}${p.outside ? ' (หน้าประตู)' : ''}${p.ko ? ' (สลบ)' : ''}`),
         bodies: bodies.filter((b) => b.zoneId === z.id).map((b) => `${this.nick(this.players.get(b.victimId))}${b.announced ? '' : ' (ยังไม่มีใครประกาศ)'}`),
-        items: z.items.map((i) => ({ name: i.name, hidden: !!i.hidden, poisoned: !!i.poisoned })),
+        items: z.items.map((i) => ({ name: i.name, hidden: !!i.hidden, poisoned: !!i.poisoned, bloody: !!i.bloody })),
         traps: z.traps.map((t) => ({ name: t.item.name, setter: this.nick(this.players.get(t.setterId)), door: t.item.trapType === 'door' })),
         evidence: z.evidence.length,
       })),
@@ -3118,7 +3254,7 @@ export class Game {
   }
 
   itemView(i) {
-    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, description: i.description, trapType: i.trapType || null, ammo: Number.isInteger(i.ammo) ? i.ammo : null, tagText: this.tagText(i), unlocksZoneNames: (i.unlocksZoneIds || []).map((id) => this.zoneName(id)), exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
+    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, bloody: !!i.bloody, description: i.description, trapType: i.trapType || null, ammo: Number.isInteger(i.ammo) ? i.ammo : null, tagText: this.tagText(i), unlocksZoneNames: (i.unlocksZoneIds || []).map((id) => this.zoneName(id)), exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
   }
 
   viewFor(playerId) {
@@ -3185,7 +3321,7 @@ export class Game {
 
     const myChar = this.charOf(me);
     const ev = this.specialEvent;
-    const zonesPublic = this.location ? this.location.zones.map((z) => ({ id: z.id, name: z.name, description: z.description, isSleep: z.id === this.location.sleepZoneId })) : [];
+    const zonesPublic = this.location ? this.location.zones.map((z) => ({ id: z.id, name: z.name, description: z.description, isSleep: z.id === this.location.sleepZoneId, water: !!this.zones.get(z.id)?.water })) : [];
     const announced = this.cases.filter((c) => c.announced && (!c.judged || (showResult && this.lastResult?.cases.some((r) => r.id === c.id)))).map((c) => this.publicCase(c));
     const evidenceRows = me
       ? me.evidence
@@ -3303,7 +3439,7 @@ export class Game {
       lastResult: showResult ? this.lastResult : null,
       history: this.history,
       outcome: ended ? this.outcome : null,
-      chat: this.chat.filter((m) => !m.ghost || spectator || ended).slice(-150), // แชทผีเห็นเฉพาะผี (ทุกคนเห็นเมื่อเกมจบ)
+      chat: this.chat.filter((m) => (!m.ghost || spectator || ended) && (!m.to || m.to === playerId)).slice(-150), // แชทผีเห็นเฉพาะผี (ทุกคนเห็นเมื่อเกมจบ) · คำตอบคำสั่งตรวจสอบเห็นเฉพาะคนพิมพ์
     };
   }
 }
