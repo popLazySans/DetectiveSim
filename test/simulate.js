@@ -147,7 +147,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
         }
       }
       if (game.step === STEP.ACT && me.alive) {
-        assert(Array.isArray(v.me.availableActions) && (me.ko ? v.me.availableActions.length === 0 : v.me.availableActions.some((a) => a.type === (me.outside ? 'rest' : 'search'))), 'alive player has actions (none while knocked out)');
+        assert(Array.isArray(v.me.availableActions) && (me.ko ? v.me.availableActions.length === 0 : v.me.availableActions.some((a) => a.type === (me.outside || !game.canSee(me) ? 'rest' : 'search'))), 'alive player has actions (none while knocked out)');
         if (me.outside) assert(!v.me.availableActions.some((a) => ['search', 'take', 'drop', 'hide', 'eat', 'examine', 'moveBody', 'clean', 'exit', 'lock', 'unlock'].includes(a.type)), 'outside a locked door: no room actions');
         for (const a of v.me.availableActions) if (a.type === 'trap') assert(me.inventory.find((i) => i.id === a.itemId)?.kind === 'trap', 'only crafted traps can be placed');
         stats.actionsChecked++;
@@ -314,6 +314,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
 
   // ช่วงพัก: ให้ของกับคนในห้องเดียวกัน (ถ้ามี) เพื่อทดสอบระบบให้ของ
   const tryGive = (p) => {
+    if (game.darkAt(p.zoneId, p.outside)) return; // มืด: เทรดไม่ได้
     const mates = game.presentWith(p).filter((o) => o.id !== p.id && o.inventory.length < CONFIG.INVENTORY_MAX);
     if (!mates.length || !p.inventory.length || !chance(strategy === 'camp' || strategy === 'peaceful' ? 0.6 : 0.2)) return;
     const target = pick(mates);
@@ -327,7 +328,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
   // ช่วงพัก: ขอของจากบอทที่อยู่ห้องเดียวกัน (บอทให้เสมอ)
   const tryRequest = (p) => {
     const bots = game.presentWith(p).filter((o) => o.isBot && o.inventory.length);
-    if (!bots.length || p.inventory.length >= CONFIG.INVENTORY_MAX) return;
+    if (!bots.length || p.inventory.length >= CONFIG.INVENTORY_MAX || game.darkAt(p.zoneId, p.outside)) return;
     const v = game.viewFor(p.id);
     const bot = pick(bots);
     const shown = v.me.zonePeople.find((zp) => zp.id === bot.id);
@@ -1374,8 +1375,9 @@ async function unitTests() {
     const mk = (name, kind, description = '', extra = {}) => ({ id: `it_${name}_${kind}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false, ...extra });
     const has = (item, ...tags) => tags.every((t) => tagsOf(item).has(t));
     const none = (item) => tagsOf(item).size === 0;
+    const onlyLight = (item) => [...tagsOf(item)].join() === 'light'; // ไฟฉายส่องสว่างได้ แต่ไม่ใช่อาวุธ/เครื่องมือ
     assert(has(mk('ขวานดับเพลิง', 'weapon'), 'sharp', 'heavy') && has(mk('ไขควงชุดใหญ่', 'tool', 'ปลายแหลม'), 'sharp', 'fastener') && has(mk('ปืนลูกซองโบราณ', 'weapon', 'ยังมีกระสุนสองนัด'), 'firearm') && has(mk('เข็มฉีดยา', 'tool'), 'injector'), 'axe, screwdriver, shotgun and syringe get the right tags');
-    assert(none(mk('ไฟฉายเก่า', 'tool', 'แสงอ่อน ๆ แต่ยังใช้ได้')) && none(mk('สมุดลงทะเบียนผู้โดยสาร', 'tool', 'มีรายชื่อและเลขห้อง')) && none(mk('วิทยุภายในสถานี', 'tool')) && none(mk('กุญแจมือ', 'tool')) && none(mk('ไม้สกิมเมอร์ตักใบไม้', 'weapon', 'ด้ามอะลูมิเนียมยาว เบา')), 'flashlight, ledger, radio, handcuffs and a light pole carry no capability tags');
+    assert(onlyLight(mk('ไฟฉายเก่า', 'tool', 'แสงอ่อน ๆ แต่ยังใช้ได้')) && none(mk('สมุดลงทะเบียนผู้โดยสาร', 'tool', 'มีรายชื่อและเลขห้อง')) && none(mk('วิทยุภายในสถานี', 'tool')) && none(mk('กุญแจมือ', 'tool')) && none(mk('ไม้สกิมเมอร์ตักใบไม้', 'weapon', 'ด้ามอะลูมิเนียมยาว เบา')), 'flashlight is only a light; ledger, radio, handcuffs and a light pole carry no capability tags');
     assert(has(mk('สายไฟพ่วงยาว', 'rope'), 'conductive', 'cord') && has(mk('เทปพันท่อและสายไฟ', 'rope'), 'cord') && !has(mk('เทปพันท่อและสายไฟ', 'rope'), 'conductive'), 'cables conduct, tape only ties');
     assert(has(mk('น้ำยาฟอกขาว', 'poison'), 'pungent') && has(mk('น้ำยากันเยือกแข็ง', 'poison', 'รสหวาน ไม่มีสี'), 'tasteless') && has(mk('พิษแมงกะพรุนสกัด', 'poison'), 'bloodOnly'), 'poisons are tagged pungent / tasteless / blood-only');
     assert(parseAmmo('ยังมีกระสุนสองนัด') === 2 && parseAmmo('มีลูกฉมวก 3 ดอก') === 3 && parseAmmo('') === 2, 'ammo is read from the description');
@@ -2048,8 +2050,144 @@ async function unitTests() {
     assert(g16.chat.at(-1).text.includes(a16.name) && g16.chat.at(-1).text.includes('มีดหั่นขนมปัง'), 'the players command lists everyone with their items');
     CONFIG.DEBUG_CHEATS = false;
   }
+  // 20) แผนที่: ค้ำประตู (คนนอกเข้าไม่ได้แม้มีกุญแจ ต้องพัง · คนในเอาออกทันที) · ทางลับ (สำรวจเจอ เดินทะลุแม้ล็อก ไม่โดนกับดักประตู)
+  //     · ไฟดับ (พังทันที มืดไม่เห็นคน/ของ คลำสุ่ม 1 ชิ้น เทรดไม่ได้ ไม่มีพยาน · ของส่องสว่าง/แว่นมองกลางคืน · ซ่อม)
+  {
+    const g17 = new Game({ code: 'UNIT17', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids17 = ['m1-xxxxxxxx', 'm2-xxxxxxxx', 'm3-xxxxxxxx', 'm4-xxxxxxxx'];
+    for (const [i, id] of ids17.entries()) g17.addPlayer({ id, name: `แผนที่ ${i + 1}` });
+    g17.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g17.start(ids17[0]);
+    g17.clearTimers();
+    const [a17, b17, c17, d17] = ids17.map((id) => g17.players.get(id));
+    const mk17 = (name, kind, description = '') => ({ id: `it_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false });
+    const zones17 = [...g17.zones.values()];
+    const all17 = zones17.flatMap((z) => z.items);
+    assert(all17.filter((i) => tagsOf(i).has('light')).length >= 2 && all17.some((i) => tagsOf(i).has('nightvision')), 'the world has light sources and night-vision goggles');
+    assert(g17.passages.length >= 1 && g17.passages.every((x) => x.a !== x.b && zones17.some((z) => z.id === x.a) && zones17.some((z) => z.id === x.b)), 'every game has at least one secret passage between explore rooms');
+    for (const p of [a17, b17, c17, d17]) {
+      p.inventory = [];
+      p.outside = false;
+      g17.charOf(p).ultimate.trait = 'none';
+    }
+    g17.phase = PHASE.DAY;
+    g17.step = STEP.ACT;
+    // (i) ค้ำประตู
+    const ps17 = g17.passages[0];
+    const L17 = zones17.find((z) => z.id === ps17.a);
+    const M17 = zones17.find((z) => z.id === ps17.b);
+    const O17 = zones17.find((z) => z.id !== L17.id && z.id !== M17.id && z.id !== g17.location.sleepZoneId);
+    a17.zoneId = L17.id;
+    b17.zoneId = O17.id;
+    c17.zoneId = O17.id;
+    d17.zoneId = O17.id;
+    const rod17 = mk17('แท่งเหล็กทดสอบ', 'weapon', 'หนักมือ');
+    a17.inventory = [rod17];
+    const barAct = g17.doorActions(a17).find((x) => x.type === 'barDoor');
+    assert(barAct && barAct.itemId === rod17.id, 'a rod can bar the door from inside');
+    g17.instantDoorAction(a17.id, 'barDoor', rod17.id);
+    assert(L17.bar?.item === rod17 && !a17.inventory.includes(rod17) && !L17.locked, 'the door is barred (not locked) and the rod is in the door');
+    const key17 = { id: 'key17', name: 'กุญแจทดสอบ', description: '', kind: 'key', unlocksZoneIds: [L17.id], portable: true, hidden: false, isPart: false };
+    L17.lockable = true;
+    b17.inventory = [key17];
+    g17.moves = new Map([[a17.id, L17.id], [b17.id, L17.id], [c17.id, O17.id], [d17.id, O17.id]]);
+    g17.resolveMoves();
+    assert(b17.zoneId === L17.id && b17.outside && b17.log.slice(-2).some((l) => /ถูกค้ำ/.test(l.text)), 'a key holder is stopped by a barred door and told why');
+    g17.step = STEP.ACT;
+    assert(!g17.doorActions(b17).some((x) => x.type === 'unlockDoor') && g17.doorMeans(b17, L17).method === 'break' && g17.availableActions(b17).some((x) => x.type === 'doorwork' && /ค้ำ/.test(x.label)), 'outside a barred door only breaking works');
+    assert(g17.doorActions(a17).some((x) => x.type === 'removeBar'), 'inside, the bar can be removed instantly');
+    g17.instantDoorAction(a17.id, 'removeBar');
+    assert(!L17.bar && L17.items.includes(rod17), 'removing the bar leaves the rod on the floor');
+    g17.moves = new Map([[a17.id, L17.id], [b17.id, L17.id], [c17.id, O17.id], [d17.id, O17.id]]);
+    g17.resolveMoves();
+    assert(b17.zoneId === L17.id && !b17.outside, 'once the bar is gone the door opens normally');
+    // ค้ำแล้วพังจากข้างนอก: ที่ค้ำหลุดตกอยู่ในห้อง
+    g17.step = STEP.ACT;
+    a17.inventory = [rod17];
+    L17.items.splice(L17.items.indexOf(rod17), 1);
+    g17.instantDoorAction(a17.id, 'barDoor', rod17.id);
+    c17.zoneId = L17.id;
+    c17.outside = true;
+    g17.charOf(c17).ultimate.trait = 'combat';
+    Math.random = () => 0;
+    g17.do_doorwork(c17);
+    Math.random = realRandom;
+    assert(L17.broken && !L17.bar && L17.items.includes(rod17) && c17.outside, 'breaking a barred door drops the bar inside');
+    // (ii) ทางลับ: สำรวจเจอ · เดินทะลุประตูที่ล็อก · ไม่โดนกับดักประตู · ออกจากห้องที่ถูกขังได้
+    const P17 = zones17.find((z) => z.id === g17.passages[0].a);
+    const Q17 = zones17.find((z) => z.id === g17.passages[0].b);
+    d17.zoneId = P17.id;
+    d17.outside = false;
+    Math.random = () => 0.99;
+    g17.do_search(d17);
+    Math.random = realRandom;
+    assert(!d17.knownPassages.has(ps17.id), 'a passage is not found when the roll fails');
+    Math.random = () => 0.01;
+    g17.do_search(d17);
+    Math.random = realRandom;
+    assert(d17.knownPassages.has(ps17.id) && d17.log.at(-1).text.includes('ทางลับ') && g17.viewFor(d17.id).me.passages.some((x) => x.id === ps17.id), 'searching finds the secret passage and the view lists it');
+    Q17.lockable = true;
+    Q17.locked = true;
+    Q17.broken = false;
+    Q17.traps.push({ setterId: a17.id, item: { id: 'trap_q', name: 'กับดักประตูทดสอบ', kind: 'trap', trapType: 'door', wound: 'blunt', weaponName: 'ค้อนทดสอบ', strikerTags: ['heavy'], strikerKind: 'weapon', otherPart: { name: 'ไขควง', kind: 'tool', description: '' } }, turn: g17.turn, side: 'inside' });
+    g17.step = STEP.MOVE;
+    g17.moves = new Map([[d17.id, Q17.id], [a17.id, L17.id], [b17.id, L17.id], [c17.id, L17.id]]);
+    g17.resolveMoves();
+    assert(d17.zoneId === Q17.id && !d17.outside && d17.alive && Q17.traps.length === 1 && d17.log.some((l) => /ผ่านทางลับ/.test(l.text)), 'a known passage leads into a locked room without touching the door or its trap');
+    assert(!g17.doorBlocking(d17, P17.id) && g17.lockedIn(d17), 'from inside the locked room the passage is still a way out');
+    g17.step = STEP.MOVE;
+    g17.moves = new Map();
+    g17.chooseMove(d17.id, P17.id);
+    assert(g17.moves.get(d17.id) === P17.id, 'a locked-in player may choose the room the passage leads to');
+    Q17.traps = [];
+    Q17.locked = false;
+    g17.moves = new Map([[d17.id, P17.id], [a17.id, L17.id], [b17.id, L17.id], [c17.id, L17.id]]);
+    g17.resolveMoves();
+    // (iii) ไฟดับ
+    g17.step = STEP.ACT;
+    const PZ = zones17.find((z) => z.items.some((i) => i.kind === 'power'));
+    assert(PZ, 'the world has a generator room');
+    for (const p of [a17, b17, c17, d17]) {
+      p.inventory = p.inventory.filter((i) => !tagsOf(i).has('light') && !tagsOf(i).has('nightvision'));
+      p.outside = false;
+    }
+    a17.zoneId = PZ.id;
+    assert(g17.doorActions(a17).some((x) => x.type === 'breakPower'), 'the generator can be broken instantly');
+    g17.instantDoorAction(a17.id, 'breakPower');
+    assert(g17.blackout && g17.darkAt(PZ.id) && !g17.canSee(a17) && b17.log.at(-1).text.includes('ไฟทั้งอาคารดับ'), 'breaking the generator blacks out the whole building');
+    const D17 = O17;
+    D17.items.push(mk17('ของในความมืด', 'tool'));
+    b17.zoneId = c17.zoneId = D17.id;
+    g17.moves = new Map([[a17.id, PZ.id], [b17.id, D17.id], [c17.id, D17.id], [d17.id, P17.id]]);
+    g17.step = STEP.MOVE;
+    g17.resolveMoves();
+    assert(b17.zoneMemory[D17.id]?.dark && b17.zoneMemory[D17.id].people.length === 0 && /มืดสนิท/.test(b17.log.at(-1).text), 'in the dark you see neither people nor items');
+    g17.step = STEP.ACT;
+    assert(g17.itemActions(b17).length === 0 && !g17.availableActions(b17).some((x) => x.type === 'search') && g17.availableActions(b17).some((x) => x.type === 'grope') && g17.viewFor(b17.id).me.zonePeople.length === 0, 'in the dark: no instant take, no search, only groping; nobody is listed');
+    g17.step = STEP.REPORT; // ให้ของได้เฉพาะช่วงพัก — ในความมืดต้องถูกปฏิเสธด้วยเหตุผลว่ามืด
+    let dark17 = false;
+    try { g17.giveItem(b17.id, c17.id, 'x'); } catch (e) { dark17 = /มืด/.test(e.message); }
+    assert(dark17, 'items cannot be traded in the dark');
+    g17.step = STEP.ACT;
+    const invB = b17.inventory.length;
+    g17.chooseAction(b17.id, { type: 'grope' });
+    assert(g17.actions.get(b17.id)?.type === 'grope', 'groping is an hour action');
+    g17.do_grope(b17);
+    assert(b17.inventory.length === invB + 1, 'groping grabs one random item');
+    assert(g17.witnessesOf(b17).length === 0, 'nobody witnesses anything in the dark');
+    c17.inventory.push(mk17('เทียนไขทดสอบ', 'tool', 'จุดส่องสว่างได้'));
+    assert(g17.canSee(b17) && g17.canSee(c17) && g17.witnessesOf(b17).length === 1 && g17.availableActions(b17).some((x) => x.type === 'search'), 'one candle in the room lets everyone there see again');
+    c17.inventory = [mk17('แว่นมองกลางคืนทดสอบ', 'tool')];
+    assert(g17.canSee(c17) && !g17.canSee(b17), 'night-vision goggles help only the wearer');
+    g17.actions = new Map();
+    assert(g17.availableActions(a17).some((x) => x.type === 'repairPower'), 'the generator room offers repairing during a blackout');
+    g17.charOf(a17).ultimate.trait = 'tech';
+    g17.do_repairPower(a17);
+    assert(!g17.blackout && g17.canSee(b17), 'a tech repairs the generator in one hour and the lights return');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands)');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair)');
 }
 
 try {

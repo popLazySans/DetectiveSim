@@ -203,6 +203,7 @@
             <li><b>ของแต่ละชิ้นทำอะไรได้ดูจากป้ายกำกับ</b> (หนัก · มีคม · ยิงได้ · เครื่องมือช่าง · นำไฟฟ้า · ฉีดได้): ลงมือด้วยปืน 85% (กระสุนจำกัด ยิงแล้วทั้งตึกได้ยิน) · อาวุธมีคม/หนัก 70% · อาวุธเบา 50% · เครื่องมือที่หนักหรือปลายแหลม 55% · ผ้า (อุดหายใจ) / เชือก (รัดคอ) 50% · ยาพิษลงมือตรงต้องมี<b>เข็มฉีดยา</b> (65%) หรือเป็นสายการแพทย์ (80%) ไม่งั้นผสมอาหารได้อย่างเดียว · สมุด วิทยุ ไฟฉาย กล้อง กุญแจมือ ใช้ฆ่าหรือประกอบกับดักไม่ได้ · ยากลิ่นฉุนคนกินสังเกตง่าย (60%) ยาไร้สีไร้รสสังเกตยาก (5%) พิษที่ต้องเข้ากระแสเลือดผสมอาหารไม่ได้ · สูตรกับดักดูแท็ก: ใบมีดเหวี่ยง = อาวุธมีคม/หนัก + เชือก · ของหนักหล่น = ของหนัก + เชือก · ไฟช็อต = เครื่องมือช่าง + สายไฟจริง · กับดักประตู = ปืนมีกระสุน/มีคม/หนัก + เครื่องมือช่าง · ซ่อมทางออกและช่างเทคนิคสะเดาะต้องใช้เครื่องมือช่าง ทุบ/งัดต้องของหนักหรืออาวุธมีคม</li>
             <li><b>ประตูที่ล็อก:</b> มีกุญแจต้องกด 🔑 ไขเอง (ทันที ไม่กินชั่วโมง) แล้วชั่วโมงถัดไปค่อยเข้า/ออก · ไม่มีกุญแจ: 🪛 สะเดาะ (ที่สะเดาะกุญแจ หรือช่างเทคนิค+เครื่องมือช่าง 2–3 ชม.) หรือ 💥 พังประตู (ใครก็ได้ 3–4 ชม. นักสู้ 1–2 ชม. เสียงดัง) เป็นแอ็กชันที่ต้องเลือกซ้ำทุกชั่วโมงจนสำเร็จ · 🫥 ซ่อนของใช้ 1 ชั่วโมงแต่ซ่อนได้หลายชิ้น (หยิบ/วางทำได้ทันที) · ไม่มีใครเห็นว่าใครเลือกแล้วหรือยัง · ครบ 23 ชั่วโมงโดยไม่มีการตัดสิน = ขึ้นวันใหม่เอง · ต่อยคนที่สลบอยู่ไม่ได้ (ต้องใช้ของที่ฆ่าได้) · สุดยอดนักเดินป่าถือของได้ 5 ชิ้น</li>
             <li><b>🩸 อาวุธเปื้อนเลือด:</b> ของที่ใช้ฆ่าจนเกิดแผล (ของมีคม/ของหนัก/ปืน) จะติดคราบเลือด ใครเห็นในมือ ในห้อง หรือตอนตรวจกระเป๋าก็รู้ · ต้องไปห้องที่มีน้ำ (ห้องน้ำ ครัว ซักล้าง สระ ฯลฯ) แล้วเลือก "ล้าง" (ใช้ชั่วโมง) แต่อ่างอาจเก็บคราบจาง ๆ ไว้ · ตอนตัดสิน <b>ขอตรวจกระเป๋า</b>คนอื่นได้ ถ้าเจ้าของยอม ของทั้งหมดจะถูกประกาศในแชท</li>
+            <li><b>🚧 ค้ำประตู · 🕳 ทางลับ · 🌑 ไฟดับ:</b> ถือแท่งเหล็ก/ท่อนไม้/ไม้เบสบอลแล้วกด "ค้ำประตู" (ทันที) จากข้างใน — คนนอกเข้าไม่ได้แม้มีกุญแจ ต้องพังประตู ส่วนคนในเอาออกได้ทันที · ทุกเกมสุ่มคู่ห้องที่มีทางลับถึงกัน (1 คู่ต่อ 8 ห้อง) สำรวจเจอ 20% (ช่างสังเกต 50%) เดินทะลุได้แม้ประตูล็อก/ค้ำ และไม่โดนกับดักประตู · ที่ห้องเครื่องปั่นไฟกด "พังเครื่องปั่นไฟ" (ทันที) = ไฟดับทั้งตึก: ใครไม่มีของส่องสว่าง (เทียน/ไฟฉาย/ไฟแช็ก) จะมองไม่เห็นคนและของ หยิบได้แค่ "คลำ" สุ่ม 1 ชิ้นต่อชั่วโมง เทรดไม่ได้ ไม่มีพยาน · มีของส่องสว่างในห้อง = ทุกคนในห้องเห็นปกติ · แว่นมองกลางคืนเห็นเฉพาะคนใส่ · ซ่อมที่เครื่องปั่นไฟ 2–3 ชั่วโมง (ช่างเทคนิค 1)</li>
             <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
             <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 3–5 ชั่วโมง <b>ละเลยได้</b> แต่ถ้าครบกำหนดแล้วยังไม่ทำ จะโดนลงโทษ: <b>สลบ 1–3 ชั่วโมง</b> (ทำอะไรไม่ได้ ไม่รู้ว่ารอบตัวเกิดอะไรขึ้น) ของบางชิ้นหล่นในห้อง และระหว่างสลบใครลงมือกับคุณก็สำเร็จแน่นอน · ภารกิจที่ทำไม่ได้แล้วโดยไม่ใช่ความผิดคุณถูกยกเลิกโดยไม่มีโทษ</li>
             <li><b>ลงมือสำเร็จไม่ได้แปลว่าตาย:</b> โอกาสฆ่าขึ้นกับของ (ปืน 90% · มีคม 70% · หนัก 55% · เชือก 60% · ผ้า 35% · ยาพิษ 85% · ของเบา 25%) ที่เหลือเป้าหมายแค่ <b>สลบ 1–3 ชั่วโมง</b> · <b>มือเปล่า ยานอนหลับ ยาสลบ ทำให้สลบเท่านั้น</b> ฆ่าไม่ได้ (ยกเว้นนักสู้ต่อยฆ่าได้ 5%) · คนที่สลบอยู่ถูกลงมือสำเร็จแน่นอน (ของฆ่าได้ = ตาย) · ลงมือพลาดแล้วเป้าหมายสวนกลับได้ 25% (นักสู้ 50% · ถืออาวุธ +15%) ผลของการสวนกลับขึ้นกับของที่เขาถือ: ฆ่าคุณหรือทำให้คุณสลบ</li>
@@ -294,6 +295,7 @@
       <span class="logo">DESPAIR BOARD</span>
       <span class="badge">ห้อง ${esc(s.code)}</span>
       <span class="badge pink">🕐 วันที่ ${s.day} · ชั่วโมงที่ ${s.hour}</span>
+      ${s.me?.blackout ? '<span class="badge red" title="เครื่องปั่นไฟถูกพัง ซ่อมได้ที่ห้องที่มีแผงไฟ">🌑 ไฟดับทั้งตึก</span>' : ''}
       <span class="phase">${esc(phaseText)}</span>
       ${s.location ? `<span class="loc">📍 ${esc(s.location.name)}</span>` : ''}
       ${s.stepDeadline ? `<span class="badge yellow">⏱ <span id="step-countdown">--</span></span>` : ''}
@@ -424,7 +426,8 @@
     const sel = chosen || ui.selectedZone;
     const alive = s.players.filter((p) => p.alive);
     const moved = alive.filter((p) => p.moved).length;
-    const stuck = !!me.door?.lockedIn; // ถูกขัง (ไม่มีกุญแจ) → เลือกได้แค่ห้องนี้ แล้วสะเดาะ/พังในขั้นแอ็กชัน
+    const stuck = !!(me.door?.lockedIn || me.door?.barred); // ถูกขัง/ประตูถูกค้ำ → เลือกได้แค่ห้องนี้ (หรือห้องที่มีทางลับไป)
+    const passTargets = new Set((me.passages || []).flatMap((x) => (x.a === me.zoneId ? [x.b] : x.b === me.zoneId ? [x.a] : [])));
     return `<div class="card">
       ${doorNowHtml(s)}
       <div class="row"><h3>🗺 แผนที่ — ${esc(s.location.name)}</h3><span class="spacer"></span>${s.phase === 'investigation' ? `<span class="badge red">รอบเก็บหลักฐาน${s.investigation ? ` ชั่วโมงที่ ${s.investigation.hour}/${s.investigation.total}` : ''}</span>` : ''}</div>
@@ -443,9 +446,12 @@
             tags.push(`<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูล็อกอยู่ (อาจเปลี่ยนไปแล้ว) · ${esc(hint)}">🔒 ล็อกอยู่ · ${esc(hint)}</span>`);
           }
           if (mem?.food) tags.push('<span class="badge">🍞 มีอาหาร</span>');
+          if (mem?.barred) tags.push('<span class="badge red" title="ครั้งล่าสุดที่คุณเจอ ประตูถูกค้ำจากข้างใน กุญแจ/ที่สะเดาะใช้ไม่ได้ ต้องพัง">🚧 ถูกค้ำ</span>');
+          if (mem?.dark) tags.push('<span class="badge" title="ครั้งล่าสุดที่เข้าไป มืดจนมองไม่เห็นอะไร">🌑 มืด</span>');
+          for (const x of (me.passages || []).filter((x) => x.a === z.id || x.b === z.id)) tags.push(`<span class="badge purple" title="ทางลับ: เดินทะลุได้แม้ประตูล็อก/ถูกค้ำ ไม่ผ่านประตู (กับดักประตูไม่ทำงาน)">🕳 ทางลับ ↔ ${esc(x.a === z.id ? x.bName : x.aName)}</span>`);
           if (here) tags.push(`<span class="badge cyan">${me.outside ? 'คุณยืนรออยู่หน้าประตู (ข้างนอก)' : 'คุณอยู่ที่นี่ล่าสุด'}</span>`);
           const bodiesHere = me.knownBodies.filter((b) => b.zoneName === z.name);
-          return `<div class="zone ${sel === z.id ? 'selected' : ''} ${exitsHere.length ? 'exit' : ''} ${chosen ? 'locked' : ''} ${stuck && !here ? 'disabled' : ''}" data-action="pick-zone" data-id="${esc(z.id)}">
+          return `<div class="zone ${sel === z.id ? 'selected' : ''} ${exitsHere.length ? 'exit' : ''} ${chosen ? 'locked' : ''} ${stuck && !here && !passTargets.has(z.id) ? 'disabled' : ''}" data-action="pick-zone" data-id="${esc(z.id)}">
             <div class="zname">${esc(z.name)}</div>
             <div class="ztags">${tags.join(' ')}</div>
             <div class="zdesc">${esc(z.description)}</div>
@@ -472,6 +478,8 @@
       <div class="row"><h2>📍 ${me.outside ? 'หน้าประตู' : ''}${esc(z?.name || '?')}${me.outside ? ' <span class="badge red">ข้างนอก · ประตูล็อก</span>' : ''}</h2><span class="spacer"></span><span class="badge ${s.phase === 'investigation' ? 'red' : 'pink'}">${s.phase === 'investigation' ? 'เก็บหลักฐาน' : `วันที่ ${s.day} ชั่วโมงที่ ${s.hour}`}</span></div>
       <p class="muted">${esc(z?.description || '')}</p>
       <div class="zone-facts">
+        ${mem.dark || me.canSee === false ? '<div class="danger-text">🌑 <b>มืดสนิท</b> — มองไม่เห็นคนและของในห้อง (ต้องมีเทียน/ไฟฉาย/ไฟแช็ก) หยิบได้แค่ "คลำหาของ" และเทรดของกันไม่ได้</div>' : ''}
+        ${me.door?.barred ? `<div class="danger-text">🚧 ประตูห้องนี้ถูกค้ำจากข้างใน${me.door.barItem ? ` (${esc(me.door.barItem)})` : ''} — คนข้างนอกต้องพังประตู คนข้างในเอาออกได้ทันที</div>` : ''}
         <div><b>${me.outside ? 'คนที่ยืนหน้าประตูด้วย' : 'คนที่อยู่ที่นี่'}:</b> ${people.length ? esc(people.join(', ')) : '<span class="muted">ไม่มีใครนอกจากคุณ</span>'}</div>
         <div><b>ของที่เห็น:</b> ${me.outside ? '<span class="muted">มองไม่เห็นข้างใน — ประตูล็อกอยู่</span>' : mem.items?.length ? esc(mem.items.join(', ')) : '<span class="muted">ไม่เห็นของเป็นพิเศษ</span>'}</div>
         ${z?.water ? '<div class=\"muted\" style=\"font-size:.8rem\">🚿 ห้องนี้มีน้ำ — ล้างคราบเลือดออกจากของที่ถือได้ (ใช้ชั่วโมง อ่างอาจเก็บคราบไว้)</div>' : ''}
@@ -483,8 +491,8 @@
 
   const ACTION_GROUPS = [
     ['ทางออก', ['exit', 'exit_power']],
-    ['ทั่วไป', ['search', 'hide', 'eat', 'rest']],
-    ['ประตู', ['doorwork']],
+    ['ทั่วไป', ['search', 'grope', 'hide', 'eat', 'rest']],
+    ['ประตู/ไฟ', ['doorwork', 'repairPower']],
     ['ตรวจศพ', ['examine']],
     ['ความสามารถพิเศษ', ['steal', 'interrogate', 'sabotage']],
     ['ประกอบกับดัก', ['craft']],
@@ -496,7 +504,7 @@
   function doorNowHtml(s) {
     const list = s.me.doorActions || [];
     if (!s.me.alive || !list.length) return '';
-    return `<div class="agroup itemnow"><div class="agtitle">🔑 ประตู — ทำได้ทันที ไม่กินชั่วโมง</div><div class="alist">${list.map((a) => `<button class="act small" data-action="door-now" data-type="${esc(a.type)}" title="${esc(a.desc || '')}">${esc(a.label)}</button>`).join('')}</div></div>`;
+    return `<div class="agroup itemnow"><div class="agtitle">⚡ ประตู/ไฟ — ทำได้ทันที ไม่กินชั่วโมง</div><div class="alist">${list.map((a) => `<button class="act small ${a.danger ? 'danger' : ''}" data-action="door-now" data-type="${esc(a.type)}" data-id="${esc(a.itemId || '')}" title="${esc(a.desc || '')}">${esc(a.label)}</button>`).join('')}</div></div>`;
   }
 
   function itemNowHtml(s) {
@@ -631,7 +639,7 @@
       body = `<div class="ghostmap">${sp.rooms
         .map(
           (r) => `<div class="groom ${r.locked ? 'locked' : ''} ${r.bodies.length ? 'body' : ''}">
-          <div class="gname">${r.isSleep ? '🛏 ' : ''}${esc(r.name)} ${r.locked ? '<span class="badge red">🔒</span>' : ''}${r.broken ? '<span class="badge">ประตูพัง</span>' : ''}${r.dark ? '<span class="badge">🌑 ไฟดับ</span>' : ''}</div>
+          <div class="gname">${r.isSleep ? '🛏 ' : ''}${esc(r.name)} ${r.locked ? '<span class="badge red">🔒</span>' : ''}${r.barred ? '<span class="badge red">🚧</span>' : ''}${r.broken ? '<span class="badge">ประตูพัง</span>' : ''}${r.dark ? '<span class="badge">🌑 มืด</span>' : ''}</div>
           ${r.people.length ? `<div>🧍 ${esc(r.people.join(', '))}</div>` : ''}
           ${r.bodies.length ? `<div class="bad">☠ ${esc(r.bodies.join(', '))}</div>` : ''}
           ${r.traps.length ? `<div class="bad">🪤 ${esc(r.traps.map((t) => `${t.name}${t.door ? ' (ประตู)' : ''} ของ${t.setter}`).join(', '))}</div>` : ''}
@@ -640,7 +648,8 @@
         </div>`,
         )
         .join('')}</div>
-        <p class="muted" style="font-size:.8rem">🙈 = ของที่ถูกซ่อน · ☠ หลังชื่ออาหาร = มีพิษ · กับดักทุกอันบอกว่าใครวาง</p>`;
+        ${sp.passages?.length ? `<p class="muted" style="font-size:.8rem">🕳 ทางลับ: ${esc(sp.passages.map((x) => `${x.aName} ↔ ${x.bName}`).join(' · '))}</p>` : ''}
+        <p class="muted" style="font-size:.8rem">🙈 = ของที่ถูกซ่อน · ☠ หลังชื่ออาหาร = มีพิษ · 🩸 เปื้อนเลือด · กับดักทุกอันบอกว่าใครวาง${sp.blackout ? ' · 🌑 ไฟดับทั้งตึก' : ''}</p>`;
     } else {
       const feed = [...sp.feed].reverse();
       body = feed.length
@@ -1048,7 +1057,7 @@
         break;
       case 'pick-zone':
         if (state.me.moveChoice || !state.me.alive) break;
-        if (state.me.door?.lockedIn && id !== state.me.zoneId) {
+        if ((state.me.door?.lockedIn || state.me.door?.barred) && id !== state.me.zoneId && !(state.me.passages || []).some((x) => (x.a === state.me.zoneId && x.b === id) || (x.b === state.me.zoneId && x.a === id))) {
           toast('🔒 คุณถูกล็อกอยู่ในห้องนี้ ออกไม่ได้ — เลือกห้องนี้ต่อ แล้วสะเดาะ/พังประตูในขั้นเลือกแอ็กชัน (หรือไขกุญแจถ้ามี)', 'error');
           break;
         }
@@ -1090,7 +1099,8 @@
         if (await act('day:item', { type: btn.dataset.type, itemId: id })) toast('เรียบร้อย — ยังเลือกทำอย่างอื่นได้');
         break;
       case 'door-now':
-        if (await act('day:door', { type: btn.dataset.type })) toast('เรียบร้อย — ไม่กินชั่วโมง');
+        if (btn.dataset.type === 'breakPower' && !(await confirmDialog('พังเครื่องปั่นไฟ? ไฟจะดับทั้งตึกจนกว่าจะมีคนซ่อม'))) break;
+        if (await act('day:door', { type: btn.dataset.type, itemId: btn.dataset.id || undefined })) toast('เรียบร้อย — ไม่กินชั่วโมง');
         break;
       case 'ready':
         await act('day:ready');

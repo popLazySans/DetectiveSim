@@ -123,7 +123,7 @@ io.on('connection', (socket) => {
   socket.on('day:move', handle(({ zoneId }) => game().chooseMove(me(), String(zoneId || ''))));
   socket.on('day:act', handle(({ type, itemId, itemId2, itemIds, targetId, victimId, toZoneId, recipeId, exitId }) => game().chooseAction(me(), { type, itemId, itemId2, itemIds, targetId, victimId, toZoneId, recipeId, exitId })));
   socket.on('day:item', handle(({ type, itemId }) => game().instantItemAction(me(), { type: String(type || ''), itemId: String(itemId || '') }))); // หยิบ/วาง/ซ่อนทันที
-  socket.on('day:door', handle(({ type }) => game().instantDoorAction(me(), String(type || '')))); // ไขกุญแจ/ล็อกประตูทันที
+  socket.on('day:door', handle(({ type, itemId }) => game().instantDoorAction(me(), String(type || ''), itemId ? String(itemId) : undefined))); // ไขกุญแจ/ล็อกประตูทันที
   socket.on('day:ready', handle(() => game().markReady(me())));
   socket.on('spectate:follow', handle(({ targetId }) => game().setFollow(me(), String(targetId || '')))); // ผีตามดูคนเป็น (ส่งค่าว่าง = เลิกตามดู)
   if (process.env.DEBUG_CHEATS === 'true') socket.on('debug:die', handle(() => game().debugDie(me()))); // ชีตทดสอบ: ตายทันทีเพื่อดูโหมดวิญญาณ
