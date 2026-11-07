@@ -980,7 +980,7 @@ async function unitTests() {
     assert(acts5.length === lockedExit.steps.length && acts5.every((x) => x.step && !x.disabled && /สำเร็จแล้ว 0\/\d+/.test(x.label)) && lockedExit.steps.length >= 4, 'each step of the exit is its own enabled action (4 or more) whose label counts finished steps');
     const act = { type: 'exit', exitId: lockedExit.id }; // ไม่ระบุขั้น (แบบบอท/เทสต์เก่า) = ทำทุกขั้นที่ทำได้ในชั่วโมงนั้น
     const view5 = game.viewFor(a.id).me.exits.find((x) => x.id === lockedExit.id);
-    assert(view5 && view5.steps.length === lockedExit.steps.length && view5.steps.some((s) => s.kind === 'key' && s.done) && view5.steps.some((s) => s.kind === 'force' && !s.done), 'the view shows a step checklist with the key already satisfied');
+    assert(view5 && view5.steps.length === lockedExit.steps.length && view5.steps.some((s) => s.kind === 'key' && !s.done && s.ready) && view5.steps.some((s) => s.kind === 'force' && !s.done && s.ready) && view5.stepsDone === 0, 'the view shows a step checklist: nothing done yet, key and force steps ready because of what is held');
     game.phase = PHASE.DAY;
     game.step = STEP.ACT;
     game.charOf(a).ultimate.trait = 'none'; // คนทั่วไปลงแรงได้ 1 แต้มต่อครั้ง

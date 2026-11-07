@@ -121,7 +121,7 @@ io.on('connection', (socket) => {
   socket.on('chat:send', handle(({ text }) => game().sendChat(me(), text)));
   // วงจรวัน: เลือกห้อง → เลือกแอ็กชัน → อ่านบันทึก/พร้อมไปต่อ
   socket.on('day:move', handle(({ zoneId }) => game().chooseMove(me(), String(zoneId || ''))));
-  socket.on('day:act', handle(({ type, itemId, itemId2, itemIds, targetId, victimId, toZoneId, recipeId, exitId }) => game().chooseAction(me(), { type, itemId, itemId2, itemIds, targetId, victimId, toZoneId, recipeId, exitId })));
+  socket.on('day:act', handle(({ type, itemId, itemId2, itemIds, targetId, victimId, toZoneId, recipeId, exitId, step }) => game().chooseAction(me(), { type, itemId, itemId2, itemIds, targetId, victimId, toZoneId, recipeId, exitId, step: step == null ? undefined : String(step) })));
   socket.on('day:item', handle(({ type, itemId }) => game().instantItemAction(me(), { type: String(type || ''), itemId: String(itemId || '') }))); // หยิบ/วาง/ซ่อนทันที
   socket.on('day:door', handle(({ type, itemId }) => game().instantDoorAction(me(), String(type || ''), itemId ? String(itemId) : undefined))); // ไขกุญแจ/ล็อกประตูทันที
   socket.on('day:ready', handle(() => game().markReady(me())));

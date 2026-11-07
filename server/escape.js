@@ -578,7 +578,8 @@ export function resolveExits(game, attempts) {
 }
 
 export function exitView(game, p, x) {
-  const st = exitStatus(game, x, p ? [p] : []);
+  const st = exitStatus(game, x, []); // ขั้นที่ทำสำเร็จจริง (ติดถาวร)
+  const ready = p ? exitStatus(game, x, [p]) : st; // ขั้นที่คนนี้ทำได้ตอนนี้ (ถือของพอ)
   const known = p ? codeKnownBy(p, x) : new Set();
   return {
     id: x.id,
@@ -589,7 +590,7 @@ export function exitView(game, p, x) {
     route: x.route,
     routeLabel: routeLabel(x.route),
     requirement: requirementText(game, x),
-    steps: st.map((s) => ({ kind: s.kind, label: s.label, done: s.done, progress: s.progress, needed: s.needed })),
+    steps: st.map((s, i) => ({ kind: s.kind, label: s.label, done: s.done, ready: !s.done && !!ready[i]?.done, progress: s.progress, needed: s.needed })),
     stepsDone: st.filter((s) => s.done).length,
     codeKnown: x.steps.some((s) => s.kind === 'code') ? known.size : 0,
     codeNeed: x.steps.some((s) => s.kind === 'code') ? (p ? codeNeedFor(game, [p]) : ESCAPE.CODE_NOTES) : 0,
