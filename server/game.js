@@ -845,7 +845,7 @@ export class Game {
         this.logTo(p, `📋 ภารกิจ "${due.text}" ถูกยกเลิก${why ? ` (${why})` : ''} ไม่มีบทลงโทษ`, 'objective');
       };
       if (res === 'forgiven') {
-        forgive('เป้าหมายไม่อยู่ในสภาพที่ทำได้แล้ว');
+        forgive(due.forgiveReason || 'เป้าหมายไม่อยู่ในสภาพที่ทำได้แล้ว');
         continue;
       }
       if (this.lockedIn(p)) {

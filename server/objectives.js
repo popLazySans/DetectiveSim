@@ -75,25 +75,33 @@ export function makeObjective(game, player) {
 export function objectiveOutcome(game, player, o) {
   if (o.done) return 'done';
   const heldByOther = (itemId) => [...game.players.values()].some((p) => p.id !== player.id && p.alive && p.inventory.some((i) => i.id === itemId));
+  // forgiveReason = เหตุผลที่บอกผู้เล่นตอนยกเลิก (ทำไมถึงทำไม่ได้แล้ว)
+  const forgive = (why) => {
+    o.forgiveReason = why;
+    return 'forgiven';
+  };
   if (o.type === 'take') {
     if (player.inventory.some((i) => i.id === o.itemId)) return 'done';
-    if (heldByOther(o.itemId)) return 'forgiven';
+    const holder = [...game.players.values()].find((p) => p.id !== player.id && p.alive && p.inventory.some((i) => i.id === o.itemId));
+    if (holder) return forgive(`${game.nick(holder)}หยิบของชิ้นนั้นไปถือไว้ก่อนแล้ว`);
+    const hiddenSomewhere = [...game.zones.values()].some((z) => z.items.some((i) => i.id === o.itemId && i.hidden));
     const visibleSomewhere = [...game.zones.values()].some((z) => z.items.some((i) => i.id === o.itemId && !i.hidden));
-    return visibleSomewhere ? 'pending' : 'forgiven';
+    if (visibleSomewhere) return 'pending';
+    return forgive(hiddenSomewhere ? 'มีคนเอาของชิ้นนั้นไปซ่อนไว้แล้ว' : 'ของชิ้นนั้นหายไปจากที่เดิมแล้ว');
   }
   if (o.type === 'plant') {
     if (game.zones.get(o.zoneId)?.items.some((i) => i.id === o.itemId)) return 'done';
-    if (!player.inventory.some((i) => i.id === o.itemId)) return 'forgiven';
+    if (!player.inventory.some((i) => i.id === o.itemId)) return forgive('ของที่ต้องเอาไปวางไม่ได้อยู่ในมือคุณแล้ว');
     return 'pending';
   }
   if (o.type === 'meet') {
     const t = game.players.get(o.targetId);
-    if (!t || !t.alive) return 'forgiven';
+    if (!t || !t.alive) return forgive('คนที่ต้องไปอยู่ด้วยไม่อยู่ในเกมแล้ว');
     return 'pending';
   }
   if (o.type === 'visit_eat') {
     const z = game.zones.get(o.zoneId);
-    if (!z || !hasFood(z)) return 'forgiven';
+    if (!z || !hasFood(z)) return forgive('ห้องนั้นไม่มีอาหารให้กินแล้ว');
     return 'pending';
   }
   return 'pending';
