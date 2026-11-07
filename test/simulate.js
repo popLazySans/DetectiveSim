@@ -4,7 +4,7 @@
 import { Game, PHASE, STEP, CONFIG, NONE_VOTE, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap, MURDER_CAUSES } from '../server/game.js';
 import { createAI } from '../server/ai.js';
 import { resolveExits, exitReadyFor, exitUsefulFor } from '../server/escape.js';
-import { RECIPES, OBJECTIVE_HOURS, LOCKS, ATTACK, ROOMS, roomCountFor, woundOf, isConductive, tagsOf, attackBaseOf, parseAmmo, poisonNoticeChance, canBreachWith , DOOR } from '../server/rules.js';
+import { RECIPES, OBJECTIVE_HOURS, LOCKS, ATTACK, ROOMS, roomCountFor, woundOf, isConductive, tagsOf, attackBaseOf, parseAmmo, poisonNoticeChance, canBreachWith , DOOR, DURABILITY, breakable } from '../server/rules.js';
 import { LOCATIONS, EXTRA_ROOMS, mockLocation, mockNarrateCase } from '../server/mock.js';
 
 CONFIG.BOT_DELAY_SCALE = 0.02;
@@ -732,6 +732,8 @@ async function unitTests() {
   for (const [i, id] of ids.entries()) game.addPlayer({ id, name: `ยูนิต ${i + 1}` });
   game.onChange = () => {};
   const saved = { ...CONFIG };
+  const savedDur = { ...DURABILITY };
+  Object.assign(DURABILITY, { BREAK_ON_ATTACK: 0, BREAK_ON_EXIT: 0 }); // ยูนิตเทสต์ไม่สุ่มของพัง (เทสต์ที่ทดสอบของพังระบุโอกาสเอง)
   Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 1 });
   await game.start(ids[0]);
   game.clearTimers();
@@ -912,10 +914,10 @@ async function unitTests() {
   const bHeard = b.log.length;
   game.do_doorwork(a);
   Math.random = realRandom;
-  assert(a.doorWork?.progress === 1 && a.doorWork.need === 2 && locked.locked && a.outside, 'first hour of lockpicking: progress 1 of 2, door still locked');
+  assert(locked.doorWork?.pick?.progress === 1 && locked.doorWork.pick.need === 2 && locked.locked && a.outside, 'first hour of lockpicking: progress 1 of 2 on the door itself, door still locked');
   assert(b.log.length > bHeard && b.log.slice(bHeard).some((l) => /แกรกกราก/.test(l.text)), 'the person inside may hear the lockpick');
   game.do_doorwork(a);
-  assert(!locked.locked && !a.doorWork && a.outside && locked.unlockedBy?.id === a.id, 'second hour: lock picked, door unlocked, player still outside until next hour');
+  assert(!locked.locked && !a.doorWork && !locked.doorWork && a.outside && locked.unlockedBy?.id === a.id, 'second hour: lock picked, door unlocked, player still outside until next hour');
   assert(b.zoneMemory[locked.id]?.locked === false && b.log.slice(-3).some((l) => /ประตู.*เปิดออก/.test(l.text)), 'people inside see the door open');
   game.moves = new Map([[a.id, locked.id], [b.id, locked.id]]);
   game.resolveMoves();
@@ -937,7 +939,7 @@ async function unitTests() {
   Math.random = () => 0; // need = 1
   game.do_doorwork(a);
   Math.random = realRandom;
-  assert(locked.broken && !locked.locked && !locked.lockable && a.outside, 'combat breaks the door in one hour; the door cannot be locked again');
+  assert(locked.broken && !locked.locked && !locked.lockable && a.outside, 'combat breaks the door in one hour (3 points against a need of 3 forced by the roll); the door cannot be locked again');
   assert(b.log.slice(-4).some((l) => /ทุบกระแทก/.test(l.text)), 'people inside hear the door being broken');
   assert(locked.evidence.some((e) => e.kind === 'door'), 'a broken door leaves visible evidence');
   const cleanable = locked.evidence.some((e) => !e.hidden && !e.outside && !e.gone && !['door', 'power'].includes(e.kind)); // ห้องนี้อาจมีร่องรอยจากเทสต์ก่อนหน้า
@@ -1244,7 +1246,7 @@ async function unitTests() {
     c.zoneId = L.id;
     c.outside = true;
     L.locked = true; // ล็อกใหม่ให้ c สะเดาะ
-    c.doorWork = { zoneId: L.id, method: 'pick', need: 2, progress: 1, startedTurn: g5.turn };
+    L.doorWork = { pick: { need: 2, progress: 1, startedTurn: g5.turn } }; // ความคืบหน้าอยู่ที่ประตู
     e.zoneId = L.id;
     e.outside = true;
     e.inventory = [];
@@ -1252,7 +1254,7 @@ async function unitTests() {
     a.outside = false;
     g5.step = STEP.ACT;
     g5.do_doorwork(c); // ชั่วโมงนี้สะเดาะครบ 2/2 → ประตูเปิด c = คนเปิดประตู (ยังยืนอยู่ข้างนอก)
-    assert(!L.locked && L.unlockedBy?.id === c.id && c.outside && !c.doorWork, 'the lockpick finishes as an action; the picker is still outside until next hour');
+    assert(!L.locked && L.unlockedBy?.id === c.id && c.outside && !L.doorWork, 'the lockpick finishes as an action; the picker is still outside until next hour');
     g5.moves = new Map([[c.id, L.id], [e.id, L.id], [a.id, R.id], [d.id, L.id]]);
     Math.random = () => 0.99; // ถ้าสุ่มจะได้คนท้ายสุด (e) — แต่กติกาให้คนปลดล็อกโดนก่อน
     g5.resolveMoves();
@@ -2529,8 +2531,78 @@ async function unitTests() {
     g25.clearTimers();
     assert(g25.day === 2 && g25.hour === 2 && !g25.dayRolledByClock, 'the morning after a midnight trial keeps the day number and continues the hour count');
   }
+  // 25) ทำงานร่วมกันสะสม (ประตู/ไฟ) · ของพังและซ่อม
+  {
+    const g26 = new Game({ code: 'UNIT26', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids26 = ['d1-xxxxxxxx', 'd2-xxxxxxxx', 'd3-xxxxxxxx', 'd4-xxxxxxxx'];
+    for (const [i, id] of ids26.entries()) g26.addPlayer({ id, name: `ร่วม ${i + 1}` });
+    g26.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g26.start(ids26[0]);
+    g26.clearTimers();
+    const [a26, b26, c26, d26] = ids26.map((id) => g26.players.get(id));
+    const mk26 = (name, kind, description = '') => ({ id: `it_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false });
+    const zones26 = [...g26.zones.values()];
+    const PZ26 = zones26.find((z) => z.items.some((i) => i.kind === 'power'));
+    const L26 = zones26.find((z) => z.id !== g26.location.sleepZoneId && z.id !== PZ26.id && z.lockable);
+    for (const p of [a26, b26, c26, d26]) {
+      p.inventory = [];
+      p.outside = false;
+      g26.charOf(p).ultimate.trait = 'none';
+    }
+    g26.phase = PHASE.DAY;
+    g26.step = STEP.ACT;
+    // สองคนพังประตูพร้อมกัน: แรงรวม 1+1 ต่อชั่วโมง (need บังคับ 3) → ชั่วโมงที่ 2 เปิด
+    L26.locked = true;
+    a26.zoneId = b26.zoneId = L26.id;
+    a26.outside = b26.outside = true;
+    Math.random = () => 0; // need = 3
+    g26.do_doorwork(a26);
+    Math.random = realRandom;
+    g26.do_doorwork(b26);
+    assert(L26.doorWork?.break?.progress === 2 && L26.doorWork.break.need === 3 && L26.locked, 'two people breaking the same door in one hour add up to 2 points');
+    assert(!a26.log.some((l) => l.text.includes(g26.nick(b26))) && !b26.log.some((l) => l.text.includes(g26.nick(a26))), 'co-workers are not told who else is working on the door');
+    g26.do_doorwork(a26);
+    assert(!L26.locked && L26.broken && !L26.doorWork, 'the third point breaks the door');
+    // ซ่อมไฟร่วมกัน: คนทั่วไป 2 คนพร้อมกันเสร็จในชั่วโมงเดียวเมื่อ need = 2
+    g26.blackout = { since: g26.turn, by: null };
+    c26.zoneId = d26.zoneId = PZ26.id;
+    Math.random = () => 0; // need = 2
+    g26.do_repairPower(c26);
+    Math.random = realRandom;
+    assert(g26.blackout && PZ26.powerWork?.progress === 1, 'one ordinary repairer makes 1 point of progress');
+    g26.do_repairPower(d26);
+    assert(!g26.blackout && !PZ26.powerWork, 'a second repairer in the same hour finishes the job');
+    // ของพัง: ลงมือแล้วพัง → ใช้ไม่ได้ ซ่อมด้วยเชือก (หมดไป) หรือเครื่องมือ
+    const knife26 = mk26('มีดหั่นขนมปัง', 'weapon');
+    a26.inventory = [knife26];
+    assert(breakable(knife26) && !breakable(mk26('ปืนลูกซอง', 'weapon', 'ยังมีกระสุนสองนัด')) && !breakable(mk26('ยาเบื่อหนู', 'poison')), 'blades and tools can break; guns and poisons cannot');
+    Math.random = () => 0;
+    g26.breakItemMaybe(a26, knife26, 1, 'ทดสอบ');
+    Math.random = realRandom;
+    assert(knife26.broken && attackBaseOf(knife26, 'none') === null && !canBreachWith(knife26) && g26.bestWeapon(a26) === null && /พัง/.test(g26.tagText(knife26)), 'a broken blade cannot attack, breach, or be the best weapon');
+    a26.zoneId = L26.id;
+    a26.outside = false;
+    assert(!g26.availableActions(a26).some((x) => x.type === 'repairItem'), 'no repair without rope/tape or a hand tool');
+    const rope26 = mk26('เทปพันท่อทดสอบ', 'rope');
+    a26.inventory.push(rope26);
+    assert(g26.availableActions(a26).some((x) => x.type === 'repairItem' && x.itemId === knife26.id), 'holding tape offers a repair');
+    Math.random = () => 0; // need = 1
+    g26.do_repairItem(a26, { itemId: knife26.id });
+    Math.random = realRandom;
+    assert(!knife26.broken && !a26.inventory.includes(rope26) && attackBaseOf(knife26, 'none') !== null, 'repairing with tape fixes the blade and uses the tape up');
+    const driver26 = mk26('ไขควงทดสอบ', 'tool', 'ปลายแหลม');
+    knife26.broken = true;
+    a26.inventory = [knife26, driver26];
+    g26.charOf(a26).ultimate.trait = 'tech';
+    g26.do_repairItem(a26, { itemId: knife26.id });
+    assert(!knife26.broken && a26.inventory.includes(driver26), 'a tech repairs in one hour with a hand tool that is not used up');
+    knife26.broken = true;
+    assert(!g26.craftOptions(a26, L26).length || g26.craftOptions(a26, L26).every((o) => o.itemId !== knife26.id && o.itemId2 !== knife26.id), 'broken items cannot be crafted into traps');
+  }
+  Object.assign(DURABILITY, savedDur);
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers), new day dismantles every trap and cleans mixed food, darkness (hidden roster, anonymous random attacks, traps always hit), power cooldown, food uses per eater, end at a third or fewer, no hour 25');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers), new day dismantles every trap and cleans mixed food, darkness (hidden roster, anonymous random attacks, traps always hit), power cooldown, food uses per eater, end at a third or fewer, no hour 25, pooled door/power work, item breakage and repair');
 }
 
 try {

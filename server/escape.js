@@ -4,7 +4,7 @@
 //   power = เอาฟิวส์ไปใส่แผงไฟก่อน · tool = เครื่องมือช่าง (ถอดน็อต/เปิดฝา ทำครั้งเดียวติดถาวร) · cut = ของมีคม (ตัดโซ่/สายเคเบิล ครั้งเดียว)
 //   force = ลงแรงสะสม (ของหนักหรืออาวุธมีคม นักสู้/ช่างเทคนิค 2 แต้มต่อครั้ง)
 // ของที่ต้องใช้ถูกซ่อนตามห้องต่าง ๆ · ความรู้ว่าทางออกอยู่ไหนเป็นของแต่ละคน (discoveredBy) ส่วนความคืบหน้า (steps/powered/open) เป็นของจริงที่ทุกคนใช้ร่วมกัน
-import { ESCAPE, ROUTES, tagsOf, canBreachWith } from './rules.js';
+import { ESCAPE, ROUTES, tagsOf, canBreachWith, DURABILITY } from './rules.js';
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const shuffle = (arr) => {
@@ -210,8 +210,12 @@ export function onObtainItem(game, p, item) {
 }
 
 const holdsHeavy = (p) => p.inventory.some(canBreachWith); // ของหนักหรืออาวุธมีคม (ดูแท็ก) — ไขควง สมุด ไฟฉาย ใช้ทุบไม่ได้
-const holdsSharp = (p) => p.inventory.some((i) => tagsOf(i).has('sharp'));
-const holdsTool = (p) => p.inventory.some((i) => tagsOf(i).has('fastener'));
+const holdsSharp = (p) => p.inventory.some((i) => !i.broken && tagsOf(i).has('sharp'));
+const holdsTool = (p) => p.inventory.some((i) => !i.broken && tagsOf(i).has('fastener'));
+// ของที่ใช้ในขั้นนั้น (ไว้สุ่มพัง)
+const sharpOf = (p) => p.inventory.find((i) => !i.broken && tagsOf(i).has('sharp'));
+const toolOf = (p) => p.inventory.find((i) => !i.broken && tagsOf(i).has('fastener'));
+const heavyOf = (p) => p.inventory.find(canBreachWith);
 
 // สถานะแต่ละขั้นตอนเมื่อกลุ่ม people (คนที่ลงมือพร้อมกันในห้อง) ลองเปิด — ไม่เปลี่ยนสถานะจริง (ใช้แสดงผล/ตัดสินใจ)
 // people ว่าง = ดูเฉพาะสถานะถาวร (ขั้นที่ทำไปแล้ว)
@@ -356,15 +360,18 @@ export function resolveExits(game, attempts) {
     for (const s of x.steps) {
       if (s.kind === 'tool' && !s.done && people.some(holdsTool)) {
         s.done = true;
+        for (const p of people.filter(holdsTool)) game.breakItemMaybe(p, toolOf(p), DURABILITY.BREAK_ON_EXIT, 'ถอด/เปิดทางออก');
         progressed.push(stepLabel(game, x, s));
       }
       if (s.kind === 'cut' && !s.done && people.some(holdsSharp)) {
         s.done = true;
+        for (const p of people.filter(holdsSharp)) game.breakItemMaybe(p, sharpOf(p), DURABILITY.BREAK_ON_EXIT, 'ตัดทางออก');
         progressed.push(stepLabel(game, x, s));
       }
       if (s.kind === 'force' && s.progress < s.needed) {
         let gain = 0;
         for (const p of people) if (holdsHeavy(p)) gain += ['combat', 'tech'].includes(game.traitOf(p)) ? 2 : 1;
+        for (const p of people) if (holdsHeavy(p)) game.breakItemMaybe(p, heavyOf(p), DURABILITY.BREAK_ON_EXIT, 'งัด/ทุบทางออก');
         if (gain) {
           s.progress = Math.min(s.needed, s.progress + gain);
           x.progress = s.progress;

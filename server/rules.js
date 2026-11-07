@@ -216,7 +216,7 @@ export const ammoOf = (item) => (item && tagsOf(item).has('firearm') ? parseAmmo
 
 // ของชิ้นนี้ใช้ลงมือได้ไหม และโอกาสพื้นฐานเท่าไร (null = ใช้ลงมือไม่ได้) · hasInjector = มีเข็มฉีดยาในมือ (สำหรับวางยาตรง)
 export function attackBaseOf(item, trait, hasInjector = false) {
-  if (!item) return null;
+  if (!item || item.broken) return null; // ของพังใช้ลงมือไม่ได้
   const t = tagsOf(item);
   const L = ATTACK.LETHALITY; // lethal = โอกาสฆ่าเมื่อสำเร็จ (ที่เหลือ = สลบ)
   switch (item.kind) {
@@ -252,7 +252,7 @@ export function attackBaseOf(item, trait, hasInjector = false) {
 
 // ของชิ้นนี้ใช้เป็นส่วนผสมลำดับ idx ของสูตรได้ไหม (ชนิดตรง + มีแท็กที่ต้องการ · ปืนเปล่าลั่นไม่ได้)
 export function partMatches(item, recipe, idx) {
-  if (!item || !recipe) return false;
+  if (!item || !recipe || item.broken) return false; // ของพังเอาไปประกอบไม่ได้
   const kinds = [].concat(recipe.needs[idx]);
   if (!kinds.includes(item.kind)) return false;
   const want = recipe.partTags?.[idx];
@@ -281,7 +281,7 @@ export function poisonNoticeChance(trait, tags = []) {
 }
 
 // ทุบ/งัดทางออกได้ด้วยของหนัก หรืออาวุธมีคม (ไขควง สมุด ไฟฉาย ใช้ไม่ได้)
-export const canBreachWith = (i) => !!i && (tagsOf(i).has('heavy') || (i.kind === 'weapon' && tagsOf(i).has('sharp')));
+export const canBreachWith = (i) => !!i && !i.broken && (tagsOf(i).has('heavy') || (i.kind === 'weapon' && tagsOf(i).has('sharp')));
 
 // ---------- นิติเวช (ตรวจศพ / ร่องรอยในห้อง) ----------
 // กติกา: ข้อความที่ผู้เล่นได้จากการตรวจศพหรือสำรวจห้อง "ไม่เอ่ยชื่อของ" — บอกแค่ชนิดบาดแผล/วัสดุ
@@ -396,6 +396,15 @@ export const POWER = {
   REPAIR_HOURS_TECH: [1, 1], // ช่างเทคนิค
   BREAK_COOLDOWN: [2, 5], // หลังซ่อมเสร็จ พังเครื่องปั่นไฟซ้ำไม่ได้กี่ชั่วโมง (สุ่ม)
 };
+
+// ---------- ความทนทานของของ ----------
+export const DURABILITY = {
+  BREAK_ON_ATTACK: 0.15, // ใช้ของ (มีคม/หนัก/เครื่องมือ) ลงมือแล้วมีโอกาสพัง (ปืน/ยา/ผ้า/เชือกไม่พัง)
+  BREAK_ON_EXIT: 0.2, // ใช้ตัด/ถอด/งัดทางออก
+  REPAIR_HOURS: [1, 2], // ซ่อมของที่พัง (แอ็กชันทำซ้ำ) ใช้เชือก/เทป 1 ชิ้น (หมดไป) หรือเครื่องมือช่าง (ไม่หมด)
+  REPAIR_HOURS_TECH: [1, 1],
+};
+export const breakable = (i) => !!i && !i.broken && (i.kind === 'weapon' || i.kind === 'tool') && !tagsOf(i).has('firearm') && (tagsOf(i).has('sharp') || tagsOf(i).has('heavy') || tagsOf(i).has('fastener'));
 
 // ---------- ทางออก ----------
 export const ROUTES = {

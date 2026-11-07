@@ -416,3 +416,5 @@ details.help summary { cursor: pointer; color: var(--cyan); }
 .rules details { margin-top: 0.5rem; }
 .rules details summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
 .rules details ol { font-size: 0.82rem; opacity: 0.9; }
+
+.chip.broken { opacity: 0.6; text-decoration: line-through; }

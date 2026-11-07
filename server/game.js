@@ -4,7 +4,7 @@
 import { CHARACTERS } from './characters.js';
 import { ULTIMATE_POOL, TRAITS } from './mock.js';
 import { makeObjective, objectiveOutcome, objectiveTargetZone, hasFood } from './objectives.js';
-import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, tagsOf, attackBaseOf, partMatches, trapTexts, poisonNoticeChance, ammoOf, canBreachWith, TAG_LABEL, INVESTIGATION, PASSAGE, POWER, tagSetOf, WOUND_LAY, materialOf, trapForensic, TRAP_BODY_POS, TRAP_SCENE, weaponTrace } from './rules.js';
+import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, tagsOf, attackBaseOf, partMatches, trapTexts, poisonNoticeChance, ammoOf, canBreachWith, TAG_LABEL, INVESTIGATION, PASSAGE, POWER, DURABILITY, breakable, tagSetOf, WOUND_LAY, materialOf, trapForensic, TRAP_BODY_POS, TRAP_SCENE, weaponTrace } from './rules.js';
 import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView, craftAssemblyOptions, doCraftAssembly, exitReadyFor, exitUsefulFor, requirementText } from './escape.js';
 
 export const PHASE = {
@@ -144,6 +144,7 @@ const freshPlayerState = () => ({
   evidence: [],
   knownBodies: new Set(),
   knownPassages: new Set(), // ทางลับที่ค้นพบแล้ว (id)
+  repairWork: null, // งานซ่อมของค้างอยู่ { itemId, need, progress }
   buffs: { questPlus: 0, koResist: 0 }, // บัฟจากยาที่ผสมในอาหาร: ภารกิจถัดไป +ชั่วโมง · ต้านทานสลบ (ครั้ง)
   powerWork: null, // งานซ่อมเครื่องปั่นไฟค้างอยู่ { need, progress }
   zoneMemory: {},
@@ -413,6 +414,15 @@ export class Game {
     if (w && BLOOD_WOUNDS.includes(woundOf(rec || w))) w.bloody = true;
   }
 
+  // ใช้ของแล้วมีโอกาสพัง (ของมีคม/หนัก/เครื่องมือ — ปืน ยา ผ้า เชือกไม่พัง): ของที่พังใช้ลงมือ/คราฟ/งัด/ตัด/ถอดไม่ได้ จนกว่าจะซ่อม
+  breakItemMaybe(p, item, prob, context) {
+    if (!breakable(item) || !chance(prob)) return false;
+    item.broken = true;
+    this.logTo(p, `💔 ${item.name}พังระหว่าง${context} — ใช้ไม่ได้จนกว่าจะซ่อม (เลือก "ซ่อม" ตอนถือเชือก/เทป หรือเครื่องมือช่าง)`, 'danger');
+    this.recordEvent(`${item.name}ของ${this.nick(p)}พังระหว่าง${context}`);
+    return true;
+  }
+
   // ถือของได้กี่ชิ้น: สายนักแบกถือได้ 5 คนอื่นตาม INVENTORY_MAX
   invMax(p) {
     return this.traitOf(p) === 'porter' ? CONFIG.INVENTORY_MAX + 2 : CONFIG.INVENTORY_MAX;
@@ -426,7 +436,7 @@ export class Game {
   // วิธีผ่านประตูที่ล็อกโดยไม่มีกุญแจ: ที่สะเดาะกุญแจ (ช่างเทคนิคใช้เครื่องมือช่าง เช่น ไขควง/ประแจ แทนได้) หรือนักสู้พังประตูมือเปล่า
   doorMeans(p, door = this.zones.get(p.zoneId)) {
     const trait = this.traitOf(p);
-    const pickItem = p.inventory.find((i) => i.kind === 'lockpick') || (trait === 'tech' ? p.inventory.find((i) => i.kind === 'tool' && tagsOf(i).has('fastener')) : null);
+    const pickItem = p.inventory.find((i) => i.kind === 'lockpick' && !i.broken) || (trait === 'tech' ? p.inventory.find((i) => i.kind === 'tool' && !i.broken && tagsOf(i).has('fastener')) : null);
     if (pickItem && !door?.bar) return { method: 'pick', item: pickItem, hours: DOOR.PICK_HOURS }; // ประตูที่ถูกค้ำสะเดาะไม่ได้ ต้องพัง
     return { method: 'break', item: null, hours: trait === 'combat' ? DOOR.BREAK_HOURS : DOOR.BREAK_HOURS_OTHERS }; // ใครก็พังประตูได้ นักสู้เร็วกว่า
   }
@@ -1045,7 +1055,7 @@ export class Game {
       if (stayed && z.locked && !knewLocked) lines.push(this.hasKeyFor(p, z.id) ? '🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้ — คุณมีกุญแจ จะปลดล็อกหรือเดินออกไปก็ได้' : `🔒 คุณเพิ่งสังเกตว่าประตูห้องนี้ถูกล็อกไว้จากข้างนอก — คุณถูกขังอยู่ ${this.doorMeansText(p) || 'ออกไม่ได้จนกว่าจะมีกุญแจ ที่สะเดาะกุญแจ หรือมีคนมาเปิดให้'}`);
       if (stayed && !z.locked && knewLocked) lines.push('🔓 คุณสังเกตว่าประตูห้องนี้ไม่ได้ล็อกแล้ว');
       lines.push(others.length ? `คนที่อยู่ที่นี่ด้วย: ${others.map((o) => `${this.nick(o)}${o.ko ? ' (นอนสลบอยู่ — ใครลงมือกับเขาสำเร็จแน่นอน)' : ''}`).join(', ')}` : 'ไม่มีใครอยู่ที่นี่นอกจากคุณ');
-      lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => `${i.name}${i.isPart ? ' ⭐' : ''}${i.bloody ? ' 🩸เปื้อนเลือด' : ''}${this.tagText(i) ? ` (${this.tagText(i)})` : ''}`).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
+      lines.push(visibleItems.length ? `ของที่เห็น: ${visibleItems.map((i) => `${i.name}${i.isPart ? ' ⭐' : ''}${i.broken ? ' 💔พัง' : ''}${i.bloody ? ' 🩸เปื้อนเลือด' : ''}${this.tagText(i) ? ` (${this.tagText(i)})` : ''}`).join(', ')}` : 'ไม่เห็นของอะไรเป็นพิเศษ');
       for (const b of bodies) {
         const v = this.players.get(b.victimId);
         const first = !p.knownBodies.has(b.victimId);
@@ -1342,6 +1352,14 @@ export class Game {
     if (!outside) out.push({ type: 'search', label: '🔍 สำรวจห้องอย่างละเอียด', desc: 'หาของที่ซ่อนอยู่ ทางออกที่ซ่อนอยู่ หลักฐาน และสังเกตว่ามีอะไรหายไปจากห้อง' });
     // หยิบ/วางของทำได้ทันทีผ่าน itemActions()/instantItemAction() · ซ่อนของใช้ชั่วโมง แต่ซ่อนจากกระเป๋ากี่ชิ้นก็ได้ในครั้งเดียว
     if (!outside && z.water && p.inventory.some((i) => i.bloody)) out.push({ type: 'wash', label: '🚿 ล้างคราบเลือดออกจากของที่ถือ', desc: 'ใช้ทั้งชั่วโมง ล้างทุกชิ้นที่เปื้อน — อ่าง/ร่องท่ออาจเหลือคราบจาง ๆ ให้คนที่สำรวจละเอียดเจอ (50%) และคนในห้องอาจเห็นคุณล้าง', danger: true });
+    // ซ่อมของที่พัง: ต้องถือเชือก/เทป (หมดไป 1 ชิ้น) หรือเครื่องมือช่าง (ไม่หมด) ใช้ 1–2 ชั่วโมง (ช่างเทคนิค 1) ทำซ้ำจนเสร็จ
+    const fixer = p.inventory.find((i) => !i.broken && tagsOf(i).has('fastener')) || p.inventory.find((i) => !i.broken && (i.kind === 'rope' || tagsOf(i).has('cord')));
+    if (!outside && fixer) {
+      for (const it of p.inventory.filter((i) => i.broken)) {
+        const prog = p.repairWork?.itemId === it.id ? ` (ทำไปแล้ว ${p.repairWork.progress} ชม.)` : '';
+        out.push({ type: 'repairItem', itemId: it.id, label: `🔧 ซ่อม${it.name}${prog}`, desc: `ใช้ทั้งชั่วโมง ราว ${trait === 'tech' ? DURABILITY.REPAIR_HOURS_TECH[0] : `${DURABILITY.REPAIR_HOURS[0]}–${DURABILITY.REPAIR_HOURS[1]}`} ชั่วโมง ด้วย${fixer.name}${tagsOf(fixer).has('fastener') ? ' (เครื่องมือไม่หมด)' : ' (ใช้หมดไป 1 ชิ้น)'}` });
+      }
+    }
     if (!outside && p.inventory.length) out.push({ type: 'hide', multiItems: true, label: '🫥 ซ่อนของไว้ในห้องนี้ (เลือกได้หลายชิ้น)', desc: 'ใช้ทั้งชั่วโมง ซ่อนของจากกระเป๋ากี่ชิ้นก็ได้ — คนอื่นต้องสำรวจละเอียดถึงจะเจอ (คนในห้องอาจเห็นคุณซ่อน 30%)' });
     const food = outside ? null : z.items.find((i) => i.kind === 'food');
     if (food && inDay) out.push({ type: 'eat', label: `🍞 กินอาหาร/ดื่มน้ำ (${food.name})`, desc: 'พักกินอะไรสักหน่อย — ใช้ทำภารกิจ "ไปกินอาหาร" ได้ · ระวัง ถ้ามีคนผสมยาพิษไว้คุณอาจไม่รู้ตัว' });
@@ -1349,8 +1367,8 @@ export class Game {
     const doorTarget = outside ? (z.locked || z.bar ? z : null) : z.locked && !this.hasKeyFor(p, z.id) && p.zoneMemory[z.id]?.locked === true ? z : null;
     if (doorTarget) {
       const m = this.doorMeans(p, doorTarget);
-      const w = p.doorWork && p.doorWork.zoneId === doorTarget.id && p.doorWork.method === m.method ? p.doorWork : null;
-      const prog = w ? ` (ทำไปแล้ว ${w.progress} ชม.)` : '';
+      const w = doorTarget.doorWork?.[m.method] || null; // ความคืบหน้ารวมของทุกคนที่ทำประตูบานนี้
+      const prog = w ? ` (คืบหน้ารวม ${w.progress})` : '';
       if (m.method === 'pick') out.push({ type: 'doorwork', label: `🪛 สะเดาะกลอน${this.zn(doorTarget)}ด้วย${m.item.name}${prog}`, desc: `ใช้ทั้งชั่วโมง ราว ${m.hours[0]}–${m.hours[1]} ชั่วโมง (สุ่มตอนเริ่ม) เสร็จแล้วประตูเปิด (ล็อกใหม่ได้) ชั่วโมงถัดไปค่อยเลือกห้องเพื่อเข้า/ออก · คนอีกฝั่งอาจได้ยินเสียงแกรกกราก` });
       else out.push({ type: 'doorwork', label: `💥 พังประตู${this.zn(doorTarget)}${doorTarget.bar ? 'ที่ถูกค้ำ' : ''}ด้วยมือเปล่า${prog}`, desc: `ใช้ทั้งชั่วโมง ราว ${m.hours[0]}–${m.hours[1]} ชั่วโมง (สุ่มตอนเริ่ม · นักสู้ ${DOOR.BREAK_HOURS[0]}–${DOOR.BREAK_HOURS[1]} ชม.) ประตูพังแล้วล็อกไม่ได้อีก · เสียงดัง คนอีกฝั่งได้ยินแน่ คนห้องอื่นอาจได้ยิน`, danger: true });
     }
@@ -1418,7 +1436,7 @@ export class Game {
     // ไฟดับ: ซ่อมเครื่องปั่นไฟได้ที่ห้องที่มีแผงไฟ (ใช้ชั่วโมง) · ในความมืดทำได้แค่ลงมือ ล้วงกระเป๋า ซ่อนของ กินอาหาร ทำประตู ซ่อมไฟ หรือคลำหาของ
     if (this.blackout && !outside && z.items.some((i) => i.kind === 'power')) {
       const need = trait === 'tech' ? POWER.REPAIR_HOURS_TECH : POWER.REPAIR_HOURS;
-      out.push({ type: 'repairPower', label: `🔧 ซ่อมเครื่องปั่นไฟ${p.powerWork ? ` (ทำไปแล้ว ${p.powerWork.progress} ชม.)` : ''}`, desc: `ใช้ทั้งชั่วโมง ราว ${need[0]}–${need[1]} ชั่วโมง (ช่างเทคนิค ${POWER.REPAIR_HOURS_TECH[0]} ชม.) ทำซ้ำจนเสร็จ แล้วไฟติดทั้งตึก` });
+      out.push({ type: 'repairPower', label: `🔧 ซ่อมเครื่องปั่นไฟ${z.powerWork ? ` (คืบหน้ารวม ${z.powerWork.progress})` : ''}`, desc: `ใช้ทั้งชั่วโมง ราว ${need[0]}–${need[1]} ชั่วโมง (ช่างเทคนิคเสร็จในชั่วโมงเดียว) ทำซ้ำจนเสร็จ — หลายคนซ่อมพร้อมกันแรงจะรวมกัน แล้วไฟติดทั้งตึก` });
     }
     if (dark) {
       const allowed = new Set(['steal', 'hide', 'eat', 'poisonFood', 'mixFood', 'doorwork', 'repairPower', 'rest']);
@@ -1469,7 +1487,7 @@ export class Game {
     this.clearTimers();
     this.searchedThisHour = new Set();
     for (const p of this.alivePlayers()) if (!this.actions.has(p.id)) this.actions.set(p.id, { type: 'rest', auto: true });
-    const order = { sabotage: 0, lock: 1, unlock: 1, doorwork: 1, attack: 2, mixFood: 4, wash: 6, grope: 9, repairPower: 11, steal: 3, poisonFood: 4, trap: 4, craft: 5, clean: 6, moveBody: 7, interrogate: 8, take: 9, drop: 10, hide: 10, exit_power: 11, search: 12, examine: 12, eat: 13, exit: 14, rest: 15 };
+    const order = { sabotage: 0, lock: 1, unlock: 1, doorwork: 1, attack: 2, mixFood: 4, repairItem: 5, wash: 6, grope: 9, repairPower: 11, steal: 3, poisonFood: 4, trap: 4, craft: 5, clean: 6, moveBody: 7, interrogate: 8, take: 9, drop: 10, hide: 10, exit_power: 11, search: 12, examine: 12, eat: 13, exit: 14, rest: 15 };
     const list = shuffle([...this.actions.entries()]).sort((a, b) => (order[a[1].type] ?? 20) - (order[b[1].type] ?? 20));
     const exitAttempts = [];
     for (const [pid, a] of list) {
@@ -1656,6 +1674,7 @@ export class Game {
       w.ammo -= 1;
       for (const o of this.alivePlayers()) if (o.id !== p.id && !o.ko && !this.sameSpot(o, p)) this.logTo(o, `🔫 เสียงปืนดังสนั่นมาจากทาง${this.zn(z)} — ทั้งตึกได้ยิน`, 'witness');
     }
+    if (w && w.kind !== 'poison') this.breakItemMaybe(p, w, DURABILITY.BREAK_ON_ATTACK, 'การลงมือ'); // ใช้แล้วมีโอกาสพัง (ครั้งนี้ยังใช้ได้)
     const r = Math.random();
     if (r < pSucc) {
       const messy = chance(this.traitOf(p) === 'combat' ? ATTACK.MESSY_COMBAT : ATTACK.MESSY);
@@ -2017,6 +2036,22 @@ export class Game {
     }
   }
 
+  // ซ่อมของที่พัง (แอ็กชันทำซ้ำ): เสร็จแล้วใช้ได้ตามเดิม — ใช้เครื่องมือช่าง (ไม่หมด) หรือเชือก/เทป (หมดไป 1 ชิ้น)
+  do_repairItem(p, a) {
+    const it = p.inventory.find((i) => i.id === a.itemId && i.broken);
+    const fixer = p.inventory.find((i) => !i.broken && tagsOf(i).has('fastener')) || p.inventory.find((i) => !i.broken && (i.kind === 'rope' || tagsOf(i).has('cord')));
+    if (!it || !fixer) return this.logTo(p, 'ไม่มีของให้ซ่อม หรือไม่มีเชือก/เทป/เครื่องมือช่าง', 'danger');
+    const hours = this.traitOf(p) === 'tech' ? DURABILITY.REPAIR_HOURS_TECH : DURABILITY.REPAIR_HOURS;
+    if (p.repairWork?.itemId !== it.id) p.repairWork = { itemId: it.id, need: randInt(hours[0], hours[1]), progress: 0 };
+    p.repairWork.progress++;
+    if (p.repairWork.progress < p.repairWork.need) return this.logTo(p, `🔧 คุณซ่อม${it.name}ไปได้บางส่วน (ทำไปแล้ว ${p.repairWork.progress} ชั่วโมง) — เลือกซ่อมอีกครั้งชั่วโมงหน้า`, 'action');
+    p.repairWork = null;
+    it.broken = false;
+    if (!tagsOf(fixer).has('fastener')) p.inventory.splice(p.inventory.indexOf(fixer), 1);
+    this.logTo(p, `🔧 คุณซ่อม${it.name}เสร็จแล้ว${tagsOf(fixer).has('fastener') ? ` ด้วย${fixer.name}` : ` ใช้${fixer.name}หมดไป`} ใช้ได้ตามเดิม`, 'action');
+    this.recordEvent(`${this.nick(p)}ซ่อม${it.name}`);
+  }
+
   // ---------- ประตู (ทำเอง) ----------
   // ไขกุญแจ/ล็อกด้วยกุญแจที่ตรง ทำได้ทันที ไม่กินชั่วโมง ทำได้ทุกขั้น — ทั้งจากในห้องและตอนยืนรอหน้าประตู (ทำเงียบ ๆ คนอื่นสังเกตเห็นตอนต้นชั่วโมงถัดไป)
   doorActions(p) {
@@ -2101,13 +2136,11 @@ export class Game {
   do_repairPower(p) {
     const z = this.zones.get(p.zoneId);
     if (!this.blackout || !z.items.some((i) => i.kind === 'power')) return this.logTo(p, 'ไม่มีอะไรให้ซ่อมที่นี่', 'action');
-    const hours = this.traitOf(p) === 'tech' ? POWER.REPAIR_HOURS_TECH : POWER.REPAIR_HOURS;
-    if (!p.powerWork) p.powerWork = { need: randInt(hours[0], hours[1]), progress: 0 };
-    p.powerWork.progress++;
-    const who = this.who(p, z);
-    for (const o of this.witnessesOf(p)) this.logTo(o, `👀 คุณเห็น${who}ง่วนอยู่กับเครื่องปั่นไฟ`, 'witness');
-    if (p.powerWork.progress < p.powerWork.need) return this.logTo(p, `🔧 คุณซ่อมเครื่องปั่นไฟไปได้บางส่วน (ทำไปแล้ว ${p.powerWork.progress} ชั่วโมง) — เลือกแอ็กชันนี้อีกครั้งชั่วโมงหน้า`, 'action');
-    p.powerWork = null;
+    // ความคืบหน้าอยู่ที่เครื่อง: ทุกคนที่ซ่อมพร้อมกันบวกรวม (คนทั่วไป +1/ชม. ช่างเทคนิคซ่อมเสร็จในชั่วโมงเดียว) และไม่มีใครถูกบอกว่าใครซ่อมด้วย
+    z.powerWork ||= { need: randInt(POWER.REPAIR_HOURS[0], POWER.REPAIR_HOURS[1]), progress: 0 };
+    z.powerWork.progress += this.traitOf(p) === 'tech' ? z.powerWork.need : 1;
+    if (z.powerWork.progress < z.powerWork.need) return this.logTo(p, `🔧 คุณซ่อมเครื่องปั่นไฟไปได้บางส่วน (คืบหน้ารวม ${z.powerWork.progress} — ถ้ามีคนซ่อมพร้อมกันแรงจะรวมกัน) — เลือกแอ็กชันนี้อีกครั้งชั่วโมงหน้า`, 'action');
+    z.powerWork = null;
     this.blackout = null;
     this.powerCooldownUntil = this.turn + randInt(POWER.BREAK_COOLDOWN[0], POWER.BREAK_COOLDOWN[1]); // เพิ่งซ่อม พังซ้ำไม่ได้ 2–5 ชั่วโมง
     this.logTo(p, '🔧 คุณซ่อมเครื่องปั่นไฟสำเร็จ ไฟทั้งอาคารกลับมาติด', 'action');
@@ -2135,30 +2168,33 @@ export class Game {
     const door = this.zones.get(p.zoneId);
     if (!door?.locked && !door?.bar) return this.logTo(p, 'ประตูไม่ได้ล็อกแล้ว', 'action');
     const means = this.doorMeans(p, door);
-    if (!(p.doorWork && p.doorWork.zoneId === door.id && p.doorWork.method === means.method)) p.doorWork = { zoneId: door.id, method: means.method, need: randInt(means.hours[0], means.hours[1]), progress: 0, startedTurn: this.turn };
-    const w = p.doorWork;
-    w.progress++;
-    const icon = w.method === 'break' ? '💥' : '🪛';
-    const verb = w.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน';
+    // ความคืบหน้าอยู่ที่ประตู (ไม่ใช่ที่คน): ใครทำพร้อมกันก็บวกรวม — นักสู้พัง +3 แต้ม/ชม. คนอื่น +1 · สะเดาะ +1
+    door.doorWork ||= {};
+    const w = (door.doorWork[means.method] ||= { need: randInt(means.method === 'break' ? DOOR.BREAK_HOURS_OTHERS[0] : means.hours[0], means.method === 'break' ? DOOR.BREAK_HOURS_OTHERS[1] : means.hours[1]), progress: 0, startedTurn: this.turn });
+    const gain = means.method === 'break' && this.traitOf(p) === 'combat' ? 3 : 1; // นักสู้ +3/ชม. (คนเดียว 1–2 ชม. เท่าเดิม) คนอื่น +1
+    w.progress += gain;
+    p.doorWork = { zoneId: door.id, method: means.method };
+    const icon = w.method === 'break' || means.method === 'break' ? '💥' : '🪛';
+    const verb = means.method === 'break' ? 'พังประตู' : 'สะเดาะกลอน';
     const withTool = means.item ? `ด้วย${means.item.name}` : 'ด้วยมือเปล่า';
     const fromSide = p.outside ? 'ข้างนอก' : 'ข้างใน';
-    const who = this.who(p, door);
-    // เสียง/ภาพ: คนฝั่งเดียวกันเห็นเลย · คนอีกฝั่งของประตู: พังได้ยินแน่ สะเดาะได้ยินแกรกกรากบ้าง · ห้องอื่นได้ยินเสียงพังบางครั้ง
+    // เสียงไปถึงอีกฝั่งของประตู/ห้องอื่น — คนที่ทำพร้อมกันไม่ถูกบอกว่าใครทำด้วย
     for (const o of this.alivePlayers()) {
       if (o.id === p.id || o.ko) continue;
-      if (o.zoneId === door.id && !!o.outside === !!p.outside) this.logTo(o, `👀 คุณเห็น${who}กำลัง${verb}${this.zn(door)}${withTool}`, 'witness');
-      else if (o.zoneId === door.id) {
-        if (w.method === 'break') this.logTo(o, `💥 มีเสียงทุบกระแทกประตู${this.zn(door)}ดังสนั่นจาก${fromSide} — ใครบางคนกำลังพยายามพังประตู`, 'danger');
+      if (o.zoneId === door.id && !!o.outside === !!p.outside) continue;
+      if (o.zoneId === door.id) {
+        if (means.method === 'break') this.logTo(o, `💥 มีเสียงทุบกระแทกประตู${this.zn(door)}ดังสนั่นจาก${fromSide} — ใครบางคนกำลังพยายามพังประตู`, 'danger');
         else if (chance(DOOR.PICK_HEARD)) this.logTo(o, `👂 คุณได้ยินเสียงแกรกกรากเบา ๆ ที่กลอนประตู${this.zn(door)}`, 'witness');
-      } else if (w.method === 'break' && chance(DOOR.BREAK_HEARD_FAR)) this.logTo(o, `👂 คุณได้ยินเสียงทุบกระแทกดังมาจากทาง${this.zn(door)}`, 'witness');
+      } else if (means.method === 'break' && chance(DOOR.BREAK_HEARD_FAR)) this.logTo(o, `👂 คุณได้ยินเสียงทุบกระแทกดังมาจากทาง${this.zn(door)}`, 'witness');
     }
     if (w.progress < w.need) {
-      this.logTo(p, `${icon} คุณใช้ชั่วโมงนี้${verb}${this.zn(door)}${withTool} ยังไม่สำเร็จ (ทำไปแล้ว ${w.progress} ชั่วโมง) — เลือกแอ็กชันนี้อีกครั้งชั่วโมงหน้าเพื่อทำต่อ`, 'action');
+      this.logTo(p, `${icon} คุณใช้ชั่วโมงนี้${verb}${this.zn(door)}${withTool} ยังไม่สำเร็จ (คืบหน้ารวม ${w.progress} — ถ้ามีคนทำพร้อมกันแรงจะรวมกัน) — เลือกแอ็กชันนี้อีกครั้งชั่วโมงหน้าเพื่อทำต่อ`, 'action');
       return;
     }
     door.locked = false;
+    door.doorWork = null;
     door.unlockedBy = { id: p.id, turn: this.turn };
-    if (w.method === 'break') {
+    if (means.method === 'break') {
       if (door.bar) {
         door.bar.item.hidden = false;
         door.items.push(door.bar.item); // ที่ค้ำหลุดตกอยู่ในห้อง
@@ -2167,16 +2203,16 @@ export class Game {
       door.broken = true;
       door.lockable = false;
       door.evidence.push(this.makeEvidence(door.id, `ประตู${door.name}ถูกพังจนบานเบี้ยวและกลอนหลุด ล็อกไม่ได้อีกแล้ว`, false, null, 'door'));
-      this.logTo(p, `💥 คุณพังประตู${this.zn(door)}สำเร็จ${withTool} บานประตูพังจนล็อกไม่ได้อีก — ชั่วโมงถัดไปเลือกห้องเพื่อ${p.outside ? 'เข้าไป' : 'ออกไป'}`, 'action');
+      this.logTo(p, `💥 ประตู${this.zn(door)}พังสำเร็จ${withTool} บานประตูพังจนล็อกไม่ได้อีก — ชั่วโมงถัดไปเลือกห้องเพื่อ${p.outside ? 'เข้าไป' : 'ออกไป'}`, 'action');
       this.recordEvent(`${this.nick(p)}พังประตู${this.zn(door)}`);
     } else {
-      this.logTo(p, `🪛 คุณสะเดาะกลอน${this.zn(door)}ได้สำเร็จ${withTool} ประตูเปิดแล้ว (ไม่ได้ล็อกอีก จนกว่าจะมีคนล็อกใหม่) — ชั่วโมงถัดไปเลือกห้องเพื่อ${p.outside ? 'เข้าไป' : 'ออกไป'}`, 'action');
+      this.logTo(p, `🪛 กลอนประตู${this.zn(door)}เปิดออกสำเร็จ${withTool} ประตูเปิดแล้ว (ไม่ได้ล็อกอีก จนกว่าจะมีคนล็อกใหม่) — ชั่วโมงถัดไปเลือกห้องเพื่อ${p.outside ? 'เข้าไป' : 'ออกไป'}`, 'action');
       this.recordEvent(`${this.nick(p)}สะเดาะกลอน${this.zn(door)}ได้สำเร็จ`);
     }
     for (const o of this.alivePlayers()) {
       if (o.id === p.id || o.zoneId !== door.id) continue;
       o.zoneMemory[door.id] = { ...(o.zoneMemory[door.id] || {}), locked: false, broken: door.broken };
-      if (!o.ko) this.logTo(o, `🚪 ประตู${this.zn(door)}เปิดออก — ${w.method === 'break' ? 'ถูกพังจาก' : 'มีคนสะเดาะกลอนจาก'}${fromSide}`, 'danger');
+      if (!o.ko) this.logTo(o, `🚪 ประตู${this.zn(door)}เปิดออก — ${means.method === 'break' ? 'ถูกพังจาก' : 'มีคนสะเดาะกลอนจาก'}${fromSide}`, 'danger');
     }
     p.doorWork = null;
     p.zoneMemory[door.id] = { ...(p.zoneMemory[door.id] || {}), locked: false, broken: door.broken };
@@ -3035,6 +3071,8 @@ export class Game {
     };
     let n = 0;
     for (const z of this.zones.values()) {
+      z.doorWork = null; // งานประตู/ไฟที่ค้างเริ่มใหม่ในวันใหม่
+      z.powerWork = null;
       for (const t of z.traps) {
         dismantle(t.item, z, null);
         n++;
@@ -3625,17 +3663,17 @@ export class Game {
       barred: !!this.zones.get(me.zoneId)?.bar,
       barItem: this.zones.get(me.zoneId)?.bar?.item?.name || null,
       means: m ? { method: m.method, label: m.method === 'break' ? `พังประตูด้วยมือเปล่าได้ (${m.hours[0]}–${m.hours[1]} ชม.)` : `สะเดาะกลอนด้วย${m.item.name}ได้ (${m.hours[0]}–${m.hours[1]} ชม.)` } : null,
-      work: me.doorWork ? { zoneId: me.doorWork.zoneId, zoneName: this.zoneName(me.doorWork.zoneId), method: me.doorWork.method, progress: me.doorWork.progress } : null,
+      work: me.doorWork && this.zones.get(me.doorWork.zoneId)?.doorWork?.[me.doorWork.method] ? { zoneId: me.doorWork.zoneId, zoneName: this.zoneName(me.doorWork.zoneId), method: me.doorWork.method, progress: this.zones.get(me.doorWork.zoneId).doorWork[me.doorWork.method].progress } : null,
     };
   }
 
   // ป้ายแท็กของ (หนัก · มีคม · ยิงได้ …) ให้ผู้เล่นรู้ว่าของชิ้นนี้ทำอะไรได้
   tagText(i) {
-    return [...tagsOf(i)].map((t) => TAG_LABEL[t]).filter(Boolean).join(' · ');
+    return [i.broken ? '💔 พัง (ซ่อมก่อนใช้)' : '', ...[...tagsOf(i)].map((t) => TAG_LABEL[t])].filter(Boolean).join(' · ');
   }
 
   itemView(i) {
-    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, bloody: !!i.bloody, description: i.description, trapType: i.trapType || null, ammo: Number.isInteger(i.ammo) ? i.ammo : null, tagText: this.tagText(i), unlocksZoneNames: (i.unlocksZoneIds || []).map((id) => this.zoneName(id)), exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
+    return { id: i.id, name: i.name, kind: i.kind, isPart: !!i.isPart, bloody: !!i.bloody, broken: !!i.broken, description: i.description, trapType: i.trapType || null, ammo: Number.isInteger(i.ammo) ? i.ammo : null, tagText: this.tagText(i), unlocksZoneNames: (i.unlocksZoneIds || []).map((id) => this.zoneName(id)), exitName: i.exitId ? this.exits.get(i.exitId)?.name || null : null };
   }
 
   viewFor(playerId) {
