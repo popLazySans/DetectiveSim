@@ -92,7 +92,7 @@
   };
   const zoneById = (id) => state.location?.zones.find((z) => z.id === id);
   const zoneName = (id) => zoneById(id)?.name || '?';
-  const actionKey = (a) => `${a.type}|${a.itemId || ''}|${a.targetId || ''}|${a.victimId || ''}|${a.recipeId || ''}|${a.exitId || ''}`;
+  const actionKey = (a) => `${a.type}|${a.itemId || ''}|${a.targetId || ''}|${a.victimId || ''}|${a.recipeId || ''}|${a.exitId || ''}|${a.step || ''}`;
   const timeText = (day, hour) => `วันที่ ${day}${hour ? ` ชั่วโมงที่ ${hour}` : ''}`;
 
   // รูปตัวละคร: ถ้ามีไฟล์ใน public/portraits ใช้รูป ไม่งั้นใช้วงกลมตัวอักษรแรกของชื่อเล่น
@@ -224,6 +224,7 @@
             <li><b>💊 ยาในอาหาร:</b> ยาพิษ = ตาย · ยานอนหลับ/ยาสลบ = สลบ · ยาบำรุง (บำรุง/วิตามิน) = คนกินได้เวลาภารกิจถัดไป +1 ชั่วโมง · ยารักษา (ยาแก้/ยาสามัญ) = ต้านทานการสลบ 1 ครั้ง — ผสมแล้วอยู่ในอาหารทั้งวัน ใครกินก็ได้ผล</li>
             <li><b>🤝 สำรวจร่วมกัน:</b> ถ้าคนที่อยู่ในห้องเดียวกัน (และมองเห็นกัน) รู้ทางออก/ทางลับของห้องนั้นอยู่แล้ว หรือสำรวจพร้อมกันแล้วเจอ คุณที่กดสำรวจจะเจอด้วยแน่นอน ไม่ต้องกระซิบบอกกัน · <b>จบเกมทันที</b>เมื่อเหลือคนไม่เกินหนึ่งในสามของผู้เล่น หรือคนที่เหลือทุกคนล้วนเคยฆ่า (ผู้ที่เหลือรอด) · <b>ครบ 24 ชั่วโมง</b>: ถ้ามีศพที่ยังไม่ถูกพบจะประกาศพบศพทันที ถ้าไม่มีจะขึ้นวันใหม่</li>
             <li><b>💔 ของพัง · 🤝 ช่วยกันทำ:</b> ใช้ของมีคม/ของหนัก/เครื่องมือลงมือหรือทำทางออก มีโอกาสพัง (ลงมือ 15% ทางออก 20%) ของที่พังใช้ลงมือ/คราฟ/งัดไม่ได้ ต้องเลือก "ซ่อม" ตอนถือเชือก/เทป (หมดไป 1 ชิ้น) หรือเครื่องมือช่าง 1–2 ชั่วโมง · สะเดาะ/พังประตู/ซ่อมไฟ ความคืบหน้าอยู่ที่ประตู/เครื่อง ใครทำพร้อมกันแรงรวมกัน (นักสู้พัง +3 ช่างเทคนิคซ่อมไฟเสร็จทันที) และไม่มีใครรู้ว่าใครทำด้วย</li>
+            <li><b>🚪 ทางออกทีละขั้น:</b> ทุกขั้นของทางออกเป็นปุ่มของตัวเอง (ตัด · ถอดน็อต · ไขกุญแจ · กดรหัส · ติดตั้งชิ้นส่วน · งัด) ทำสำเร็จแล้วติดถาวร ปุ่มที่ยังทำไม่ได้บอกว่าขาดอะไร · เศษรหัสหยิบแล้ว "จำได้" ทันที (วางทิ้งก็ยังจำ คนที่รู้คนละส่วนกดพร้อมกันนับรวม) · ไม่มีกุญแจใช้ที่สะเดาะ/ช่างเทคนิค+เครื่องมือแทน · ไม่มีชิ้นส่วนก็ "ดัดแปลง" จากเครื่องมือช่าง + เชือก/ของหนัก/สายไฟ · ไม่มีฟิวส์ใช้สายไฟแทน — ยึดของทางออกไว้คนเดียวไม่ได้อีก</li>
             <li><b>ใครก็เป็นฆาตกรได้:</b> คนที่ลงมือคือคนร้าย เกมจะสุ่ม "ฆาตกรประจำวัน" ให้โบนัส แต่ถ้าคนอื่นลงมือก่อน คนนั้นก็เป็นแค่พยาน</li>
             <li><b>ภารกิจลับ:</b> ทุกคนมีภารกิจทีละข้อ (ไปห้อง X / หยิบของ Y / ไปอยู่กับ Z) มีเวลา 3–5 ชั่วโมง <b>ละเลยได้</b> แต่ถ้าครบกำหนดแล้วยังไม่ทำ จะโดนลงโทษ: <b>สลบ 1–3 ชั่วโมง</b> (ทำอะไรไม่ได้ ไม่รู้ว่ารอบตัวเกิดอะไรขึ้น) ของบางชิ้นหล่นในห้อง และระหว่างสลบใครลงมือกับคุณก็สำเร็จแน่นอน · ภารกิจที่ทำไม่ได้แล้วโดยไม่ใช่ความผิดคุณถูกยกเลิกโดยไม่มีโทษ</li>
             <li><b>ลงมือสำเร็จไม่ได้แปลว่าตาย:</b> โอกาสฆ่าขึ้นกับของ (ปืน 90% · มีคม 70% · หนัก 55% · เชือก 60% · ผ้า 35% · ยาพิษ 85% · ของเบา 25%) ที่เหลือเป้าหมายแค่ <b>สลบ 1–3 ชั่วโมง</b> · <b>มือเปล่า ยานอนหลับ ยาสลบ ทำให้สลบเท่านั้น</b> ฆ่าไม่ได้ (ยกเว้นนักสู้ต่อยฆ่าได้ 5%) · คนที่สลบอยู่ถูกลงมือสำเร็จแน่นอน (ของฆ่าได้ = ตาย) · ลงมือพลาดแล้วเป้าหมายสวนกลับได้ 25% (นักสู้ 50% · ถืออาวุธ +15%) ผลของการสวนกลับขึ้นกับของที่เขาถือ: ฆ่าคุณหรือทำให้คุณสลบ</li>
@@ -558,7 +559,7 @@
       ${groups
         .map(
           ([title, arr]) => `<div class="agroup"><div class="agtitle">${esc(title)}</div><div class="alist">${arr
-            .map((a) => `<button class="act ${a.danger ? 'danger' : ''} ${actionKey(a) === ui.selectedAction ? 'selected' : ''}" data-action="pick-action" data-key="${esc(actionKey(a))}" ${a.disabled ? 'disabled' : ''} title="${esc(a.reason || a.desc || '')}">${esc(a.label)}</button>`)
+            .map((a) => `<button class="act ${a.danger ? 'danger' : ''} ${actionKey(a) === ui.selectedAction ? 'selected' : ''}" data-action="pick-action" data-key="${esc(actionKey(a))}" ${a.disabled ? 'disabled' : ''} title="${esc(a.reason || a.desc || '')}">${esc(a.label)}${a.disabled && a.reason ? `<small class="why">${esc(a.reason)}</small>` : ''}</button>`)
             .join('')}</div></div>`,
         )
         .join('')}
@@ -835,9 +836,10 @@
         ? exits.map((x) => `<div class="exitbox ${x.open ? 'open' : ''}">
             <div class="row"><b>${ROUTE_ICON[x.route] || '🚪'} ${esc(x.name)}</b><span class="spacer"></span><span class="badge yellow">${esc(x.zoneName)}</span></div>
             <div class="muted" style="font-size:.82rem">${esc(x.description)}</div>
-            <div style="font-size:.85rem;margin-top:.25rem"><b>${esc(x.routeLabel)}</b> · ผ่านแล้ว ${x.stepsDone ?? 0}/${x.steps?.length ?? 0} ขั้น</div><div class="muted" style="font-size:.78rem">ทำขั้นไหนก่อนก็ได้ ขั้นที่ ✅ แล้วไม่ต้องทำซ้ำ · ของที่ต้องถือ (กุญแจ/เศษรหัส/ชุดที่ประกอบ) ต้องอยู่ในมือตอนลงมือ · ไปที่ห้องนั้นแล้วเลือก "ลงมือกับทางออก" จะทำทุกขั้นที่ทำได้ในชั่วโมงเดียว</div>
+            <div style="font-size:.85rem;margin-top:.25rem"><b>${esc(x.routeLabel)}</b> · ผ่านแล้ว ${x.stepsDone ?? 0}/${x.steps?.length ?? 0} ขั้น</div><div class="muted" style="font-size:.78rem">แต่ละขั้นเป็นปุ่มของตัวเองในหมวด "ทางออก" (ไปที่ห้องนั้น) ทำขั้นไหนก่อนก็ได้ ทำสำเร็จแล้ว ✅ ติดถาวร · ปุ่มที่ยังทำไม่ได้บอกว่าขาดอะไร · คนที่เลือกขั้นเดียวกันพร้อมกันนับรวม</div>
             ${x.steps?.length ? `<ol class="obs" style="margin:.2rem 0 0 1.1rem;font-size:.82rem">${x.steps.map((st) => `<li>${st.done ? '✅' : '⬜'} ${esc(st.label)}${st.needed ? ` (${st.progress}/${st.needed})` : ''}</li>`).join('')}</ol>` : ''}
-            ${x.items?.length ? `<div class="chips" style="margin-top:.3rem">${x.items.map((i) => `<span class="chip ${i.held ? 'part' : ''}" title="${i.held ? 'คุณถืออยู่' : 'ยังไม่ได้อยู่กับคุณ'}">${i.held ? '✅' : '⬜'} ${esc(i.name)}</span>`).join('')}</div>` : ''}
+            ${x.codeNeed ? `<div class="muted" style="font-size:.82rem">🧠 รู้รหัสแล้ว ${x.codeKnown}/${x.codeNeed} ส่วน — หยิบเศษกระดาษแล้วจำได้ทันที ไม่ต้องถือไว้ (คนที่รู้คนละส่วนกดพร้อมกันนับรวม)</div>` : ''}
+            ${x.items?.length ? `<div class="chips" style="margin-top:.3rem">${x.items.map((i) => `<span class="chip ${i.held || i.known ? 'part' : ''}" title="${i.known ? 'จำได้แล้ว' : i.held ? 'คุณถืออยู่' : 'ยังไม่ได้อยู่กับคุณ'}">${i.known ? '🧠' : i.held ? '✅' : '⬜'} ${esc(i.name)}</span>`).join('')}</div>` : ''}${x.assemblyHeld ? '<div class="muted" style="font-size:.82rem">🔩 คุณถือชุดชิ้นส่วน/ชิ้นส่วนดัดแปลงของทางออกนี้อยู่ — ไปเลือก "ติดตั้ง" ที่ห้องนั้น</div>' : ''}
             ${x.route === 'breach' ? `<div class="muted" style="font-size:.82rem">ความคืบหน้า ${x.progress}/${x.progressNeeded}</div>` : ''}${x.route === 'power' ? `<div class="muted" style="font-size:.82rem">${x.powered ? '⚡ มีไฟแล้ว' : 'ยังไม่มีไฟ'}</div>` : ''}
           </div>`).join('')
         : `<p class="muted" style="font-size:.85rem">ยังไม่รู้ว่าทางออกอยู่ห้องไหน — "สำรวจห้องอย่างละเอียด" ในห้องต่าง ๆ หรือหาแผนผัง/บันทึกที่ซ่อนอยู่ (มีทั้งหมด ${total} ทาง แต่ละทางเปิดไม่เหมือนกัน)</p>`}
@@ -1096,7 +1098,7 @@
       case 'confirm-action': {
         const a = (state.me.availableActions || []).find((x) => actionKey(x) === ui.selectedAction);
         if (!a) break;
-        const payload = { type: a.type, itemId: a.itemId, itemId2: a.itemId2, targetId: a.targetId, victimId: a.victimId, recipeId: a.recipeId, exitId: a.exitId };
+        const payload = { type: a.type, itemId: a.itemId, itemId2: a.itemId2, targetId: a.targetId, victimId: a.victimId, recipeId: a.recipeId, exitId: a.exitId, step: a.step };
         if (a.needsZone) payload.toZoneId = $('#move-body-to')?.value || '';
         if (a.multiItems) payload.itemIds = [...document.querySelectorAll('.hide-item:checked')].map((x) => x.value);
         if (a.danger && !(await confirmDialog(`ยืนยัน "${a.label}"? เลือกแล้วเปลี่ยนไม่ได้`))) break;

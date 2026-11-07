@@ -1,6 +1,7 @@
 // ระบบทางออก — ทางออก 2 ทางต่อเกม ซ่อนอยู่ในห้องธรรมดา (ไม่มีใครรู้ว่าอยู่ไหนจนกว่าจะ "สำรวจ" เจอ หรือเจอแผนผัง)
 // แต่ละทางมี "เส้นทาง" (route) และ "ขั้นตอน" (steps) 4 ข้อที่ต้องผ่านให้ครบถึงจะเปิดได้ (เส้นทางซ่อม = 5 เพราะต้องประกอบชิ้นส่วนก่อน):
-//   key = ถือกุญแจของทางออก · code = รวบรวมเศษรหัส · assembly = ประกอบชิ้นส่วน 2 ชิ้นเป็นชุดเดียว (แอ็กชันประกอบ) แล้วถือมา
+//   key = ถือกุญแจของทางออก (หรือสะเดาะด้วยที่สะเดาะ/ช่างเทคนิค+เครื่องมือ) · code = จำเศษรหัสให้ครบ (หยิบแล้วจำได้ทันที) · assembly = ประกอบชิ้นส่วน 2 ชิ้น หรือดัดแปลงจากเครื่องมือ+วัสดุ แล้วติดตั้ง
+//   ทุกขั้นเป็นแอ็กชันของตัวเอง (เลือกขั้นที่จะทำในชั่วโมงนั้น) ทำสำเร็จแล้วติดถาวร · ไม่ระบุขั้น (บอท/เทสต์เก่า) = ทำทุกขั้นที่ทำได้
 //   power = เอาฟิวส์ไปใส่แผงไฟก่อน · tool = เครื่องมือช่าง (ถอดน็อต/เปิดฝา ทำครั้งเดียวติดถาวร) · cut = ของมีคม (ตัดโซ่/สายเคเบิล ครั้งเดียว)
 //   force = ลงแรงสะสม (ของหนักหรืออาวุธมีคม นักสู้/ช่างเทคนิค 2 แต้มต่อครั้ง)
 // ของที่ต้องใช้ถูกซ่อนตามห้องต่าง ๆ · ความรู้ว่าทางออกอยู่ไหนเป็นของแต่ละคน (discoveredBy) ส่วนความคืบหน้า (steps/powered/open) เป็นของจริงที่ทุกคนใช้ร่วมกัน
@@ -41,23 +42,23 @@ const itemNamed = (exit, role) => exit.items.find((i) => i.role === role)?.name 
 export function stepLabel(game, exit, s) {
   switch (s.kind) {
     case 'key':
-      return `${s.verb || 'ไขกุญแจ'}: หา "${itemNamed(exit, 'key') || 'กุญแจของทางออกนี้'}" (ซ่อนอยู่ในห้องใดห้องหนึ่ง ต้องสำรวจถึงเจอ — ถ้ามีห้องที่ล็อกมักอยู่ในนั้น) ถือมาที่ห้องนี้แล้วเลือก "ลงมือกับทางออก"`;
+      return `${s.verb || 'ไขกุญแจ'}: หา "${itemNamed(exit, 'key') || 'กุญแจของทางออกนี้'}" (ซ่อนอยู่ในห้องใดห้องหนึ่ง ต้องสำรวจถึงเจอ — ถ้ามีห้องที่ล็อกมักอยู่ในนั้น) หรือใช้ที่สะเดาะกลอน (ช่างเทคนิคใช้เครื่องมือช่างแทนได้) แล้วเลือกขั้นนี้ที่ห้องนี้ — ทำครั้งเดียวติดถาวร`;
     case 'code':
-      return `กดรหัส: หาเศษกระดาษรหัสให้ครบ ${ESCAPE.CODE_NOTES} ชิ้น (ซ่อนตามห้อง ต้องสำรวจ) ถือมาที่ห้องนี้แล้วลงมือ — คนที่อยู่ห้องนี้และลงมือพร้อมกันนับชิ้นรวมกันได้ · ช่างเทคนิคใช้แค่ ${ESCAPE.CODE_NOTES_TECH} ชิ้น`;
+      return `กดรหัส: หาเศษกระดาษรหัสให้ครบ ${ESCAPE.CODE_NOTES} ชิ้น (ซ่อนตามห้อง ต้องสำรวจ) หยิบแล้ว "จำได้ทันที" ไม่ต้องถือไว้ — มาเลือกขั้นนี้ที่ห้องนี้ คนที่รู้คนละส่วนเลือกกดพร้อมกันนับรวมกันได้ · ช่างเทคนิคใช้แค่ ${ESCAPE.CODE_NOTES_TECH} ชิ้น`;
     case 'assembly': {
       const parts = exit.items.filter((i) => i.role === 'part').map((i) => i.name);
-      return `ประกอบ "${exit.assembly?.name || 'ชุดชิ้นส่วน'}": หา ${parts.join(' และ ')} (ซ่อนตามห้อง) ถือครบ 2 ชิ้นแล้วเลือก "🛠 ประกอบ" (ใช้ 1 ชั่วโมง ทำที่ห้องไหนก็ได้) แล้วถือชุดที่ประกอบแล้วมาที่ห้องนี้ตอนลงมือ`;
+      return `ติดตั้ง "${exit.assembly?.name || 'ชุดชิ้นส่วน'}": หา ${parts.join(' และ ')} (ซ่อนตามห้อง) ถือครบ 2 ชิ้นแล้วเลือก "🛠 ประกอบ" (ใช้ 1 ชั่วโมง ทำที่ห้องไหนก็ได้) — หรือ "ดัดแปลง" จากเครื่องมือช่าง + เชือก/ของหนัก/สายไฟ แทน — แล้วถือมาเลือกขั้นนี้ที่ห้องนี้ (ชุดหมดไป ติดถาวร)`;
     }
     case 'power': {
       const powerZones = [...game.zones.values()].filter((z) => z.items.some((i) => i.kind === 'power')).map((z) => z.name);
-      return exit.powered ? 'จ่ายไฟ: มีไฟแล้ว' : `จ่ายไฟ: หา "${itemNamed(exit, 'fuse') || 'ฟิวส์'}" (ซ่อนตามห้อง) → ถือไปห้องที่มีแผงไฟ (${powerZones.join(', ') || '?'}) → เลือก "⚡ ใส่ฟิวส์" → ไฟเข้าแล้วค่อยกลับมาลงมือที่ห้องนี้`;
+      return exit.powered ? 'จ่ายไฟ: มีไฟแล้ว' : `จ่ายไฟ: หา "${itemNamed(exit, 'fuse') || 'ฟิวส์'}" (ซ่อนตามห้อง) หรือสายไฟ/ของนำไฟฟ้าแทน → ถือไปห้องที่มีแผงไฟ (${powerZones.join(', ') || '?'}) → เลือก "⚡ ใส่ฟิวส์" → ไฟเข้าแล้วขั้นนี้ติดถาวร`;
     }
     case 'tool':
-      return `${s.verb || 'ถอดน็อต/เปิดฝา'}: ถือ${TOOL_HINT}มาที่ห้องนี้แล้วเลือก "ลงมือกับทางออก" — ทำสำเร็จครั้งเดียวติดถาวร ไม่ต้องทำซ้ำ`;
+      return `${s.verb || 'ถอดน็อต/เปิดฝา'}: ถือ${TOOL_HINT}มาที่ห้องนี้แล้วเลือกขั้นนี้ — ทำสำเร็จครั้งเดียวติดถาวร (เครื่องมืออาจพัง 20%)`;
     case 'cut':
-      return `${s.verb || 'ตัดโซ่/สายเคเบิล'}: ถือของมีคม (มีด/ขวาน/กรรไกร/คีมตัด) มาที่ห้องนี้แล้วลงมือ — ทำสำเร็จครั้งเดียวติดถาวร`;
+      return `${s.verb || 'ตัดโซ่/สายเคเบิล'}: ถือของมีคม (มีด/ขวาน/กรรไกร/คีมตัด) มาที่ห้องนี้แล้วเลือกขั้นนี้ — ทำสำเร็จครั้งเดียวติดถาวร (ของอาจพัง 20%)`;
     case 'force':
-      return `${s.verb || 'งัด/ทุบ'}: ถือ${FORCE_HINT}มาแล้วลงมือ ได้ครั้งละ 1 แต้ม (นักสู้/ช่างเทคนิค 2) จนครบ ${s.needed} แต้ม — หลายคนลงมือพร้อมกันนับรวม แต้มสะสมไม่หาย${s.loud ? ' · เสียงดัง คนห้องอื่นอาจได้ยิน' : ''}`;
+      return `${s.verb || 'งัด/ทุบ'}: ถือ${FORCE_HINT}มาแล้วเลือกขั้นนี้ ได้ครั้งละ 1 แต้ม (นักสู้/ช่างเทคนิค 2) จนครบ ${s.needed} แต้ม — หลายคนลงแรงพร้อมกันนับรวม แต้มสะสมไม่หาย${s.loud ? ' · เสียงดัง คนห้องอื่นอาจได้ยิน' : ''}`;
     default:
       return s.kind;
   }
@@ -204,6 +205,12 @@ export function onObtainItem(game, p, item) {
   if (item.exitId) {
     const x = game.exits.get(item.exitId);
     if (!x) return;
+    if (item.role === 'code') {
+      // หยิบเศษรหัสแล้วจำได้ทันที — วาง/ให้/ซ่อนกระดาษทีหลังก็ยังจำได้ (ยึดกระดาษกันไม่ได้)
+      p.knownCodes ||= {};
+      (p.knownCodes[x.id] ||= new Set()).add(item.id);
+      game.logTo(p, `🧠 คุณจำตัวเลขบน${item.name}ได้แล้ว — รู้รหัสของ "${x.name}" ${codeKnownBy(p, x).size}/${ESCAPE.CODE_NOTES} ส่วน (ช่างเทคนิคใช้ ${ESCAPE.CODE_NOTES_TECH}) · จะวาง/ให้/ซ่อนกระดาษก็ได้ คุณยังจำได้อยู่`, 'escape');
+    }
     const partHint = item.role === 'part' && x.assembly ? ` (ต้องประกอบกับอีกชิ้นเป็น "${x.assembly.name}" ก่อนใช้)` : '';
     game.logTo(p, knowsExit(p, x) ? `⭐ ${item.name}ใช้กับทางออก "${x.name}" ที่${game.zn(x.zoneId)}${partHint}` : `⭐ ${item.name}ดูเป็นของสำคัญสำหรับทางออก "${x.name}"${partHint} — แต่คุณยังไม่รู้ว่าทางออกนี้อยู่ตรงไหน`, 'escape');
   }
@@ -216,60 +223,76 @@ const holdsTool = (p) => p.inventory.some((i) => !i.broken && tagsOf(i).has('fas
 const sharpOf = (p) => p.inventory.find((i) => !i.broken && tagsOf(i).has('sharp'));
 const toolOf = (p) => p.inventory.find((i) => !i.broken && tagsOf(i).has('fastener'));
 const heavyOf = (p) => p.inventory.find(canBreachWith);
+const keyOf = (p, x) => p.inventory.find((i) => i.exitId === x.id && i.role === 'key');
+const pickOf = (game, p) => p.inventory.find((i) => i.kind === 'lockpick' && !i.broken) || (game.traitOf(p) === 'tech' ? toolOf(p) : null); // ของทดแทนกุญแจ: ที่สะเดาะ หรือช่างเทคนิค+เครื่องมือช่าง
+const asmOf = (p, x) => p.inventory.find((i) => i.exitId === x.id && i.role === 'assembly' && !i.broken); // ชุดจริงหรือชิ้นส่วนดัดแปลง
+const STEP_VERB = { key: 'ไขกุญแจ', code: 'กดรหัส', assembly: 'ติดตั้งชิ้นส่วน', power: 'จ่ายไฟ', tool: 'ถอดน็อต/เปิดฝา', cut: 'ตัดโซ่/สายเคเบิล', force: 'งัด/ทุบ' };
+const STEP_ICON = { key: '🔑', code: '🔢', assembly: '🔩', power: '⚡', tool: '🔧', cut: '✂️', force: '💪' };
+const forceGain = (game, p) => (['combat', 'tech'].includes(game.traitOf(p)) ? 2 : 1);
 
-// สถานะแต่ละขั้นตอนเมื่อกลุ่ม people (คนที่ลงมือพร้อมกันในห้อง) ลองเปิด — ไม่เปลี่ยนสถานะจริง (ใช้แสดงผล/ตัดสินใจ)
-// people ว่าง = ดูเฉพาะสถานะถาวร (ขั้นที่ทำไปแล้ว)
+// รหัสที่คนนี้ "รู้": ที่จำไว้ (p.knownCodes[exitId]) รวมกับกระดาษที่ถืออยู่
+export function codeKnownBy(p, exit) {
+  const s = new Set(p.knownCodes?.[exit.id] || []);
+  for (const i of p.inventory) if (i.exitId === exit.id && i.role === 'code') s.add(i.id);
+  return s;
+}
+export function codeNeedFor(game, people) {
+  return people.some((p) => game.traitOf(p) === 'tech') ? ESCAPE.CODE_NOTES_TECH : ESCAPE.CODE_NOTES;
+}
+const codeKnownByAll = (people, exit) => {
+  const known = new Set();
+  for (const p of people) for (const id of codeKnownBy(p, exit)) known.add(id);
+  return known;
+};
+
+// สถานะแต่ละขั้นตอนเมื่อกลุ่ม people (คนที่ลงมือพร้อมกันในห้อง) ลองทำ — ไม่เปลี่ยนสถานะจริง (ใช้แสดงผล/ตัดสินใจ)
+// people ว่าง = ดูเฉพาะสถานะถาวร (ขั้นที่ทำไปแล้ว) · ทุกขั้นติดถาวรเมื่อทำสำเร็จ
 export function exitStatus(game, exit, people = []) {
-  const held = new Map();
-  for (const p of people) for (const it of p.inventory) if (it.exitId === exit.id) held.set(it.id, it);
   return exit.steps.map((s) => {
-    let done = false;
+    let done = !!s.done;
     switch (s.kind) {
       case 'key':
-        done = [...held.values()].some((i) => i.role === 'key');
+        done = done || people.some((p) => keyOf(p, exit) || pickOf(game, p));
         break;
-      case 'code': {
-        const notes = [...held.values()].filter((i) => i.role === 'code').length;
-        const need = people.some((p) => game.traitOf(p) === 'tech') ? ESCAPE.CODE_NOTES_TECH : ESCAPE.CODE_NOTES;
-        done = notes >= need;
+      case 'code':
+        done = done || (people.length > 0 && codeKnownByAll(people, exit).size >= codeNeedFor(game, people));
         break;
-      }
       case 'assembly':
-        done = [...held.values()].some((i) => i.role === 'assembly');
+        done = done || people.some((p) => asmOf(p, exit));
         break;
       case 'power':
-        done = !!exit.powered;
+        done = done || !!exit.powered;
         break;
       case 'tool':
-        done = s.done || people.some(holdsTool);
+        done = done || people.some(holdsTool);
         break;
       case 'cut':
-        done = s.done || people.some(holdsSharp);
+        done = done || people.some(holdsSharp);
         break;
       case 'force':
-        done = s.progress >= s.needed;
+        done = done || s.progress >= s.needed;
         break;
       default:
         break;
     }
-    return { id: s.id, kind: s.kind, label: stepLabel(game, exit, s), done, progress: s.progress || 0, needed: s.needed || 0, persistent: ['tool', 'cut', 'force', 'power'].includes(s.kind) };
+    return { id: s.id, kind: s.kind, label: stepLabel(game, exit, s), done, progress: s.progress || 0, needed: s.needed || 0, persistent: true };
   });
 }
 
-// ผู้เล่นคนเดียวพร้อมเปิดทางออกนี้ไหม (ถือของครบ และทำขั้นถาวรที่เหลือได้เอง) — ใช้ให้บอท/ตัวจำลองตัดสินใจ
+// ผู้เล่นคนเดียวพร้อมเปิดทางออกนี้ไหม (ทำขั้นที่เหลือทั้งหมดได้เอง) — ใช้ให้บอท/ตัวจำลองตัดสินใจ
 export function exitReadyFor(game, p, exit) {
   if (!exit || exit.open) return false;
   return exitStatus(game, exit, [p]).every((s) => s.done || (s.kind === 'force' && holdsHeavy(p)));
 }
 
-// ผู้เล่นคนนี้ไปลงมือแล้วมีอะไรคืบหน้าไหม: พร้อมเปิดเลย หรือทำขั้นถาวรที่ยังไม่เสร็จได้ (ถอดน็อต ตัด ลงแรง) — ใช้ให้บอท/ตัวจำลองตัดสินใจไปที่ทางออก
+// ผู้เล่นคนนี้ไปลงมือแล้วมีอะไรคืบหน้าไหม: ทำขั้นที่ยังไม่เสร็จได้อย่างน้อยหนึ่งขั้น — ใช้ให้บอท/ตัวจำลองตัดสินใจไปที่ทางออก
 export function exitUsefulFor(game, p, exit) {
   if (!exit || exit.open) return false;
   if (exitReadyFor(game, p, exit)) return true;
-  return exit.steps.some((s) => (s.kind === 'tool' && !s.done && holdsTool(p)) || (s.kind === 'cut' && !s.done && holdsSharp(p)) || (s.kind === 'force' && s.progress < s.needed && holdsHeavy(p)));
+  return exit.steps.some((s) => !s.done && ((s.kind === 'tool' && holdsTool(p)) || (s.kind === 'cut' && holdsSharp(p)) || (s.kind === 'force' && s.progress < s.needed && holdsHeavy(p)) || (s.kind === 'key' && (keyOf(p, exit) || pickOf(game, p))) || (s.kind === 'assembly' && asmOf(p, exit)) || (s.kind === 'code' && codeKnownBy(p, exit).size >= codeNeedFor(game, [p]))));
 }
 
-// ตัวเลือก "ประกอบชิ้นส่วนทางออก" เมื่อถือชิ้นส่วนครบทั้งสองชิ้น (ปรากฏใน craftOptions ของ game.js)
+// ตัวเลือก "ประกอบชิ้นส่วนทางออก" เมื่อถือชิ้นส่วนครบทั้งสองชิ้น (ปรากฏใน craftOptions ของ game.js) + "ดัดแปลง" ชิ้นส่วนแทนชุดจริง
 export function craftAssemblyOptions(game, p) {
   const out = [];
   for (const x of game.exits.values()) {
@@ -278,6 +301,15 @@ export function craftAssemblyOptions(game, p) {
     if (parts.length !== x.assembly.partIds.length) continue;
     // ไม่ใส่ exitId ในแอ็กชัน (คนที่ยังไม่รู้จักทางออกต้องไม่เห็น id ของมัน) — ตอนประกอบหาทางออกจาก id ของชิ้นส่วนแทน
     out.push({ type: 'craft', recipeId: 'assembly', itemId: parts[0].id, itemId2: parts[1].id, label: `🛠 ประกอบ "${x.assembly.name}" จาก ${parts.map((i) => i.name).join(' + ')}`, desc: `ชิ้นส่วนของทางออก "${x.name}" — ใช้เวลา 1 ชั่วโมง ได้ชุดชิ้นส่วนที่ประกอบแล้ว 1 ชิ้น (ขั้นตอนหนึ่งของการเปิดทางออกนี้)` });
+  }
+  // ดัดแปลงแทนชุดจริง (กันคนกักตุนชิ้นส่วน): เครื่องมือช่าง (ไม่หมด แต่อาจพัง) + เชือก/ของหนัก/สายไฟ 1 ชิ้น (หมดไป) — เฉพาะทางออกที่รู้จักและยังไม่ติดตั้ง
+  const tool = toolOf(p);
+  const mat = tool ? p.inventory.find((i) => i !== tool && !i.isPart && !i.broken && i.kind !== 'trap' && (i.kind === 'rope' || tagsOf(i).has('heavy') || tagsOf(i).has('conductive'))) : null;
+  if (tool && mat) {
+    for (const x of game.exits.values()) {
+      if (!x.assembly || x.open || !knowsExit(p, x) || x.steps.find((s) => s.kind === 'assembly')?.done || asmOf(p, x)) continue;
+      out.push({ type: 'craft', recipeId: 'makeshift', exitId: x.id, itemId: tool.id, itemId2: mat.id, label: `🛠 ดัดแปลง "ชิ้นส่วนดัดแปลงสำหรับ${x.name}" จาก ${tool.name} + ${mat.name}`, desc: `ใช้แทน "${x.assembly.name}" ที่หาไม่ได้ — ใช้เวลา 1 ชั่วโมง ${mat.name}หมดไป (${tool.name}ยังอยู่ แต่อาจพัง 20%)` });
+    }
   }
   return out;
 }
@@ -294,54 +326,122 @@ export function doCraftAssembly(game, p, a) {
   for (const it of x.items) if (it.role === 'part') it.assembled = true;
   const z = game.zones.get(p.zoneId);
   const who = game.who(p, z);
-  game.logTo(p, `🛠 คุณประกอบ "${asm.name}" เสร็จแล้ว — เอาไปใช้ที่ "${x.name}"${knowsExit(p, x) ? ` ที่${game.zn(x.zoneId)}` : ' (ยังไม่รู้ว่าอยู่ห้องไหน)'}`, 'escape');
+  game.logTo(p, `🛠 คุณประกอบ "${asm.name}" เสร็จแล้ว — เอาไปติดตั้งที่ "${x.name}"${knowsExit(p, x) ? ` ที่${game.zn(x.zoneId)}` : ' (ยังไม่รู้ว่าอยู่ห้องไหน)'}`, 'escape');
   for (const o of game.witnessesOf(p, z)) if (game.seen(p, 0.4)) game.logTo(o, `👀 คุณเห็น${who}นั่งประกอบชิ้นส่วนอะไรบางอย่างอยู่ตรงมุมห้อง${game.zn(z)}`, 'witness');
   game.recordEvent(`${game.nick(p)}ประกอบ "${asm.name}" ที่${game.zn(z)}`);
 }
 
-// แอ็กชันเกี่ยวกับทางออกที่ผู้เล่นทำได้ในห้องนี้
+// ดัดแปลงชิ้นส่วนแทนชุดจริง: เครื่องมือช่างยังอยู่ (อาจพัง) วัสดุหมดไป ได้ของ role 'assembly' ของทางออกนั้น
+export function doCraftMakeshift(game, p, a) {
+  const x = game.exits.get(a.exitId);
+  const tool = p.inventory.find((i) => i.id === a.itemId && !i.broken && tagsOf(i).has('fastener'));
+  const mat = p.inventory.find((i) => i.id === a.itemId2 && i !== tool);
+  if (!x?.assembly || x.open || !knowsExit(p, x) || !tool || !mat) return game.logTo(p, 'ของสำหรับดัดแปลงไม่ครบ', 'danger');
+  p.inventory.splice(p.inventory.indexOf(mat), 1);
+  const asm = { id: `${x.id}_makeshift_${game.turn}_${String(p.id).slice(0, 4)}`, name: `ชิ้นส่วนดัดแปลงสำหรับ${x.name}`, description: `ของดัดแปลงจาก${mat.name} พอใช้แทน${x.assembly.name}ได้`, kind: 'part', portable: true, hidden: false, isPart: true, exitId: x.id, role: 'assembly', makeshift: true, originZoneId: p.zoneId };
+  p.inventory.push(asm);
+  game.breakItemMaybe(p, tool, DURABILITY.BREAK_ON_EXIT, 'ดัดแปลงชิ้นส่วน');
+  const z = game.zones.get(p.zoneId);
+  game.logTo(p, `🛠 คุณดัดแปลง${mat.name}ด้วย${tool.name}จนได้ "${asm.name}" — เอาไปติดตั้งที่ "${x.name}" ที่${game.zn(x.zoneId)}ได้`, 'escape');
+  for (const o of game.witnessesOf(p, z)) if (game.seen(p, 0.4)) game.logTo(o, `👀 คุณเห็น${game.who(p, z)}นั่งดัดแปลงอะไรบางอย่างอยู่ตรงมุมห้อง${game.zn(z)}`, 'witness');
+  game.recordEvent(`${game.nick(p)}ดัดแปลง "${asm.name}" ที่${game.zn(z)}`);
+}
+
+// แอ็กชันเกี่ยวกับทางออกที่ผู้เล่นทำได้ในห้องนี้ — แยกเป็นขั้น ๆ (ขั้นที่ทำไม่ได้ขึ้นเป็นปุ่มปิดพร้อมเหตุผล) · partial = กดรหัสทั้งที่ยังรู้ไม่ครบ (หวังพึ่งคนอื่นกดพร้อมกัน)
 export function exitActions(game, p, z) {
   const out = [];
   for (const x of exitsIn(game, z.id)) {
     // ทำได้เฉพาะทางออกที่ "คุณ" รู้จัก (คนอื่นในห้องจะรู้ตามเมื่อเห็นคุณลงมือ)
     if (x.open || !knowsExit(p, x)) continue;
-    const st = exitStatus(game, x, [p]);
-    const done = st.filter((s) => s.done).length;
-    const missing = st.filter((s) => !s.done).map((s) => s.label);
-    out.push({
-      type: 'exit',
-      exitId: x.id,
-      exitName: x.name,
-      label: `🚪 ลงมือเปิด${x.name} (${done}/${st.length} ขั้น)`,
-      desc: missing.length ? `ยังขาด: ${missing.join(' · ')} — คนที่เลือกลงมือพร้อมกันในห้องนี้นับของรวมกัน ขั้นที่ทำได้จะถูกทำในชั่วโมงนี้ (ถอดน็อต ตัด ลงแรง ติดถาวร)` : 'ครบทุกขั้นแล้ว — ถ้าเปิดได้ ทุกคนที่ยังมีชีวิตจะหนีออกไปได้ (ฆาตกรที่ยังไม่ถูกจับถูกทิ้งไว้)',
-    });
+    const st = exitStatus(game, x, []);
+    const doneN = st.filter((s) => s.done).length;
+    const tail = ` · ${x.name} (สำเร็จแล้ว ${doneN}/${st.length})`;
+    for (const s of x.steps) {
+      if (s.done || (s.kind === 'power' && x.powered) || (s.kind === 'force' && s.progress >= s.needed)) continue;
+      const base = { type: 'exit', exitId: x.id, step: s.id, exitName: x.name };
+      const verb = s.verb || STEP_VERB[s.kind];
+      const icon = STEP_ICON[s.kind] || '🚪';
+      switch (s.kind) {
+        case 'key': {
+          const key = keyOf(p, x);
+          const pk = key ? null : pickOf(game, p);
+          out.push({ ...base, label: `${icon} ${verb}${tail}`, desc: key ? `ใช้${key.name} (กุญแจยังอยู่กับคุณ) — ทำเสร็จแล้วติดถาวร` : pk ? `ไม่มีกุญแจ แต่สะเดาะด้วย${pk.name}แทนได้ (เครื่องมืออาจพัง 20%) — ทำเสร็จแล้วติดถาวร` : '', disabled: !key && !pk, reason: key || pk ? '' : `ต้องถือ "${itemNamed(x, 'key') || 'กุญแจของทางออกนี้'}" หรือที่สะเดาะกลอน (ช่างเทคนิคใช้เครื่องมือช่างแทนได้)` });
+          break;
+        }
+        case 'code': {
+          const k = codeKnownBy(p, x).size;
+          const need = codeNeedFor(game, [p]);
+          out.push({ ...base, label: `${icon} กดรหัส (รู้รหัสแล้ว ${k}/${need})${tail}`, desc: k >= need ? 'คุณรู้รหัสครบแล้ว — กดแล้วติดถาวร' : `รู้รหัสแค่ ${k}/${need} ส่วน — ถ้าคนที่รู้ส่วนที่เหลือเลือกกดรหัสพร้อมกันในชั่วโมงนี้จะนับรวมกัน (กดไม่ครบ คนห้องอื่นอาจได้ยินสัญญาณเตือน)`, partial: k < need, disabled: k === 0, reason: k === 0 ? `ยังไม่รู้รหัสเลย — หาเศษกระดาษรหัส ${ESCAPE.CODE_NOTES} ชิ้น (หยิบแล้วจำได้ทันที ช่างเทคนิคใช้ ${ESCAPE.CODE_NOTES_TECH})` : '' });
+          break;
+        }
+        case 'assembly': {
+          const asm = asmOf(p, x);
+          const asmName = x.assembly?.name || 'ชุดชิ้นส่วน';
+          out.push({ ...base, label: `${icon} ติดตั้ง${asmName}${tail}`, desc: asm ? `ใช้${asm.name} (หมดไป) — ติดตั้งแล้วติดถาวร` : '', disabled: !asm, reason: asm ? '' : `ต้องถือ "${asmName}" — ประกอบจากชิ้นส่วน 2 ชิ้น หรือ "ดัดแปลง" จากเครื่องมือช่าง + เชือก/ของหนัก/สายไฟ (ในหมวดประกอบ)` });
+          break;
+        }
+        case 'power': {
+          const powerZones = [...game.zones.values()].filter((zz) => zz.items.some((i) => i.kind === 'power')).map((zz) => zz.name);
+          out.push({ ...base, label: `${icon} ${verb}${tail}`, desc: '', disabled: true, reason: `ทำที่ห้องนี้ไม่ได้ — ถือ "${itemNamed(x, 'fuse') || 'ฟิวส์'}" (หรือสายไฟ/ของนำไฟฟ้าแทน) ไปห้องที่มีแผงไฟ (${powerZones.join(', ') || '?'}) แล้วกด "⚡ ใส่ฟิวส์"` });
+          break;
+        }
+        case 'tool': {
+          const t = toolOf(p);
+          out.push({ ...base, label: `${icon} ${verb}${tail}`, desc: t ? `ใช้${t.name} (อาจพัง 20%) — ทำเสร็จแล้วติดถาวร` : '', disabled: !t, reason: t ? '' : `ต้องถือ${TOOL_HINT}` });
+          break;
+        }
+        case 'cut': {
+          const c = sharpOf(p);
+          out.push({ ...base, label: `${icon} ${verb}${tail}`, desc: c ? `ใช้${c.name} (อาจพัง 20%) — ทำเสร็จแล้วติดถาวร` : '', disabled: !c, reason: c ? '' : 'ต้องถือของมีคม (มีด/ขวาน/กรรไกร/คีมตัด)' });
+          break;
+        }
+        case 'force': {
+          const h = heavyOf(p);
+          out.push({ ...base, label: `${icon} ${verb} (${s.progress}/${s.needed})${tail}`, desc: h ? `ใช้${h.name} ได้ +${forceGain(game, p)} แต้ม (ของอาจพัง 20%) — หลายคนลงแรงพร้อมกันนับรวม แต้มสะสมไม่หาย${s.loud ? ' · เสียงดัง คนห้องอื่นอาจได้ยิน' : ''}` : '', disabled: !h, reason: h ? '' : `ต้องถือ${FORCE_HINT}` });
+          break;
+        }
+        default:
+          break;
+      }
+    }
   }
-  // ใส่ฟิวส์ให้ทางออกแบบใช้ไฟ: ทำได้ในห้องที่มีแผงไฟ ถ้าถือฟิวส์อยู่
+  // ใส่ฟิวส์ให้ทางออกแบบใช้ไฟ: ทำได้ในห้องที่มีแผงไฟ ถ้าถือฟิวส์อยู่ — หรือใช้สายไฟ/ของนำไฟฟ้าแทนกับทางออกที่รู้จัก
   if (z.items.some((i) => i.kind === 'power')) {
     for (const fuse of p.inventory.filter((i) => i.role === 'fuse' && i.exitId)) {
       const x = game.exits.get(fuse.exitId);
       if (!x || x.powered || x.open) continue;
       out.push({ type: 'exit_power', itemId: fuse.id, exitName: x.name, label: `⚡ ใส่${fuse.name}เข้าแผงไฟที่นี่`, desc: `จ่ายไฟให้ "${x.name}" — ไฟทั้งอาคารจะกะพริบ คนอื่นอาจสังเกตได้` });
     }
+    const cable = p.inventory.find((i) => !i.isPart && !i.broken && tagsOf(i).has('conductive'));
+    if (cable) {
+      for (const x of game.exits.values()) {
+        if (x.open || x.powered || !knowsExit(p, x) || !x.steps.some((s) => s.kind === 'power') || p.inventory.some((i) => i.role === 'fuse' && i.exitId === x.id)) continue;
+        out.push({ type: 'exit_power', itemId: cable.id, exitId: x.id, exitName: x.name, label: `⚡ ต่อ${cable.name}แทนฟิวส์ให้${x.name}`, desc: `ใช้${cable.name}ต่อแทนฟิวส์ที่หาไม่ได้ (หมดไป) — จ่ายไฟให้ "${x.name}" ไฟทั้งอาคารจะกะพริบ` });
+      }
+    }
   }
   return out;
 }
 
-// ใส่ฟิวส์ (ทำทันทีตอนประมวลผลแอ็กชัน)
+// ใส่ฟิวส์ หรือต่อสายไฟแทน (ทำทันทีตอนประมวลผลแอ็กชัน) — ขั้นจ่ายไฟติดถาวร
 export function doExitPower(game, p, a) {
   const z = game.zones.get(p.zoneId);
-  const idx = p.inventory.findIndex((i) => i.id === a.itemId && i.role === 'fuse');
-  const x = idx >= 0 ? game.exits.get(p.inventory[idx].exitId) : null;
-  if (!x || x.powered || !z.items.some((i) => i.kind === 'power')) return game.logTo(p, 'ใส่ฟิวส์ไม่ได้ที่นี่', 'danger');
+  const idx = p.inventory.findIndex((i) => i.id === a.itemId && (i.role === 'fuse' || tagsOf(i).has('conductive')));
+  const it = idx >= 0 ? p.inventory[idx] : null;
+  const x = it ? game.exits.get(it.role === 'fuse' ? it.exitId : a.exitId) : null;
+  if (!x || x.powered || x.open || !z.items.some((i) => i.kind === 'power') || (it.role !== 'fuse' && (!knowsExit(p, x) || !x.steps.some((s) => s.kind === 'power')))) return game.logTo(p, 'ใส่ฟิวส์ไม่ได้ที่นี่', 'danger');
   const fuse = p.inventory.splice(idx, 1)[0];
   x.powered = true;
+  const ps = x.steps.find((s) => s.kind === 'power');
+  if (ps) ps.done = true;
   if (!knowsExit(p, x)) discoverExit(game, p, x, 'เมื่อไฟเข้า คุณได้ยินเสียงกลไกและรู้ทันทีว่าทางออกอยู่ที่ไหน');
-  game.logTo(p, `⚡ คุณใส่${fuse.name}เข้าแผงไฟที่${game.zn(z)}— ไฟกะพริบทั้งอาคาร "${x.name}" ที่${game.zn(x.zoneId)}มีไฟแล้ว (ผ่านไปอีกขั้น)`, 'escape');
+  const how = fuse.role === 'fuse' ? `ใส่${fuse.name}` : `ต่อ${fuse.name}แทนฟิวส์`;
+  game.logTo(p, `⚡ คุณ${how}เข้าแผงไฟที่${game.zn(z)}— ไฟกะพริบทั้งอาคาร "${x.name}" ที่${game.zn(x.zoneId)}มีไฟแล้ว (ผ่านไปอีกขั้น)`, 'escape');
   for (const o of game.alivePlayers()) if (o.id !== p.id && !o.ko) game.logTo(o, `💡 ไฟทั้งอาคารกะพริบวูบหนึ่ง แล้วมีเสียงเครื่องจักรครางดังมาจากทาง${game.zn(x.zoneId)}— มีคนทำอะไรกับระบบไฟ`, 'witness');
-  game.recordEvent(`${game.nick(p)}ใส่${fuse.name}จ่ายไฟให้ "${x.name}"`);
+  game.recordEvent(`${game.nick(p)}${how}จ่ายไฟให้ "${x.name}"`);
 }
 
-// ประมวลผลคนที่เลือกทำอะไรกับทางออกในชั่วโมงนี้ (รวมของกัน) — ขั้นถาวรที่ทำได้จะติดไว้ · คืน true ถ้าเกมจบด้วยการหนี
+// ประมวลผลคนที่เลือกทำอะไรกับทางออกในชั่วโมงนี้ — แต่ละคนทำเฉพาะขั้นที่เลือก (ไม่ระบุขั้น = ทุกขั้นที่ทำได้) · คนที่เลือกขั้นเดียวกันนับของ/แรงรวมกัน · ทำสำเร็จแล้วติดถาวร · คืน true ถ้าเกมจบด้วยการหนี
 export function resolveExits(game, attempts) {
   const byExit = new Map();
   for (const { p, a } of attempts) {
@@ -349,44 +449,92 @@ export function resolveExits(game, attempts) {
     const x = game.exits.get(a.exitId);
     if (!x || x.open || p.zoneId !== x.zoneId || p.outside) continue;
     if (!byExit.has(x.id)) byExit.set(x.id, []);
-    byExit.get(x.id).push(p);
+    byExit.get(x.id).push({ p, step: a.step || null });
   }
-  for (const [xid, people] of byExit) {
+  for (const [xid, group] of byExit) {
     const x = game.exits.get(xid);
+    const people = group.map((g) => g.p);
     for (const p of people) if (!knowsExit(p, x)) discoverExit(game, p, x, 'คนในห้องชี้ให้คุณดู');
     const names = people.map((p) => game.nick(p)).join(', ');
     const progressed = [];
-    // ขั้นถาวร: ทำได้ก็ติดไว้เลย
+    let codeShort = null;
     for (const s of x.steps) {
-      if (s.kind === 'tool' && !s.done && people.some(holdsTool)) {
-        s.done = true;
-        for (const p of people.filter(holdsTool)) game.breakItemMaybe(p, toolOf(p), DURABILITY.BREAK_ON_EXIT, 'ถอด/เปิดทางออก');
-        progressed.push(stepLabel(game, x, s));
-      }
-      if (s.kind === 'cut' && !s.done && people.some(holdsSharp)) {
-        s.done = true;
-        for (const p of people.filter(holdsSharp)) game.breakItemMaybe(p, sharpOf(p), DURABILITY.BREAK_ON_EXIT, 'ตัดทางออก');
-        progressed.push(stepLabel(game, x, s));
-      }
-      if (s.kind === 'force' && s.progress < s.needed) {
-        let gain = 0;
-        for (const p of people) if (holdsHeavy(p)) gain += ['combat', 'tech'].includes(game.traitOf(p)) ? 2 : 1;
-        for (const p of people) if (holdsHeavy(p)) game.breakItemMaybe(p, heavyOf(p), DURABILITY.BREAK_ON_EXIT, 'งัด/ทุบทางออก');
-        if (gain) {
-          s.progress = Math.min(s.needed, s.progress + gain);
-          x.progress = s.progress;
-          progressed.push(`${s.verb || 'ลงแรง'} +${gain} (${s.progress}/${s.needed})`);
-          if (s.loud) for (const o of game.alivePlayers()) if (!people.includes(o) && !o.ko && chance(ESCAPE.BREACH_NOISE_CHANCE)) game.logTo(o, `🔊 ได้ยินเสียงโลหะกระแทกดังสนั่นมาจากทาง${game.zn(x.zoneId)}เหมือนมีคนทุบหรืองัดอะไรบางอย่าง`, 'witness');
+      if (s.done) continue;
+      const crew = group.filter((g) => !g.step || g.step === s.id).map((g) => g.p);
+      if (!crew.length) continue;
+      const verb = s.verb || STEP_VERB[s.kind];
+      switch (s.kind) {
+        case 'tool':
+          if (crew.some(holdsTool)) {
+            s.done = true;
+            progressed.push(verb);
+            for (const p of crew.filter(holdsTool)) game.breakItemMaybe(p, toolOf(p), DURABILITY.BREAK_ON_EXIT, 'ถอด/เปิดทางออก');
+          }
+          break;
+        case 'cut':
+          if (crew.some(holdsSharp)) {
+            s.done = true;
+            progressed.push(verb);
+            for (const p of crew.filter(holdsSharp)) game.breakItemMaybe(p, sharpOf(p), DURABILITY.BREAK_ON_EXIT, 'ตัดทางออก');
+          }
+          break;
+        case 'force': {
+          let gain = 0;
+          for (const p of crew) if (holdsHeavy(p)) gain += forceGain(game, p);
+          if (gain) {
+            s.progress = Math.min(s.needed, s.progress + gain);
+            x.progress = s.progress;
+            progressed.push(`${verb} +${gain} (${s.progress}/${s.needed})`);
+            if (s.loud) for (const o of game.alivePlayers()) if (!people.includes(o) && !o.ko && chance(ESCAPE.BREACH_NOISE_CHANCE)) game.logTo(o, `🔊 ได้ยินเสียงโลหะกระแทกดังสนั่นมาจากทาง${game.zn(x.zoneId)}เหมือนมีคนทุบหรืองัดอะไรบางอย่าง`, 'witness');
+            for (const p of crew) if (holdsHeavy(p)) game.breakItemMaybe(p, heavyOf(p), DURABILITY.BREAK_ON_EXIT, 'งัด/ทุบทางออก');
+          }
+          if (s.progress >= s.needed) s.done = true;
+          break;
         }
-        if (s.progress >= s.needed) s.done = true;
+        case 'key': {
+          const kp = crew.find((p) => keyOf(p, x));
+          if (kp) {
+            s.done = true;
+            progressed.push(`${verb} (${keyOf(kp, x).name})`);
+          } else {
+            const pp = crew.find((p) => pickOf(game, p));
+            if (pp) {
+              const tool = pickOf(game, pp);
+              s.done = true;
+              progressed.push(`สะเดาะแทนกุญแจด้วย${tool.name}`);
+              game.breakItemMaybe(pp, tool, DURABILITY.BREAK_ON_EXIT, 'สะเดาะทางออก');
+            }
+          }
+          break;
+        }
+        case 'code': {
+          const known = codeKnownByAll(crew, x);
+          const need = codeNeedFor(game, crew);
+          if (known.size >= need) {
+            s.done = true;
+            progressed.push(`กดรหัสถูก (${known.size}/${need})`);
+          } else {
+            codeShort = `${known.size}/${need}`;
+            for (const o of game.alivePlayers()) if (o.zoneId !== x.zoneId && !o.ko && chance(0.4)) game.logTo(o, `🔊 ได้ยินเสียงสัญญาณเตือนสั้น ๆ ดังมาจากทาง${game.zn(x.zoneId)}`, 'witness');
+          }
+          break;
+        }
+        case 'assembly': {
+          const ap = crew.find((p) => asmOf(p, x));
+          if (ap) {
+            const asm = asmOf(ap, x);
+            ap.inventory.splice(ap.inventory.indexOf(asm), 1);
+            s.done = true;
+            progressed.push(`ติดตั้ง${asm.name}`);
+          }
+          break;
+        }
+        default:
+          break;
       }
     }
-    const st = exitStatus(game, x, people);
+    const st = exitStatus(game, x, []);
     const missing = st.filter((s) => !s.done);
-    const codeStep = st.find((s) => s.kind === 'code');
-    if (codeStep && !codeStep.done && people.some((p) => p.inventory.some((i) => i.exitId === x.id && i.role === 'code'))) {
-      for (const o of game.alivePlayers()) if (o.zoneId !== x.zoneId && !o.ko && chance(0.4)) game.logTo(o, `🔊 ได้ยินเสียงสัญญาณเตือนสั้น ๆ ดังมาจากทาง${game.zn(x.zoneId)}`, 'witness');
-    }
     if (!missing.length) {
       x.open = true;
       x.openedBy = people.map((p) => p.id);
@@ -416,20 +564,22 @@ export function resolveExits(game, attempts) {
       game.endGame('escape');
       return true;
     }
-    const failText = `${progressed.length ? `ทำไปแล้ว: ${progressed.join(', ')} · ` : ''}ยังขาด: ${missing.map((s) => s.label).join(' · ')}`;
-    for (const p of people) game.logTo(p, `🚪 พยายามเปิด${x.name}ที่${game.zn(x.zoneId)}แต่ยังไม่สำเร็จ (${st.filter((s) => s.done).length}/${st.length} ขั้น) — ${failText}`, 'escape');
+    const doneN = st.length - missing.length;
+    const failText = `สำเร็จแล้ว ${doneN}/${st.length} ขั้น${progressed.length ? ` · ทำชั่วโมงนี้: ${progressed.join(', ')}` : ''}${codeShort ? ` · รหัสยังไม่ครบ (${codeShort})` : ''} · ยังขาด: ${missing.map((s) => s.label).join(' · ')}`;
+    for (const p of people) game.logTo(p, `🚪 ${x.name}ที่${game.zn(x.zoneId)}: ${failText}`, 'escape');
     for (const o of game.awakeIn(x.zoneId)) {
       if (people.includes(o)) continue;
       game.logTo(o, `👀 คุณเห็น${names}ยุ่งอยู่กับ${x.name} เหมือนพยายามเปิดทางออก`, 'witness');
       discoverExit(game, o, x, `คุณเห็น${names}พยายามเปิดมัน`);
     }
-    game.recordEvent(`${names} พยายามเปิดทางออก "${x.name}" (${failText})`);
+    game.recordEvent(`${names} ลงมือกับทางออก "${x.name}" (${failText})`);
   }
   return false;
 }
 
 export function exitView(game, p, x) {
   const st = exitStatus(game, x, p ? [p] : []);
+  const known = p ? codeKnownBy(p, x) : new Set();
   return {
     id: x.id,
     zoneId: x.zoneId,
@@ -441,8 +591,11 @@ export function exitView(game, p, x) {
     requirement: requirementText(game, x),
     steps: st.map((s) => ({ kind: s.kind, label: s.label, done: s.done, progress: s.progress, needed: s.needed })),
     stepsDone: st.filter((s) => s.done).length,
-    // ไม่ส่ง id ของของที่ซ่อนอยู่ให้ client (รู้แค่ชื่อและว่าถืออยู่ไหม)
-    items: x.items.map((i) => ({ name: i.name, role: i.role, assembled: !!i.assembled, held: p ? p.inventory.some((h) => h.id === i.id) : false })),
+    codeKnown: x.steps.some((s) => s.kind === 'code') ? known.size : 0,
+    codeNeed: x.steps.some((s) => s.kind === 'code') ? (p ? codeNeedFor(game, [p]) : ESCAPE.CODE_NOTES) : 0,
+    assemblyHeld: !!(p && asmOf(p, x)),
+    // ไม่ส่ง id ของของที่ซ่อนอยู่ให้ client (รู้แค่ชื่อและว่าถืออยู่/จำได้ไหม)
+    items: x.items.map((i) => ({ name: i.name, role: i.role, assembled: !!i.assembled, held: p ? p.inventory.some((h) => h.id === i.id) : false, known: i.role === 'code' && known.has(i.id) })),
     progress: x.progress,
     progressNeeded: x.progressNeeded,
     powered: x.powered,

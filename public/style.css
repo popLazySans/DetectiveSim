@@ -418,3 +418,5 @@ details.help summary { cursor: pointer; color: var(--cyan); }
 .rules details ol { font-size: 0.82rem; opacity: 0.9; }
 
 .chip.broken { opacity: 0.6; text-decoration: line-through; }
+
+.act small.why { display: block; font-size: 0.72rem; opacity: 0.75; white-space: normal; margin-top: 0.15rem; }

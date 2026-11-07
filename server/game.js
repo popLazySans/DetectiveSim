@@ -5,7 +5,7 @@ import { CHARACTERS } from './characters.js';
 import { ULTIMATE_POOL, TRAITS } from './mock.js';
 import { makeObjective, objectiveOutcome, objectiveTargetZone, hasFood } from './objectives.js';
 import { ATTACK, RECIPES, TRAP_TYPES, TRAP_TRIGGER_CHANCE, TRAP_DISARM_CHANCE, TRAP_FAIL_CHANCE, POISON_NOTICE, LOCKS, DOOR, ESCAPE, TRAIT_EFFECTS, KIND_LABEL, PORTABLE_KINDS, woundOf, tagsOf, attackBaseOf, partMatches, trapTexts, poisonNoticeChance, ammoOf, canBreachWith, TAG_LABEL, INVESTIGATION, PASSAGE, POWER, DURABILITY, breakable, tagSetOf, WOUND_LAY, materialOf, trapForensic, TRAP_BODY_POS, TRAP_SCENE, weaponTrace } from './rules.js';
-import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView, craftAssemblyOptions, doCraftAssembly, exitReadyFor, exitUsefulFor, requirementText } from './escape.js';
+import { buildExits, exitsIn, knowsExit, discoverExit, tryFindExit, onObtainItem, exitActions, doExitPower, resolveExits, exitView, craftAssemblyOptions, doCraftAssembly, doCraftMakeshift, exitReadyFor, exitUsefulFor, requirementText } from './escape.js';
 
 export const PHASE = {
   LOBBY: 'lobby',
@@ -144,6 +144,7 @@ const freshPlayerState = () => ({
   evidence: [],
   knownBodies: new Set(),
   knownPassages: new Set(), // ทางลับที่ค้นพบแล้ว (id)
+  knownCodes: {}, // เศษรหัสที่จำได้ { exitId: Set(id กระดาษ) } — หยิบแล้วจำ วางทิ้งก็ยังจำ
   repairWork: null, // งานซ่อมของค้างอยู่ { itemId, need, progress }
   buffs: { questPlus: 0, koResist: 0 }, // บัฟจากยาที่ผสมในอาหาร: ภารกิจถัดไป +ชั่วโมง · ต้านทานสลบ (ครั้ง)
   powerWork: null, // งานซ่อมเครื่องปั่นไฟค้างอยู่ { need, progress }
@@ -1459,7 +1460,7 @@ export class Game {
     if (this.actions.get(playerId)?.busy) throw new GameError('ชั่วโมงนี้คุณใช้เวลาไปกับประตูแล้ว ทำอย่างอื่นไม่ได้');
     action = action || {};
     const same = (a, k) => (a[k] ?? null) === (action[k] ?? null);
-    const match = this.availableActions(p).find((a) => a.type === action.type && same(a, 'targetId') && same(a, 'itemId') && same(a, 'victimId') && same(a, 'recipeId') && same(a, 'exitId'));
+    const match = this.availableActions(p).find((a) => a.type === action.type && same(a, 'targetId') && same(a, 'itemId') && same(a, 'victimId') && same(a, 'recipeId') && same(a, 'exitId') && same(a, 'step'));
     if (!match) throw new GameError('ทำแอ็กชันนี้ไม่ได้');
     if (match.disabled) throw new GameError(match.reason || 'ทำแอ็กชันนี้ไม่ได้');
     // ล็อกการฆาตกรรม: ถ้ามีศพที่ยังไม่ถูกพบ คนที่ไม่ใช่คนร้ายของคดีนั้นลงมือซ้อนไม่ได้ (ระบบบอกคนที่พยายามเท่านั้น)
@@ -1835,6 +1836,7 @@ export class Game {
   // คราฟกับดัก: ใช้ของ 2 ชิ้นตามสูตร ได้ "กับดักที่ประกอบแล้ว" 1 ชิ้น (ยังไม่ได้วาง)
   do_craft(p, a) {
     if (a.recipeId === 'assembly') return doCraftAssembly(this, p, a); // ชิ้นส่วนทางออก
+    if (a.recipeId === 'makeshift') return doCraftMakeshift(this, p, a); // ชิ้นส่วนดัดแปลงแทนชุดจริง
     const r = RECIPES.find((x) => x.id === a.recipeId);
     const z = this.zones.get(p.zoneId);
     const ia = p.inventory.findIndex((i) => i.id === a.itemId);
@@ -3604,7 +3606,7 @@ export class Game {
     if (eatObj && byType('eat').length) return byType('eat')[0];
     const power = byType('exit_power')[0];
     if (power) return power;
-    const exitAct = byType('exit')[0];
+    const exitAct = byType('exit').find((a) => !a.partial) || byType('exit')[0]; // ขั้นที่ทำได้จริงก่อน (กดรหัสทั้งที่รู้ไม่ครบไว้ท้ายสุด)
     if (exitAct && this.botExitTarget(b) && chance(0.7)) return exitAct;
     const examine = byType('examine');
     if (examine.length && chance(this.phase === PHASE.INVESTIGATION ? 0.6 : 0.4)) return pick(examine);

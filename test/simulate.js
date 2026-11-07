@@ -3,7 +3,7 @@
 // รัน: npm test
 import { Game, PHASE, STEP, CONFIG, NONE_VOTE, DEAD_FATES, SURVIVED_FATES, hiddenUltimateCap, MURDER_CAUSES } from '../server/game.js';
 import { createAI } from '../server/ai.js';
-import { resolveExits, exitReadyFor, exitUsefulFor } from '../server/escape.js';
+import { resolveExits, exitReadyFor, exitUsefulFor, exitActions, doExitPower, codeKnownBy } from '../server/escape.js';
 import { RECIPES, OBJECTIVE_HOURS, LOCKS, ATTACK, ROOMS, roomCountFor, woundOf, isConductive, tagsOf, attackBaseOf, parseAmmo, poisonNoticeChance, canBreachWith , DOOR, DURABILITY, breakable } from '../server/rules.js';
 import { LOCATIONS, EXTRA_ROOMS, mockLocation, mockNarrateCase } from '../server/mock.js';
 
@@ -235,7 +235,8 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
       const asm = byType('craft').find((a) => a.recipeId === 'assembly');
       if (asm) return asm;
       const x = exitFor(p);
-      const ex = byType('exit').find((a) => a.exitId === x?.id);
+      const exs = byType('exit').filter((a) => a.exitId === x?.id && !a.disabled);
+      const ex = exs.find((a) => !a.partial) || exs[0];
       if (ex) return ex;
       const routeTake = take.find((a) => {
         const it = z.items.find((i) => i.id === a.itemId);
@@ -975,8 +976,9 @@ async function unitTests() {
     const keyItem = [...zones.flatMap((z) => z.items), ...a.inventory].find((i) => i && i.exitId === lockedExit.id && i.role === 'key');
     assert(keyItem, 'the locked exit has a key item somewhere');
     a.inventory = [keyItem, { id: 'tool_x', name: 'ไขควงทดสอบ', description: 'ปลายแหลม', kind: 'tool', portable: true, hidden: false, isPart: false }, { id: 'axe_x', name: 'ขวานทดสอบ', description: 'คมกริบ', kind: 'weapon', portable: true, hidden: false, isPart: false }];
-    const act = game.availableActions(a).find((x) => x.type === 'exit' && x.exitId === lockedExit.id);
-    assert(act && !act.disabled && /ขั้น/.test(act.label) && lockedExit.steps.length >= 4, 'exit action lists the steps (4 or more)');
+    const acts5 = game.availableActions(a).filter((x) => x.type === 'exit' && x.exitId === lockedExit.id);
+    assert(acts5.length === lockedExit.steps.length && acts5.every((x) => x.step && !x.disabled && /สำเร็จแล้ว 0\/\d+/.test(x.label)) && lockedExit.steps.length >= 4, 'each step of the exit is its own enabled action (4 or more) whose label counts finished steps');
+    const act = { type: 'exit', exitId: lockedExit.id }; // ไม่ระบุขั้น (แบบบอท/เทสต์เก่า) = ทำทุกขั้นที่ทำได้ในชั่วโมงนั้น
     const view5 = game.viewFor(a.id).me.exits.find((x) => x.id === lockedExit.id);
     assert(view5 && view5.steps.length === lockedExit.steps.length && view5.steps.some((s) => s.kind === 'key' && s.done) && view5.steps.some((s) => s.kind === 'force' && !s.done), 'the view shows a step checklist with the key already satisfied');
     game.phase = PHASE.DAY;
@@ -990,7 +992,7 @@ async function unitTests() {
       tries++;
       if (!lockedExit.open) {
         assert(lockedExit.steps.find((s) => s.kind === 'cut').done && lockedExit.steps.find((s) => s.kind === 'tool').done, 'cutting and unbolting stick after the first attempt');
-        assert(a.log.at(-1).text.includes('ยังไม่สำเร็จ') && /ยังขาด/.test(a.log.at(-1).text), 'a failed attempt reports which steps are missing');
+        assert(/สำเร็จแล้ว \d+\/\d+ ขั้น/.test(a.log.at(-1).text) && /ยังขาด/.test(a.log.at(-1).text) && !/ไม่สำเร็จ/.test(a.log.at(-1).text), 'an unfinished attempt reports finished steps and which steps are missing');
         game.step = STEP.ACT;
       }
     }
@@ -2600,9 +2602,101 @@ async function unitTests() {
     knife26.broken = true;
     assert(!g26.craftOptions(a26, L26).length || g26.craftOptions(a26, L26).every((o) => o.itemId !== knife26.id && o.itemId2 !== knife26.id), 'broken items cannot be crafted into traps');
   }
+  // 26) ทางออกแยกแอ็กชันรายขั้น (ปุ่มที่ทำไม่ได้ปิดพร้อมเหตุผล) · ทำเฉพาะขั้นที่เลือก · จำรหัสตอนหยิบ (วางแล้วยังจำ · กดพร้อมกันนับรวม) · สะเดาะแทนกุญแจ · ชิ้นส่วนดัดแปลง · สายไฟแทนฟิวส์ · ข้อความ "สำเร็จแล้ว k/n"
+  {
+    const g27 = new Game({ code: 'UNIT27', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids27 = ['e1-xxxxxxxx', 'e2-xxxxxxxx', 'e3-xxxxxxxx', 'e4-xxxxxxxx'];
+    for (const [i, id] of ids27.entries()) g27.addPlayer({ id, name: `ขั้น ${i + 1}` });
+    g27.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g27.start(ids27[0]);
+    g27.clearTimers();
+    const [a27, b27, c27, d27] = ids27.map((id) => g27.players.get(id));
+    const mk27 = (name, kind, description = '', extra = {}) => ({ id: `it_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false, ...extra });
+    const zones27 = [...g27.zones.values()];
+    const PZ27 = zones27.find((z) => z.items.some((i) => i.kind === 'power'));
+    const R27 = zones27.find((z) => z.id !== g27.location.sleepZoneId && z.id !== PZ27.id && ![...g27.exits.values()].some((x) => x.zoneId === z.id));
+    for (const p of [a27, b27, c27, d27]) {
+      p.inventory = [];
+      p.outside = false;
+      p.zoneId = R27.id;
+      g27.charOf(p).ultimate.trait = 'none';
+    }
+    const S27 = (kind, extra = {}) => ({ id: kind, kind, done: false, progress: 0, needed: 0, ...extra });
+    const mkExit = (id, route, steps, extra = {}) => ({ id, zoneId: R27.id, name: `ทางออกทดสอบ ${id}`, description: '', route, items: [], steps, assembly: null, powered: false, progress: 0, progressNeeded: steps.find((s) => s.kind === 'force')?.needed || 0, open: false, openedBy: [], discoveredBy: new Set([a27.id, b27.id]), clueItemId: null, ...extra });
+    const cx = mkExit('xc', 'code', [S27('cut', { verb: 'ตัดสายสัญญาณ' }), S27('tool', { verb: 'เปิดฝาแป้น' }), S27('code'), S27('force', { verb: 'ดันประตู', needed: 2 })]);
+    g27.exits.set(cx.id, cx);
+    const notes = [1, 2, 3].map((n) => ({ id: `xc_code${n}`, name: `เศษกระดาษรหัสชิ้นที่ ${n} (ทดสอบ)`, description: '', kind: 'part', portable: true, hidden: false, isPart: true, exitId: cx.id, role: 'code', originZoneId: R27.id }));
+    for (const n of notes) {
+      R27.items.push(n);
+      cx.items.push({ id: n.id, name: n.name, role: 'code' });
+    }
+    g27.phase = PHASE.DAY;
+    g27.step = STEP.ACT;
+    // (ก) ทุกขั้นเป็นปุ่มของตัวเอง — มือเปล่า: ปิดหมดพร้อมเหตุผล และเลือกไม่ได้
+    const acts27 = g27.availableActions(a27).filter((x) => x.type === 'exit' && x.exitId === cx.id);
+    assert(acts27.length === 4 && acts27.every((x) => x.step && x.disabled && x.reason), 'each exit step is its own action; empty-handed every step is disabled with a reason');
+    let threw27 = false;
+    try { g27.chooseAction(a27.id, { type: 'exit', exitId: cx.id, step: 'cut' }); } catch { threw27 = true; }
+    assert(threw27 && !g27.actions.has(a27.id), 'a disabled step cannot be chosen');
+    // (ข) จำรหัสตอนหยิบ: หยิบ 2 ชิ้นแล้ววางทิ้ง → ยังรู้ 2/3 · ปุ่มกดรหัสเปิด (partial)
+    for (const n of notes.slice(0, 2)) g27.instantItemAction(a27.id, { type: 'take', itemId: n.id });
+    assert(codeKnownBy(a27, cx).size === 2 && a27.log.some((l) => /จำ.*2\/3/.test(l.text)), 'picking up two fragments memorises them (2/3)');
+    for (const n of notes.slice(0, 2)) g27.instantItemAction(a27.id, { type: 'drop', itemId: n.id });
+    assert(a27.inventory.length === 0 && codeKnownBy(a27, cx).size === 2, 'dropping the notes does not forget the code');
+    const vx27 = g27.viewFor(a27.id).me.exits.find((x) => x.id === cx.id);
+    assert(vx27.codeKnown === 2 && vx27.codeNeed === 3 && vx27.items.filter((i) => i.known).length === 2, 'the view shows 2/3 fragments memorised');
+    const codeAct = g27.availableActions(a27).find((x) => x.type === 'exit' && x.exitId === cx.id && x.step === 'code');
+    assert(codeAct && !codeAct.disabled && codeAct.partial && /2\/3/.test(codeAct.label), 'knowing part of the code enables the code button (marked partial)');
+    assert(!resolveExits(g27, [{ p: a27, a: { exitId: cx.id, step: 'code' } }]) && !cx.steps[2].done && /สำเร็จแล้ว 0\/4/.test(a27.log.at(-1).text) && /รหัสยังไม่ครบ \(2\/3\)/.test(a27.log.at(-1).text) && !/ไม่สำเร็จ/.test(a27.log.at(-1).text), 'alone with 2/3 the code fails and the message counts finished steps, never "ไม่สำเร็จ"');
+    g27.instantItemAction(b27.id, { type: 'take', itemId: notes[2].id });
+    resolveExits(g27, [{ p: a27, a: { exitId: cx.id, step: 'code' } }, { p: b27, a: { exitId: cx.id, step: 'code' } }]);
+    assert(cx.steps[2].done && /กดรหัสถูก \(3\/3\)/.test(a27.log.at(-1).text), 'two people who together know all three fragments pass the code step');
+    // (ค) ทำเฉพาะขั้นที่เลือก: ถือมีด+ไขควง เลือกตัด → ตัดเสร็จ ถอดน็อตยังไม่
+    a27.inventory = [mk27('มีดทดสอบ', 'weapon', 'คมกริบ'), mk27('ไขควงทดสอบ', 'tool', 'ปลายแหลม')];
+    resolveExits(g27, [{ p: a27, a: { exitId: cx.id, step: 'cut' } }]);
+    assert(cx.steps[0].done && !cx.steps[1].done && /สำเร็จแล้ว 2\/4/.test(a27.log.at(-1).text), 'choosing the cut step does only the cut step');
+    g27.chooseAction(a27.id, { type: 'exit', exitId: cx.id, step: 'tool' });
+    assert(g27.actions.get(a27.id)?.step === 'tool', 'the chosen action carries its step');
+    g27.actions = new Map();
+    // (ง) สะเดาะแทนกุญแจ
+    const lx = mkExit('xl', 'locked', [S27('key', { verb: 'ไขแม่กุญแจ' }), S27('force', { verb: 'งัดบาน', needed: 1 })]);
+    g27.exits.set(lx.id, lx);
+    a27.inventory = [mk27('ที่สะเดาะทดสอบ', 'lockpick')];
+    const keyAct = g27.availableActions(a27).find((x) => x.type === 'exit' && x.exitId === lx.id && x.step === 'key');
+    assert(keyAct && !keyAct.disabled && /สะเดาะ/.test(keyAct.desc), 'a lockpick substitutes for the exit key');
+    resolveExits(g27, [{ p: a27, a: { exitId: lx.id, step: 'key' } }]);
+    assert(lx.steps[0].done && /สะเดาะแทนกุญแจ/.test(a27.log.at(-1).text), 'picking the lock completes the key step permanently');
+    // (จ) ชิ้นส่วนดัดแปลง: เครื่องมือช่าง + เชือก → ของ role assembly → ติดตั้งได้ (ชุดหมดไป)
+    const rx27 = mkExit('xr', 'repair', [S27('assembly'), S27('force', { verb: 'งัดฝา', needed: 1 })], { assembly: { name: 'ชุดชิ้นส่วนทดสอบ (ประกอบแล้ว)', itemId: 'xr_assembly', partIds: ['xr_p1', 'xr_p2'] } });
+    g27.exits.set(rx27.id, rx27);
+    const driver27 = mk27('ไขควงทดสอบ 2', 'tool', 'ปลายแหลม');
+    const rope27 = mk27('เชือกทดสอบ', 'rope');
+    a27.inventory = [driver27, rope27];
+    assert(g27.availableActions(a27).find((x) => x.type === 'exit' && x.exitId === rx27.id && x.step === 'assembly')?.disabled, 'without the assembly the install step is disabled');
+    const mkAct = g27.craftOptions(a27, R27).find((o) => o.recipeId === 'makeshift' && o.exitId === rx27.id);
+    assert(mkAct && mkAct.itemId === driver27.id && mkAct.itemId2 === rope27.id, 'a hand tool plus rope offers a makeshift part for the known repair exit');
+    g27.do_craft(a27, mkAct);
+    const mkPart = a27.inventory.find((i) => i.role === 'assembly' && i.exitId === rx27.id);
+    assert(mkPart && mkPart.makeshift && !a27.inventory.includes(rope27) && a27.inventory.includes(driver27), 'the makeshift part is made; the rope is used up and the tool kept');
+    assert(exitUsefulFor(g27, a27, rx27) && !g27.availableActions(a27).find((x) => x.type === 'exit' && x.exitId === rx27.id && x.step === 'assembly')?.disabled, 'holding the makeshift part enables the install step');
+    resolveExits(g27, [{ p: a27, a: { exitId: rx27.id, step: 'assembly' } }]);
+    assert(rx27.steps[0].done && !a27.inventory.includes(mkPart), 'installing consumes the part and completes the step');
+    // (ฉ) สายไฟแทนฟิวส์ที่แผงไฟ
+    const px27 = mkExit('xp', 'power', [S27('power'), S27('force', { verb: 'ง้างบาน', needed: 1 })]);
+    g27.exits.set(px27.id, px27);
+    const cable27 = mk27('สายไฟทดสอบ', 'rope', '', { tags: ['cord', 'conductive'] });
+    a27.inventory = [cable27];
+    a27.zoneId = PZ27.id;
+    const cableAct = exitActions(g27, a27, PZ27).find((x) => x.type === 'exit_power' && x.exitId === px27.id);
+    assert(cableAct && cableAct.itemId === cable27.id, 'a conductive cable can stand in for the missing fuse at the panel');
+    doExitPower(g27, a27, cableAct);
+    assert(px27.powered && px27.steps[0].done && !a27.inventory.includes(cable27), 'the cable powers the exit and is used up');
+    a27.zoneId = R27.id;
+  }
   Object.assign(DURABILITY, savedDur);
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers), new day dismantles every trap and cleans mixed food, darkness (hidden roster, anonymous random attacks, traps always hit), power cooldown, food uses per eater, end at a third or fewer, no hour 25, pooled door/power work, item breakage and repair');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers), new day dismantles every trap and cleans mixed food, darkness (hidden roster, anonymous random attacks, traps always hit), power cooldown, food uses per eater, end at a third or fewer, no hour 25, pooled door/power work, item breakage and repair, exits as per-step actions (disabled with reasons, memorised code fragments pooled, lockpick/makeshift part/cable substitutes, "finished k/n" wording)');
 }
 
 try {
