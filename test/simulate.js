@@ -109,7 +109,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
           if (!isMe) assert(p.character.shownToOthers == null, 'shownToOthers only for self');
         }
         if (!isMe && me.alive && game.phase !== PHASE.ENDED) {
-          const sameZone = realPlayer.alive && (game.step === STEP.ACT || game.step === STEP.REPORT) && game.sameSpot(realPlayer, me);
+          const sameZone = realPlayer.alive && (game.step === STEP.ACT || game.step === STEP.REPORT) && game.sameSpot(realPlayer, me) && game.canSee(me); // มืดและไม่มีแสง: ไม่รู้ว่าใครอยู่ด้วย
           if (!sameZone) assert(p.zoneId == null, `position of ${p.id} leaked to ${id}`);
           else assert(p.zoneId === realPlayer.zoneId, 'same-zone position visible');
         }
@@ -603,18 +603,19 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
               const invBefore = new Map(game.alivePlayers().filter((p) => !p.inventory.some((i) => i.kind === 'trap')).map((p) => [p.id, p.inventory.map((i) => i.id).join(',')])); // กับดักในกระเป๋าถูกถอดตอนขึ้นวันใหม่ (ชิ้นที่ทำร้ายกลับมาเป็นของใหม่)
               const autoAll = () => game.chat.filter((m) => m.system && /ทุกคนที่ยังอยู่สลบหมด/.test(m.text)).length;
               const autoBefore = autoAll();
+              const rolled = !!game.dayRolledByClock; // รอบเก็บหลักฐาน/ตัดสินคร่อมเที่ยงคืน → เลขวันขยับไปแล้ว
               await game.nextRound(host);
               // a revived player starts objectives over, so the pacing check must forget their old deadline
               for (const p of game.players.values()) if (p.revived && p.revivedDay === game.day) objectiveSeen.delete(p.id);
               if (game.phase !== PHASE.ENDED) {
                 if (r.moreKillers) {
                   stats.huntRounds++;
-                  assert(game.phase === PHASE.INVESTIGATION && game.step === STEP.MOVE && game.day === dayBefore && game.huntRound >= 2, 'hunt continues in the same day with another evidence hour');
+                  assert(game.phase === PHASE.INVESTIGATION && game.step === STEP.MOVE && (game.day === dayBefore || game.dayRolledByClock) && game.huntRound >= 2, 'hunt continues in the same day with another evidence hour');
                   assert([...game.bodies.values()].every((b) => !b.judged && !game.caseOf(b.caseId).judged) && game.bodies.size === stillOpenCases.length, 'bodies of closed cases are collected, open-case bodies stay');
                   for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of closed cases is wiped');
                 } else {
                   // ถ้าทุกคนที่ยังอยู่ถูกลงโทษจนสลบพร้อมกันตอนเริ่มวัน เวลาจะเดินเองต่อจากชั่วโมง 1
-                  assert(game.day === dayBefore + 1 && (game.hour === 1 || autoAll() > autoBefore), `trial ends the day; new day starts at hour 1 (hour ${game.hour})`);
+                  assert(game.day === dayBefore + (rolled ? 0 : 1) && (game.hour === 1 || rolled || autoAll() > autoBefore), `trial ends the day; new day starts at hour 1 (hour ${game.hour})`);
                   assert(game.bodies.size === 0, 'no bodies remain after the final verdict (all cases of the day closed)');
                   for (const z of game.zones.values()) for (const e of z.evidence) assert(!e.caseId || !game.caseOf(e.caseId)?.judged, 'evidence of judged cases is wiped');
                   // ทุกคนตื่นที่ห้องนอนรวม — เว้นชั่วโมงแรกที่ทุกคนถูกภารกิจบังคับพาไปพร้อมกัน (เอนจินประมวลผลการย้ายทันที)
@@ -691,7 +692,7 @@ async function runGame({ humans, bots = 0, label, strategy = 'explore', voteStra
     }
   }
   if (game.endReason === 'last_one') assert(all.filter((p) => p.alive).length <= 1, 'last_one leaves ≤1 alive');
-  if (game.endReason === 'few_left') assert(all.filter((p) => p.alive).length < Math.floor(all.length / 3), 'few_left ends with fewer than a third alive');
+  if (game.endReason === 'few_left') assert(all.filter((p) => p.alive).length <= Math.floor(all.length / 3), 'few_left ends with a third or fewer alive');
   if (game.endReason === 'only_killers') assert(all.filter((p) => p.alive).every((p) => p.kills > 0), 'only_killers ends when every survivor has killed');
   if (game.endReason === 'escape') {
     const uncaught = (p) => game.cases.some((c) => c.killerId === p.id && !c.judged);
@@ -764,6 +765,7 @@ async function unitTests() {
   game.do_eat(b, {});
   Math.random = realRandom;
   assert(!b.alive && b.deathCause === 'trap' && game.cases.at(-1).trapType === 'poison' && game.cases.at(-1).killerId === a.id, 'eater dies from poisoned food, poisoner is culprit');
+  game.settleFood(); // ยาหมดท้ายชั่วโมง (คนที่กินพร้อมกันยังโดน)
   assert(!food.poisoned, 'poisoned batch is gone after a death');
   // 2) ล็อกการฆาตกรรม (ตัวเลือก MURDER_LOCK ปิดโดยค่าเริ่มต้น): เปิดแล้ว c (ไม่ใช่คนร้าย) ลงมือไม่ได้ ส่วน a (คนร้าย) ลงมือได้
   game.phase = PHASE.DAY;
@@ -1074,17 +1076,17 @@ async function unitTests() {
   // 8) ฆาตกรหลายคน: พบศพร่างเดียว → เปิดเผยทุกร่าง · ตัดสินถูก → ประหารคนนั้น บอกแค่ "ยังมีอีก 1 คน" · เก็บหลักฐานต่อในวันเดิม → ตัดสินรอบ 2 · ปิดครบแล้วค่อยขึ้นวันใหม่โดยไม่มีศพเหลือ
   {
     const g4 = new Game({ code: 'UNIT4', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
-    const ids4 = ['m1-xxxxxxxx', 'm2-xxxxxxxx', 'm3-xxxxxxxx', 'm4-xxxxxxxx', 'm5-xxxxxxxx', 'm6-xxxxxxxx'];
+    const ids4 = ['m1-xxxxxxxx', 'm2-xxxxxxxx', 'm3-xxxxxxxx', 'm4-xxxxxxxx', 'm5-xxxxxxxx', 'm6-xxxxxxxx', 'm7-xxxxxxxx']; // 7 คน: หลังประหาร 2 ยังเหลือ 3 > ⌊7/3⌋ เกมไม่จบก่อน
     for (const [i, id] of ids4.entries()) g4.addPlayer({ id, name: `หลายศพ ${i + 1}` });
     g4.onChange = () => {};
     Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
     await g4.start(ids4[0]);
     g4.clearTimers();
-    const [k1, v1, k2, v2, s1, s2] = ids4.map((id) => g4.players.get(id));
+    const [k1, v1, k2, v2, s1, s2, s3] = ids4.map((id) => g4.players.get(id));
     const rooms = [...g4.zones.values()].filter((z) => z.id !== g4.location.sleepZoneId);
     k1.zoneId = v1.zoneId = rooms[0].id;
     k2.zoneId = v2.zoneId = rooms[1].id;
-    s1.zoneId = s2.zoneId = rooms[2].id;
+    s1.zoneId = s2.zoneId = s3.zoneId = rooms[2].id;
     g4.phase = PHASE.DAY;
     g4.step = STEP.ACT;
     Math.random = () => 0;
@@ -2159,7 +2161,7 @@ async function unitTests() {
     assert(g17.doorActions(a17).some((x) => x.type === 'breakPower'), 'the generator can be broken instantly');
     g17.instantDoorAction(a17.id, 'breakPower');
     assert(g17.blackout && g17.darkAt(PZ.id) && !g17.canSee(a17) && b17.log.at(-1).text.includes('ไฟทั้งอาคารดับ'), 'breaking the generator blacks out the whole building');
-    const D17 = zones17.find((z) => z.id !== PZ.id && z.id !== g17.location.sleepZoneId); // ห้องมืดที่ไม่ใช่ห้องเครื่องปั่นไฟ (a17 ยืนอยู่ที่นั่น)
+    const D17 = zones17.find((z) => z.id !== PZ.id && z.id !== P17.id && z.id !== g17.location.sleepZoneId); // ห้องมืดที่ไม่ใช่ห้องเครื่องปั่นไฟ (a17 ยืนอยู่ที่นั่น) และไม่ใช่ห้องที่ d17 ไปรอ
     D17.items.push(mk17('ของในความมืด', 'tool'));
     b17.zoneId = c17.zoneId = D17.id;
     g17.moves = new Map([[a17.id, PZ.id], [b17.id, D17.id], [c17.id, D17.id], [d17.id, P17.id]]);
@@ -2350,10 +2352,10 @@ async function unitTests() {
     const ps21 = ids21.map((id) => g21.players.get(id));
     const Z21 = [...g21.zones.values()].find((z) => z.id !== g21.location.sleepZoneId);
     for (const p of ps21) p.zoneId = Z21.id;
-    for (const v of ps21.slice(2, 8)) g21.killPlayer(v, { cause: 'attack', killerId: ps21[0].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z21.id, outside: false, messy: false, witnesses: [] });
-    assert(g21.alivePlayers().length === 3 && !g21.checkEarlyEnd() && g21.phase !== PHASE.ENDED, 'three of nine alive is still enough to keep playing');
-    g21.killPlayer(ps21[8], { cause: 'attack', killerId: ps21[1].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z21.id, outside: false, messy: false, witnesses: [] });
-    assert(g21.checkEarlyEnd() && g21.phase === PHASE.ENDED && g21.endReason === 'few_left' && ps21[0].fate === 'survivor' && ps21[1].fate === 'survivor', 'fewer than a third alive ends the game at once with the rest as survivors');
+    for (const v of ps21.slice(2, 7)) g21.killPlayer(v, { cause: 'attack', killerId: ps21[0].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z21.id, outside: false, messy: false, witnesses: [] });
+    assert(g21.alivePlayers().length === 4 && !g21.checkEarlyEnd() && g21.phase !== PHASE.ENDED, 'four of nine alive is still enough to keep playing');
+    g21.killPlayer(ps21[7], { cause: 'attack', killerId: ps21[1].id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z21.id, outside: false, messy: false, witnesses: [] });
+    assert(g21.checkEarlyEnd() && g21.phase === PHASE.ENDED && g21.endReason === 'few_left' && ps21[0].fate === 'survivor' && ps21[1].fate === 'survivor', 'a third or fewer alive ends the game at once with the rest as survivors');
     // จบเกมก่อนกำหนด: คนที่เหลือล้วนเคยฆ่า
     const g22 = new Game({ code: 'UNIT22', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
     const ids22 = ['o1-xxxxxxxx', 'o2-xxxxxxxx', 'o3-xxxxxxxx', 'o4-xxxxxxxx', 'o5-xxxxxxxx', 'o6-xxxxxxxx'];
@@ -2418,8 +2420,117 @@ async function unitTests() {
     g23.resetAfterTrial();
     assert(R23.traps.length === 0 && R23.items.some((i) => i.name === 'มีดทดสอบ') && !food23.poisoned, 'the post-trial reset dismantles traps and cleans the food too');
   }
+  // 24) ไฟดับ: ไม่รู้ว่าใครอยู่ด้วย · ลงมือแบบสุ่มไม่มีชื่อ · กับดักโดนแน่ · ซ่อมไฟแล้วพังซ้ำไม่ได้ชั่วคราว · ยาในอาหารพอ 1/3 คน กินพร้อมกันโดนหมด · จบเมื่อเหลือ ≤ 1/3 · นาฬิกาไม่มีชั่วโมง 25
+  {
+    const g24 = new Game({ code: 'UNIT24', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids24 = ['k1-xxxxxxxx', 'k2-xxxxxxxx', 'k3-xxxxxxxx', 'k4-xxxxxxxx', 'k5-xxxxxxxx', 'k6-xxxxxxxx'];
+    for (const [i, id] of ids24.entries()) g24.addPlayer({ id, name: `มืด ${i + 1}` });
+    g24.onChange = () => {};
+    Object.assign(CONFIG, { REVIVE_CHANCE: 0, OBJECTIVES: false, LOCKED_ZONES: 0 });
+    await g24.start(ids24[0]);
+    g24.clearTimers();
+    const [a24, b24, c24, d24, e24, f24] = ids24.map((id) => g24.players.get(id));
+    const mk24 = (name, kind, description = '') => ({ id: `it_${name}_${Math.random().toString(36).slice(2, 6)}`, name, description, kind, portable: true, hidden: false, isPart: false });
+    const zones24 = [...g24.zones.values()];
+    const PZ24 = zones24.find((z) => z.items.some((i) => i.kind === 'power'));
+    const R24 = zones24.find((z) => z.id !== g24.location.sleepZoneId && z.id !== PZ24.id);
+    const T24 = zones24.find((z) => z.id !== g24.location.sleepZoneId && z.id !== PZ24.id && z.id !== R24.id);
+    for (const p of [a24, b24, c24, d24, e24, f24]) {
+      p.inventory = [];
+      p.outside = false;
+      p.zoneId = R24.id;
+      g24.charOf(p).ultimate.trait = 'none';
+    }
+    g24.phase = PHASE.DAY;
+    g24.step = STEP.ACT;
+    g24.blackout = { since: g24.turn, by: null };
+    const va = g24.viewFor(a24.id);
+    assert(va.me.canSee === false && va.players.filter((p) => p.id !== a24.id).every((p) => p.zoneId == null && !p.ko), 'in the dark the roster does not reveal who is in your room');
+    const atk = g24.availableActions(a24).filter((x) => x.type === 'attack');
+    assert(atk.length === 1 && atk[0].targetId === 'random' && !atk[0].label.includes(g24.nick(b24)), 'in the dark there is one anonymous attack with no names');
+    a24.inventory = [mk24('มีดทดสอบ', 'weapon', 'คมกริบ')];
+    Math.random = () => 0;
+    g24.do_attack(a24, { targetId: 'random' });
+    Math.random = realRandom;
+    const victim = [b24, c24, d24, e24, f24].find((p) => !p.alive);
+    assert(victim && !a24.log.at(-1).text.includes(g24.nick(victim)) && /ใครสักคน/.test(a24.log.at(-1).text), 'the attacker is not told who he hit');
+    assert(!victim.log.at(-1).text.includes(g24.nick(a24)) && /ใครบางคน/.test(victim.log.at(-1).text), 'the victim is not told who attacked');
+    assert([b24, c24, d24, e24, f24].filter((p) => p.alive).every((p) => !p.log.some((l) => l.turn === g24.turn && /เห็น/.test(l.text))), 'nobody witnesses anything in the dark');
+    // กับดักโดนแน่ในความมืด
+    const survivor = [b24, c24, d24, e24, f24].find((p) => p.alive);
+    T24.traps.push({ setterId: a24.id, item: { id: 'trap24', name: 'กับดักทดสอบ', kind: 'trap', trapType: 'blade', wound: 'sharp', weaponName: 'ขวานทดสอบ', strikerTags: ['sharp'], strikerKind: 'weapon', otherPart: { name: 'เชือก', kind: 'rope', description: '' } }, turn: g24.turn, side: 'inside' });
+    g24.step = STEP.MOVE;
+    g24.moves = new Map(g24.alivePlayers().map((p) => [p.id, p.id === survivor.id ? T24.id : p.zoneId]));
+    Math.random = () => 0; // ปกติ 0 = ปลดกับดักได้ แต่ในความมืดโดนแน่
+    g24.resolveMoves();
+    Math.random = realRandom;
+    g24.clearTimers();
+    assert(!survivor.alive && survivor.deathCause === 'trap', 'in the dark a trap cannot be dodged');
+    // ซ่อมไฟแล้วพังซ้ำไม่ได้ชั่วคราว
+    g24.phase = PHASE.DAY;
+    g24.step = STEP.ACT;
+    const fixer = [b24, c24, d24, e24, f24].find((p) => p.alive);
+    fixer.zoneId = PZ24.id;
+    fixer.outside = false;
+    g24.charOf(fixer).ultimate.trait = 'tech';
+    g24.do_repairPower(fixer);
+    assert(!g24.blackout && g24.powerCooldownUntil > g24.turn && !g24.doorActions(fixer).some((x) => x.type === 'breakPower'), 'right after a repair the generator cannot be broken again');
+    g24.turn = g24.powerCooldownUntil;
+    assert(g24.doorActions(fixer).some((x) => x.type === 'breakPower'), 'after the cooldown it can be broken again');
+    // ยาในอาหาร: พิษพอ 1 คน แต่คนที่กินพร้อมกันโดนหมด · บัฟพอ 3 คน
+    const F24 = zones24.find((z) => z.items.some((i) => i.kind === 'food'));
+    const food24 = F24.items.find((i) => i.kind === 'food');
+    const eaters = [b24, c24, d24, e24, f24].filter((p) => p.alive).slice(0, 2);
+    assert(eaters.length === 2, 'two eaters left for the food test');
+    for (const p of eaters) {
+      p.zoneId = F24.id;
+      p.outside = false;
+    }
+    food24.poisoned = { setterId: a24.id, poisonName: 'ยาเบื่อหนู', poisonTags: ['tasteless'], turn: g24.turn, usesLeft: 1 };
+    Math.random = () => 0.99; // ไม่สังเกตเห็นพิษ
+    for (const p of eaters) g24.do_eat(p);
+    Math.random = realRandom;
+    assert(eaters.every((p) => !p.alive) && food24.poisoned, 'two people eating in the same hour both die; the batch is still there until the hour ends');
+    g24.settleFood();
+    assert(!food24.poisoned, 'after the hour the used-up poison is gone');
+    a24.zoneId = F24.id;
+    food24.buff = { setterId: a24.id, name: 'ยาบำรุง', kind: 'tonic', turn: g24.turn, usesLeft: 3 };
+    g24.do_eat(a24);
+    g24.do_eat(a24);
+    g24.settleFood();
+    assert(food24.buff?.usesLeft === 1, 'a buff feeds three people');
+    g24.do_eat(a24);
+    g24.settleFood();
+    assert(!food24.buff, 'after the third eater the medicine is gone');
+    // จบเกมเมื่อเหลือไม่เกินหนึ่งในสาม (6 คน → เหลือ 2)
+    assert(g24.alivePlayers().length === 2 && g24.checkEarlyEnd() && g24.endReason === 'few_left', 'two of six left ends the game');
+    // นาฬิกา: ประกาศศพตอนชั่วโมง 24 → วันถัดไปชั่วโมง 1 ไม่ใช่ 25 และเช้าวันใหม่ไม่บวกวันซ้ำ
+    const g25 = new Game({ code: 'UNIT25', ai: createAI({ forceMock: true, log: quietLog }), log: quietLog });
+    const ids25 = ['c1-xxxxxxxx', 'c2-xxxxxxxx', 'c3-xxxxxxxx', 'c4-xxxxxxxx'];
+    for (const [i, id] of ids25.entries()) g25.addPlayer({ id, name: `นาฬิกา ${i + 1}` });
+    g25.onChange = () => {};
+    await g25.start(ids25[0]);
+    g25.clearTimers();
+    const [a25, b25] = ids25.map((id) => g25.players.get(id));
+    const Z25 = [...g25.zones.values()].find((z) => z.id !== g25.location.sleepZoneId);
+    g25.phase = PHASE.DAY;
+    g25.step = STEP.ACT;
+    g25.killPlayer(b25, { cause: 'attack', killerId: a25.id, weapon: { name: 'มีด', kind: 'weapon', tags: ['sharp'] }, zoneId: Z25.id, outside: false, messy: false, witnesses: [] });
+    g25.bodies.get(b25.id).discoveredBy.clear();
+    g25.step = STEP.REPORT;
+    g25.hour = CONFIG.HOURS_PER_DAY;
+    g25.nextTurn();
+    await new Promise((r) => setTimeout(r, 30));
+    g25.clearTimers();
+    assert(g25.phase === PHASE.INVESTIGATION && g25.day === 2 && g25.hour === 1 && g25.dayRolledByClock, 'an investigation that starts at hour 24 is counted as day 2 hour 1, never hour 25');
+    g25.phase = PHASE.TRIAL_RESULT;
+    g25.lastResult = { moreKillers: false };
+    g25.nextDay();
+    g25.clearTimers();
+    assert(g25.day === 2 && g25.hour === 2 && !g25.dayRolledByClock, 'the morning after a midnight trial keeps the day number and continues the hour count');
+  }
   Object.assign(CONFIG, saved);
-  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers), new day dismantles every trap and cleans mixed food');
+  console.log('✔ unit tests: poison food, murder lock, craft+trap trigger, locked doors (≤2 keys per game, quiet lock, lock-in, lockpick 2–3 h, combat break), hidden exit discovery/opening, bot item requests, post-trial scene reset, all bodies announced together / multi-killer hunt (execute one, "one more remains", evidence hour, next trial, new day only when all cases closed), waiting outside locked doors / door traps / uncaught killers cannot escape / closed-case victims stay dead, combo realism (recipe-based trap names, striking item is the case weapon, door-trap narration, wound text shared by examine and narrator, shock trap needs a real cable), item tags (junk cannot attack or craft, loaded guns 85% + ammo + gunshot heard everywhere + gun door traps, syringe as poison vector, pungent/tasteless/blood-only poisons, repairs/breach/tech lockpicking need real tools), knockouts (bare hands and sedatives only stun, lethality per item, sure hits on the unconscious, armed counters, objective punishment, waking up), rooms = players × 2 (mock trim/pad keeps required item kinds, unique names, locks/keys scale), exits need 4–5 steps (assembly craft, persistent tool/cut/force steps, pooled attempts), investigation = 1 h + 1 per body with no kills, fighters kill bare-handed 5%, knocked-out players cannot vote, take/drop/hide are instant and free, ghost mode (ghost chat hidden from the living until the end, follow a living player, full map + true-event feed, live votes, bot ghosts greet and comment), forensics (announcement = who/where only, examine never names the item, sprung traps leave an ordinary item + searchable blood/device evidence, removing the device leaves residue hidden only for stealth, kill evidence by weapon class), batch-1 rules (hide = hour action with many items, no knockout loop, interrogating the unconscious yields nothing, choices of others hidden, day rollover after 23 h, porter carries 5, broken doors are not cleanable, dead-killer cases revealed with the next verdict, killer fate in the verdict, explicit unlocking + door work actions, anyone can break doors, route items never vanish), investigation tools (bloodstained weapons + washing at a water room, bag checks at trial, private debug commands), map features (barring doors with a rod, secret passages found by search that bypass locks and door traps, building blackout with light sources / night vision / groping / repair), medicines in food (tonic = +1 h on the next objective, remedy = shrug off one knockout, fresh food each day), shared searching / hands-on killers count as discoverers / end-of-day bodies found or day popup / early end (few left, only killers), new day dismantles every trap and cleans mixed food, darkness (hidden roster, anonymous random attacks, traps always hit), power cooldown, food uses per eater, end at a third or fewer, no hour 25');
 }
 
 try {

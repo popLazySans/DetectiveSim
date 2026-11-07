@@ -187,6 +187,8 @@ export class Game {
     this.passages = []; // ทางลับ [{ id, a, b }]
     this.dayPopup = null; // ป็อปอัพขึ้นวันใหม่ (ครบ 24 ชั่วโมงโดยไม่มีศพ)
     this.searchedThisHour = new Set();
+    this.dayRolledByClock = false; // นาฬิกาข้ามเที่ยงคืนระหว่างรอบเก็บหลักฐาน/ตัดสิน (ขึ้นเลขวันแล้ว ไม่บวกซ้ำตอนเช้าวันใหม่)
+    this.powerCooldownUntil = 0; // หลังซ่อมเครื่องปั่นไฟ พังซ้ำไม่ได้จนถึง turn นี้
     this.blackout = null; // ไฟดับทั้งตึก { since, by } จนกว่าจะมีคนซ่อมเครื่องปั่นไฟ
     this.escaped = false;
     this.bodies = new Map();
@@ -763,7 +765,8 @@ export class Game {
   beginDay() {
     this.phase = PHASE.DAY;
     this.generating = null;
-    this.hour = 0;
+    this.hour = this.dayRolledByClock ? this.hour : 0; // ข้ามเที่ยงคืนมาแล้ว → นับชั่วโมงต่อจากเดิม
+    this.dayRolledByClock = false;
     this.huntRound = 0;
     const alive = this.alivePlayers();
     this.designatedId = alive.length >= 2 ? pick(alive).id : null;
@@ -782,11 +785,22 @@ export class Game {
   }
 
   // ชั่วโมงใหม่: ทุกคนเลือกห้อง
+  // เดินนาฬิกา 1 ชั่วโมง — เลยชั่วโมงสุดท้ายของวัน (24) แล้วขึ้นเลขวันใหม่โดยไม่รีเซ็ต (ใช้เมื่อรอบเก็บหลักฐาน/ตัดสินคร่อมเที่ยงคืน)
+  advanceHour() {
+    this.hour++;
+    this.turn++;
+    if (this.hour > CONFIG.HOURS_PER_DAY) {
+      this.day++;
+      this.hour = 1;
+      this.dayRolledByClock = true;
+      this.systemMessage(`🕛 เที่ยงคืน — เข้าสู่วันที่ ${this.day} (นับชั่วโมงใหม่ แต่เหตุการณ์ยังดำเนินต่อ)`);
+    }
+  }
+
   beginTurn() {
     this.phase = PHASE.DAY;
     this.step = STEP.MOVE;
-    this.hour++;
-    this.turn++;
+    this.advanceHour();
     this.moves = new Map();
     this.actions = new Map();
     this.presetKoMoves();
@@ -966,15 +980,16 @@ export class Game {
       for (const p of shuffle(alive.filter((x) => x.alive && x.zoneId === z.id && !x.outside && !wasInside(x, z.id)))) {
         const trap = z.traps.find((t) => t.setterId !== p.id && t.item.trapType !== 'door');
         if (!trap) continue;
-        const disarm = TRAP_DISARM_CHANCE + (this.traitOf(p) === 'detective' ? 0.2 : 0);
-        const r = Math.random();
-        if (r < disarm) {
+        const blind = !this.canSee(p); // มืดและไม่มีแสง: มองไม่เห็นกับดัก โดนแน่นอน
+        const disarm = blind ? 0 : TRAP_DISARM_CHANCE + (this.traitOf(p) === 'detective' ? 0.2 : 0);
+        const r = blind ? 0 : Math.random();
+        if (!blind && r < disarm) {
           z.traps.splice(z.traps.indexOf(trap), 1);
           z.items.push({ ...trap.item, hidden: false });
           z.evidence.push(this.makeEvidence(z.id, `${trap.item.name}ถูกตั้งไว้เป็นกับดักที่ทางเข้า และมีคนปลดออกแล้ว`, false, null, 'trap'));
           this.logTo(p, `⚠ ทันทีที่จะเข้า${this.zn(z)}คุณสังเกตเห็น${trap.item.name}ตั้งไว้เป็นกับดัก (${TRAP_TYPES[trap.item.trapType]?.label || ''}) คุณปลดมันออกได้ทัน — มีคนตั้งใจจะฆ่าใครสักคนที่เข้ามาห้องนี้`, 'danger');
           this.recordEvent(`${this.nick(p)}พบและปลดกับดัก (${trap.item.name}) ที่${this.zn(z)}`);
-        } else if (r < disarm + TRAP_TRIGGER_CHANCE) {
+        } else if (blind || r < disarm + TRAP_TRIGGER_CHANCE) {
           this.triggerTrap(z, trap, p);
         }
       }
@@ -1190,7 +1205,7 @@ export class Game {
   earlyEndReason() {
     const alive = this.alivePlayers();
     if (alive.length <= 1) return 'last_one';
-    if (alive.length < Math.floor(this.players.size / 3)) return 'few_left';
+    if (alive.length <= Math.floor(this.players.size / 3)) return 'few_left';
     if (alive.every((p) => p.kills > 0)) return 'only_killers';
     return null;
   }
@@ -1406,8 +1421,13 @@ export class Game {
       out.push({ type: 'repairPower', label: `🔧 ซ่อมเครื่องปั่นไฟ${p.powerWork ? ` (ทำไปแล้ว ${p.powerWork.progress} ชม.)` : ''}`, desc: `ใช้ทั้งชั่วโมง ราว ${need[0]}–${need[1]} ชั่วโมง (ช่างเทคนิค ${POWER.REPAIR_HOURS_TECH[0]} ชม.) ทำซ้ำจนเสร็จ แล้วไฟติดทั้งตึก` });
     }
     if (dark) {
-      const allowed = new Set(['attack', 'steal', 'hide', 'eat', 'doorwork', 'repairPower', 'rest']);
+      const allowed = new Set(['steal', 'hide', 'eat', 'poisonFood', 'mixFood', 'doorwork', 'repairPower', 'rest']);
       out = out.filter((a) => allowed.has(a.type));
+      // ลงมือในความมืด: ไม่เห็นว่าใครเป็นใคร → สุ่มโดนใครสักคน ไม่มีชื่อในบันทึกของทั้งคนลงมือและคนโดน
+      const wDark = this.bestWeapon(p);
+      const sureDark = !!(wDark && (attackBaseOf(wDark, trait, !!this.injectorOf(p))?.lethal || 0) > 0);
+      const victims = others.filter((o) => !o.ko || sureDark);
+      if (inDay && victims.length) out.push({ type: 'attack', targetId: 'random', label: '🔪 ลงมือกับคนในห้องอย่างสุ่ม (มืด)', desc: `มองไม่เห็นว่าใครเป็นใคร — จะไปโดนใครสักคนในห้องนี้ ไม่มีใครรู้ว่าใครทำ และคุณก็ไม่รู้ว่าโดนใคร${wDark ? ` · ใช้${wDark.name}` : ' · มือเปล่า (ทำให้สลบเท่านั้น)'}`, danger: true });
       if (!outside && z.items.some((i) => !i.hidden && i.portable) && p.inventory.length < this.invMax(p)) out.push({ type: 'grope', label: '🖐 คลำหาของในความมืด', desc: 'ได้ของสุ่ม 1 ชิ้นจากห้องนี้แล้วจบชั่วโมง — รู้ว่าได้อะไรก็ต่อเมื่อคลำดูแล้ว' });
     }
     return out;
@@ -1469,6 +1489,7 @@ export class Game {
       }
     }
     this.shareDiscoveries(); // สำรวจร่วมกัน: คนที่อยู่ด้วยชี้ทางออก/ทางลับให้
+    this.settleFood(); // ยาในอาหารที่ถูกกินครบจำนวนแล้วหมดไป (ท้ายชั่วโมง เพื่อให้คนที่กินพร้อมกันโดนทุกคน)
     this.resolveRest();
     if (resolveExits(this, exitAttempts)) return;
     if (this.phase === PHASE.ENDED) return;
@@ -1591,12 +1612,21 @@ export class Game {
   }
 
   do_attack(p, a) {
-    const target = this.players.get(a.targetId);
     const z = this.zones.get(p.zoneId);
-    if (!target || !this.sameSpot(p, target)) return this.logTo(p, `คุณมองหา${this.nick(target)}แต่เขาไม่ได้อยู่ตรงนี้แล้ว`, 'danger');
+    const anonymous = a.targetId === 'random'; // มืด: สุ่มโดนใครสักคน ไม่มีชื่อในบันทึกของทั้งสองฝ่าย
+    let target = anonymous ? null : this.players.get(a.targetId);
+    if (anonymous) {
+      const wA = this.bestWeapon(p);
+      const sureA = !!(wA && (attackBaseOf(wA, this.traitOf(p), !!this.injectorOf(p))?.lethal || 0) > 0);
+      const cands = this.presentWith(p).filter((o) => o.id !== p.id && o.alive && (!o.ko || sureA));
+      if (!cands.length) return this.logTo(p, 'คุณคว้าไปในความมืดแต่ไม่โดนใครเลย', 'danger');
+      target = pick(cands);
+    }
+    const tname = anonymous ? 'ใครสักคนในความมืด' : this.nick(target);
+    if (!target || !this.sameSpot(p, target)) return this.logTo(p, `คุณมองหา${tname}แต่เขาไม่ได้อยู่ตรงนี้แล้ว`, 'danger');
     if (this.phase !== PHASE.DAY) return this.logTo(p, '🔎 ช่วงเก็บหลักฐานลงมือทำร้ายใครไม่ได้', 'danger');
     if (!target.alive) {
-      this.logTo(p, `คุณย่องเข้าไปหา${this.nick(target)} แต่พบว่าเขาตายไปแล้วก่อนที่คุณจะลงมือ`, 'danger');
+      this.logTo(p, `คุณย่องเข้าไปหา${tname} แต่พบว่าเขาตายไปแล้วก่อนที่คุณจะลงมือ`, 'danger');
       p.knownBodies.add(target.id);
       this.bodies.get(target.id)?.discoveredBy.add(p.id);
       return;
@@ -1604,13 +1634,13 @@ export class Game {
     const w = this.bestWeapon(p);
     const inj = w?.kind === 'poison' ? this.injectorOf(p) : null; // วางยาตรงด้วยเข็มฉีดยา
     const sureKill = !!(w && (attackBaseOf(w, this.traitOf(p), !!inj)?.lethal || 0) > 0); // ของที่ฆ่าได้ → คนสลบตายแน่ (มือเปล่า/ยาสลบไม่นับ นักสู้ต่อยคนสลบก็ยังสุ่ม 5%)
-    if (target.ko && !sureKill) return this.logTo(p, `😵 ${this.nick(target)}สลบอยู่แล้ว — มือเปล่า/ยาสลบทำอะไรเขาไม่ได้อีก (ต้องใช้ของที่ฆ่าได้)`, 'danger');
+    if (target.ko && !sureKill) return this.logTo(p, `😵 ${tname}สลบอยู่แล้ว — มือเปล่า/ยาสลบทำอะไรเขาไม่ได้อีก (ต้องใช้ของที่ฆ่าได้)`, 'danger');
     const shot = !!w && tagsOf(w).has('firearm') && (w.ammo ?? 0) > 0; // ยิงปืน: กระสุนลดทุกครั้ง ทั้งตึกได้ยิน
     const wtxt = w ? `ด้วย${w.name}${inj ? ` (ฉีดด้วย${inj.name})` : ''}` : 'ด้วยมือเปล่า';
     // อาวุธของคดี: ชื่อบอกวิธี (ฉีดด้วย...) และแท็กบอกชนิดแผล (ปืนที่กระสุนหมดแล้วใช้ด้ามฟาดไม่นับว่า "ยิง")
     const wrec = w ? { name: inj ? `${w.name} (ฉีดด้วย${inj.name})` : w.name, kind: w.kind, tags: [...tagsOf(w)].filter((t) => t !== 'firearm' || shot) } : null;
     const others = this.presentWith(p).filter((o) => o.id !== p.id && o.id !== target.id);
-    const awake = others.filter((o) => !o.ko); // คนสลบไม่เห็นอะไร (แต่โดนลูกหลงได้)
+    const awake = others.filter((o) => !o.ko && this.canSee(o)); // คนสลบ/คนที่มองไม่เห็น (มืด) ไม่เป็นพยาน (แต่โดนลูกหลงได้)
     const bd = this.attackBreakdown(p, target, w, others.length, z);
     const pSucc = bd.chance;
     const lethal = bd.lethal; // โอกาสฆ่าเมื่อสำเร็จ · 0 = มือเปล่า/ยาสลบ ทำให้สลบเท่านั้น
@@ -1639,9 +1669,9 @@ export class Game {
         if (messy) p.stained = this.turn;
         this.logTo(
           p,
-          `🔪 คุณลงมือกับ${this.nick(target)}${wtxt}สำเร็จ ${messy ? 'แต่ไม่เรียบร้อย: คราบเลือดกระจาย ของล้มระเนระนาด และเสื้อผ้าคุณเปื้อน' : 'อย่างเงียบเชียบ ทิ้งร่องรอยไว้น้อยมาก'}${
+          `🔪 คุณลงมือกับ${tname}${wtxt}สำเร็จ ${messy ? 'แต่ไม่เรียบร้อย: คราบเลือดกระจาย ของล้มระเนระนาด และเสื้อผ้าคุณเปื้อน' : 'อย่างเงียบเชียบ ทิ้งร่องรอยไว้น้อยมาก'}${
             saw.length ? ` — แย่แล้ว ${names(saw)}เห็นคุณลงมือ!` : awake.length ? ` ไม่มีใครเห็นตอนลงมือ แต่คนในห้อง (${names(awake)}) เห็นศพแน่นอน` : ' ไม่มีใครเห็น'
-          }${kase.dropped.length ? ` ของที่${this.nick(target)}ถือหล่นอยู่ที่นี่: ${kase.dropped.join(', ')}` : ''} คุณคือคนร้ายของคดีนี้ — ศพจะอยู่ตรงนี้จนกว่าจะมีคนย้าย${CONFIG.MURDER_LOCK ? ' และจนกว่าศพจะถูกพบ คนอื่นจะลงมือฆ่าใครไม่ได้ มีแต่คุณที่ทำได้' : ''}`,
+          }${kase.dropped.length ? ` ของที่เขาถือหล่นอยู่ที่นี่: ${kase.dropped.join(', ')}` : ''} คุณคือคนร้ายของคดีนี้ — ศพจะอยู่ตรงนี้จนกว่าจะมีคนย้าย${CONFIG.MURDER_LOCK ? ' และจนกว่าศพจะถูกพบ คนอื่นจะลงมือฆ่าใครไม่ได้ มีแต่คุณที่ทำได้' : ''}`,
           'culprit',
         );
         this.logTo(target, `💀 ${who}ลงมือกับคุณ${wtxt}ที่${this.zn(z)}คุณเสียชีวิต... ตอนนี้ทำได้เพียงเฝ้าดู`, 'death');
@@ -1670,7 +1700,7 @@ export class Game {
       }
       this.logTo(
         p,
-        `🥊 คุณลงมือกับ${this.nick(target)}${wtxt} เขาล้มลง${already ? 'และยังไม่ฟื้น' : 'หมดสติ'} (สลบอีก ${hours} ชั่วโมง) แต่ยังไม่ตาย${lethal > 0 ? ' — ครั้งนี้ไม่ถึงตาย' : ' (มือเปล่า/ยาสลบทำให้สลบเท่านั้น)'}${dropped.length ? ` ของที่หล่นจากมือเขา: ${dropped.join(', ')}` : ''}${
+        `🥊 คุณลงมือกับ${tname}${wtxt} เขาล้มลง${already ? 'และยังไม่ฟื้น' : 'หมดสติ'} (สลบอีก ${hours} ชั่วโมง) แต่ยังไม่ตาย${lethal > 0 ? ' — ครั้งนี้ไม่ถึงตาย' : ' (มือเปล่า/ยาสลบทำให้สลบเท่านั้น)'}${dropped.length ? ` ของที่หล่นจากมือเขา: ${dropped.join(', ')}` : ''}${
           saw.length ? ` — ${names(saw)}เห็นคุณลงมือ!` : awake.length ? ` คนในห้อง (${names(awake)}) เห็นว่าเขาล้มลง` : ' ไม่มีใครเห็น'
         } ระหว่างที่เขาสลบ ใครลงมือกับเขาก็สำเร็จแน่นอน`,
         'culprit',
@@ -1696,7 +1726,7 @@ export class Game {
         this.stainWeapon(tw, twrec);
         target.stained = this.turn;
         this.logTo(target, `⚔ ${who}จู่โจมคุณ${wtxt}ที่${this.zn(z)}! คุณสวนกลับ${twtxt}สุดชีวิต และ... ${this.nick(p)}ล้มลงไม่ขยับ เขาตายแล้ว ตามกติกาของที่นี่ คุณคือ "คนร้าย" ของคดีนี้ แม้จะเป็นการป้องกันตัว`, 'culprit');
-        this.logTo(p, `💀 คุณจู่โจม${this.nick(target)} แต่เขาสวนกลับ${twtxt} คุณเป็นฝ่ายตายเสียเอง...`, 'death');
+        this.logTo(p, `💀 คุณจู่โจม${tname} แต่เขาสวนกลับ${twtxt} คุณเป็นฝ่ายตายเสียเอง...`, 'death');
         for (const o of awake) {
           o.knownBodies.add(p.id);
           this.bodies.get(p.id).discoveredBy.add(o.id);
@@ -1708,7 +1738,7 @@ export class Game {
       const hours = this.koHours();
       const dropped = this.knockOut(p, hours, { cause: 'counter', by: target.id });
       this.logTo(target, `⚔ ${who}จู่โจมคุณ${wtxt}ที่${this.zn(z)}! คุณสวนกลับ${twtxt}จน${this.nick(p)}ล้มลงหมดสติ (${hours} ชั่วโมง) — เขายังไม่ตาย${dropped.length ? ` ของหล่นจากมือเขา: ${dropped.join(', ')}` : ''} ระหว่างนี้จะทำอะไรเขาก็ได้`, 'action');
-      this.logTo(p, `😵 คุณจู่โจม${this.nick(target)} แต่เขาสวนกลับ${twtxt} คุณหมดสติ จะฟื้นในอีก ${hours} ชั่วโมง${dropped.length ? ` ของหล่นจากมือ: ${dropped.join(', ')}` : ''} — ระหว่างนี้ใครลงมือกับคุณก็สำเร็จแน่นอน`, 'danger');
+      this.logTo(p, `😵 คุณจู่โจม${tname} แต่เขาสวนกลับ${twtxt} คุณหมดสติ จะฟื้นในอีก ${hours} ชั่วโมง${dropped.length ? ` ของหล่นจากมือ: ${dropped.join(', ')}` : ''} — ระหว่างนี้ใครลงมือกับคุณก็สำเร็จแน่นอน`, 'danger');
       for (const o of awake) this.logTo(o, `😱 ${who}จู่โจม${this.nick(target)}ต่อหน้าคุณ แต่${this.nick(target)}สวนกลับ${twtxt}จน${this.nick(p)}ล้มลงหมดสติ`, 'witness');
       this.recordEvent(`${this.nick(p)}พยายามทำร้าย${this.nick(target)}ที่${this.zn(z)}แต่ถูกสวนกลับ${twtxt}จนสลบ (${hours} ชม.)`);
       return;
@@ -1716,6 +1746,7 @@ export class Game {
     const wrongCands = others.filter((o) => !o.ko || sureKill); // คนสลบไม่โดนลูกหลงจากมือเปล่า/ยาสลบ
     if (wrongCands.length && chance(ATTACK.WRONG_TARGET)) {
       const wrong = pick(wrongCands);
+      const wname = anonymous ? 'อีกคนหนึ่งในความมืด' : this.nick(wrong);
       const rest = awake.filter((o) => o !== wrong);
       const kills = wrong.ko && sureKill ? true : chance(lethal);
       consumePoison();
@@ -1724,9 +1755,9 @@ export class Game {
         const kase = this.killPlayer(wrong, { cause: 'wrongTarget', killerId: p.id, weapon: wrec, zoneId: z.id, outside: p.outside, messy: true, witnesses: [target.id, ...rest.map((o) => o.id)] });
         this.addKillEvidence(z, kase, wrec, true, p);
         this.stainWeapon(w, wrec);
-        this.logTo(p, `💥 คุณพุ่งเข้าใส่${this.nick(target)} แต่เขาหลบทัน และ${w ? w.name : 'แรงของคุณ'}ไปลง${this.nick(wrong)}เต็ม ๆ... ${this.nick(wrong)}ตายทันที ทุกคนในห้องเห็นหมด คุณคือคนร้ายของคดีนี้`, 'culprit');
-        this.logTo(wrong, `💀 ${who}ตั้งใจเล่นงาน${this.nick(target)} แต่พลาดมาโดนคุณ... คุณเสียชีวิต`, 'death');
-        this.logTo(target, `😱 ${who}พุ่งเข้าใส่คุณ${wtxt}! คุณหลบทัน แต่${this.nick(wrong)}ที่อยู่ข้าง ๆ รับไปเต็ม ๆ และตายต่อหน้าคุณ`, 'witness');
+        this.logTo(p, `💥 คุณพุ่งเข้าใส่${tname} แต่เขาหลบทัน และ${w ? w.name : 'แรงของคุณ'}ไปลง${wname}เต็ม ๆ... ${wname}ตายทันที ทุกคนในห้องเห็นหมด คุณคือคนร้ายของคดีนี้`, 'culprit');
+        this.logTo(wrong, `💀 ${who}ตั้งใจเล่นงาน${tname} แต่พลาดมาโดนคุณ... คุณเสียชีวิต`, 'death');
+        this.logTo(target, `😱 ${who}พุ่งเข้าใส่คุณ${wtxt}! คุณหลบทัน แต่${wname}ที่อยู่ข้าง ๆ รับไปเต็ม ๆ และตายต่อหน้าคุณ`, 'witness');
         for (const o of [target, ...rest]) {
           o.knownBodies.add(wrong.id);
           this.bodies.get(wrong.id).discoveredBy.add(o.id);
@@ -1737,9 +1768,9 @@ export class Game {
       }
       const hours = this.koHours();
       const dropped = this.knockOut(wrong, hours, { cause: 'attack', by: p.id });
-      this.logTo(p, `💥 คุณพุ่งเข้าใส่${this.nick(target)} แต่เขาหลบทัน และ${w ? w.name : 'แรงของคุณ'}ไปลง${this.nick(wrong)}จนล้มลงหมดสติ (${hours} ชั่วโมง) ทุกคนในห้องเห็นหมด${dropped.length ? ` ของหล่นจากมือเขา: ${dropped.join(', ')}` : ''}`, 'danger');
-      this.logTo(wrong, `😵 ${who}ตั้งใจเล่นงาน${this.nick(target)} แต่พลาดมาโดนคุณ คุณหมดสติ จะฟื้นในอีก ${hours} ชั่วโมง${dropped.length ? ` ของหล่นจากมือ: ${dropped.join(', ')}` : ''}`, 'danger');
-      this.logTo(target, `😱 ${who}พุ่งเข้าใส่คุณ${wtxt}! คุณหลบทัน แต่${this.nick(wrong)}ที่อยู่ข้าง ๆ โดนแทนจนล้มลงหมดสติ`, 'witness');
+      this.logTo(p, `💥 คุณพุ่งเข้าใส่${tname} แต่เขาหลบทัน และ${w ? w.name : 'แรงของคุณ'}ไปลง${wname}จนล้มลงหมดสติ (${hours} ชั่วโมง) ทุกคนในห้องเห็นหมด${dropped.length ? ` ของหล่นจากมือเขา: ${dropped.join(', ')}` : ''}`, 'danger');
+      this.logTo(wrong, `😵 ${who}ตั้งใจเล่นงาน${tname} แต่พลาดมาโดนคุณ คุณหมดสติ จะฟื้นในอีก ${hours} ชั่วโมง${dropped.length ? ` ของหล่นจากมือ: ${dropped.join(', ')}` : ''}`, 'danger');
+      this.logTo(target, `😱 ${who}พุ่งเข้าใส่คุณ${wtxt}! คุณหลบทัน แต่${wname}ที่อยู่ข้าง ๆ โดนแทนจนล้มลงหมดสติ`, 'witness');
       for (const o of rest) this.logTo(o, `😱 ${who}พุ่งเข้าใส่${this.nick(target)}แต่พลาดไปโดน${this.nick(wrong)}จนล้มลงหมดสติ`, 'witness');
       this.recordEvent(`${this.nick(p)}ตั้งใจทำร้าย${this.nick(target)}ที่${this.zn(z)}แต่พลาดไปโดน${this.nick(wrong)}จนสลบ`);
       return;
@@ -1751,7 +1782,7 @@ export class Game {
       z.items.push(w);
       z.evidence.push(this.makeEvidence(z.id, `${w.name}ตกอยู่กลางห้อง ไม่ใช่ที่ของมัน`, false, null, 'item'));
     }
-    this.logTo(p, `❌ คุณพยายามลงมือกับ${this.nick(target)}${wtxt} แต่พลาด เขาตัวไวกว่าที่คิด${dropWeapon ? ` และคุณทำ${w.name}หล่นไว้ที่นั่น` : ''} ตอนนี้เขารู้แล้วว่ามีคนพยายามทำร้ายเขา${z.dark ? ' (แต่มืด เขาอาจไม่รู้ว่าเป็นคุณ)' : ''}`, 'danger');
+    this.logTo(p, `❌ คุณพยายามลงมือกับ${tname}${wtxt} แต่พลาด เขาตัวไวกว่าที่คิด${dropWeapon ? ` และคุณทำ${w.name}หล่นไว้ที่นั่น` : ''} ตอนนี้เขารู้แล้วว่ามีคนพยายามทำร้ายเขา${z.dark ? ' (แต่มืด เขาอาจไม่รู้ว่าเป็นคุณ)' : ''}`, 'danger');
     this.logTo(target, `⚠ ${who}พยายามทำร้ายคุณที่${this.zn(z)}${wtxt}! คุณหลบได้ทัน${z.dark ? ' แต่มืดเกินกว่าจะเห็นว่าเป็นใคร' : ''}`, 'danger');
     for (const o of awake) if (chance(0.6)) this.logTo(o, `👀 คุณเห็น${who}กับ${this.nick(target)}ปะทะกันชั่วครู่ที่${this.zn(z)}${this.nick(target)}ดูตกใจมาก`, 'witness');
     this.recordEvent(`${this.nick(p)}พยายามทำร้าย${this.nick(target)}ที่${this.zn(z)}แต่ล้มเหลว`);
@@ -1861,7 +1892,7 @@ export class Game {
     if (food.buff) return this.logTo(p, `${food.name}มีคนผสมยาไว้ก่อนแล้ว`, 'danger');
     const med = p.inventory.splice(idx, 1)[0];
     const kind = tagsOf(med).has('remedy') ? 'remedy' : 'tonic';
-    food.buff = { setterId: p.id, name: med.name, kind, turn: this.turn };
+    food.buff = { setterId: p.id, name: med.name, kind, turn: this.turn, usesLeft: 3 }; // พอสำหรับคนกิน 3 คน
     const who = this.who(p, z);
     this.logTo(p, `💊 คุณผสม${med.name}ลงใน${food.name}ที่${this.zn(z)} — ใครมากิน${kind === 'tonic' ? 'จะได้เวลาภารกิจถัดไป +1 ชั่วโมง' : 'จะต้านทานการสลบได้ 1 ครั้ง'}`, 'action');
     for (const o of this.witnessesOf(p, z)) if (this.seen(p, 0.35)) this.logTo(o, `👀 คุณเห็น${who}ใส่อะไรบางอย่างลงใน${food.name}`, 'witness');
@@ -1875,7 +1906,7 @@ export class Game {
     if (!food || idx < 0) return this.logTo(p, 'ผสมยาไม่ได้ที่นี่', 'danger');
     if (food.poisoned) return this.logTo(p, `${food.name}มีคนผสมอะไรไว้ก่อนแล้ว คุณเลยไม่ได้ทำอะไร`, 'danger');
     const poison = p.inventory.splice(idx, 1)[0];
-    food.poisoned = { setterId: p.id, poisonName: poison.name, poisonTags: [...tagsOf(poison)], turn: this.turn };
+    food.poisoned = { setterId: p.id, poisonName: poison.name, poisonTags: [...tagsOf(poison)], turn: this.turn, usesLeft: 1 }; // พอสำหรับคนกิน 1 คน (คนที่กินพร้อมกันในชั่วโมงนั้นโดนทุกคน)
     z.evidence.push(this.makeEvidence(z.id, `ขอบภาชนะของ${food.name}มีคราบผงและกลิ่นเคมีจาง ๆ`, true, null, 'poison'));
     const who = this.who(p, z);
     this.logTo(p, `☠ คุณผสม${poison.name}ลงใน${food.name}ที่${this.zn(z)}แล้ว ใครมากินมีโอกาสตาย — ถ้าเขาตาย คุณคือคนร้าย (อย่าเผลอกินเอง)`, 'culprit');
@@ -1908,7 +1939,7 @@ export class Game {
         this.logTo(p, `😵 คุณกิน${food.name}ไปได้ไม่กี่คำก็เวียนหัวแล้วหมดสติ — มีคนผสม${food.poisoned.poisonName}ไว้ คุณจะฟื้นในอีก ${hours} ชั่วโมง${dropped.length ? ` ของหล่นจากมือ: ${dropped.join(', ')}` : ''} ระหว่างนี้ใครลงมือกับคุณก็สำเร็จแน่นอน`, 'danger');
         for (const o of this.awakeIn(z.id)) if (o.id !== p.id) this.logTo(o, `😱 ${this.nick(p)}กิน${food.name}แล้วล้มลงหมดสติต่อหน้าคุณ — อาหารในห้องนี้มีคนผสมยาไว้!`, 'witness');
         if (setter?.alive) this.logTo(setter, `💤 ยาที่คุณผสมใน${food.name}ที่${this.zn(z)}ออกฤทธิ์ — ${this.nick(p)}สลบ ${hours} ชั่วโมง (ยานอนหลับ/ยาสลบไม่ฆ่าใคร)`, 'culprit');
-        food.poisoned = null;
+        food.poisoned.usesLeft = (food.poisoned.usesLeft ?? 1) - 1; // หมดท้ายชั่วโมง (settleFood) คนที่กินพร้อมกันยังโดน
         this.recordEvent(`${this.nick(p)}กินอาหารผสมยาสลบ (${food.name}) ของ${setter ? this.nick(setter) : '?'}ที่${this.zn(z)}และสลบ ${hours} ชม.`);
         return;
       }
@@ -1922,12 +1953,13 @@ export class Game {
         this.logTo(o, `😱 ${this.nick(p)}กิน${food.name}ไปได้ไม่กี่คำก็ล้มลงชักและเสียชีวิตต่อหน้าคุณ — อาหารในห้องนี้มีพิษ!`, 'witness');
       }
       if (setter?.alive) this.logTo(setter, `☠ ยาพิษที่คุณผสมใน${food.name}ที่${this.zn(z)}ทำงานแล้ว — ${this.nick(p)}ตาย คุณคือคนร้ายของคดีนี้`, 'culprit');
-      food.poisoned = null; // อาหารชุดนั้นถูกทิ้ง/รู้แล้วว่ามีพิษ
+      food.poisoned.usesLeft = (food.poisoned.usesLeft ?? 1) - 1; // หมดท้ายชั่วโมง (settleFood)
       this.recordEvent(`${this.nick(p)}กินอาหารมีพิษ (${kase.weapon.name}) ของ${setter ? this.nick(setter) : '?'}ที่${this.zn(z)}และเสียชีวิต`);
       return;
     }
     if (food.buff) {
-      // ยาที่ผสมไว้ออกฤทธิ์กับคนกิน (ไม่หมดไปจากอาหาร จนกว่าจะขึ้นวันใหม่)
+      // ยาที่ผสมไว้ออกฤทธิ์กับคนกิน — พอสำหรับ 3 คน (คนที่กินพร้อมกันในชั่วโมงเดียวได้ทุกคน แล้วค่อยหมด)
+      food.buff.usesLeft = (food.buff.usesLeft ?? 3) - 1;
       if (food.buff.kind === 'tonic') {
         p.buffs.questPlus = Math.min(2, (p.buffs.questPlus || 0) + 1);
         this.logTo(p, `💊 กินแล้วรู้สึกกระปรี้กระเปร่าผิดปกติ — ภารกิจถัดไปของคุณจะมีเวลาเพิ่ม ${p.buffs.questPlus} ชั่วโมง`, 'action');
@@ -1974,6 +2006,17 @@ export class Game {
     this.recordEvent(`${this.nick(p)}ล้างคราบเลือดจาก${dirty.map((i) => i.name).join(', ')}ที่${this.zn(z)}`);
   }
 
+  // ท้ายชั่วโมง: ยาที่ผสมในอาหารซึ่งถูกกินครบจำนวนคน (พิษ/ยาสลบ 1 คน · บัฟ 3 คน) หมดไป
+  settleFood() {
+    for (const z of this.zones.values()) {
+      for (const f of z.items) {
+        if (f.kind !== 'food') continue;
+        if (f.poisoned && (f.poisoned.usesLeft ?? 1) <= 0) f.poisoned = null;
+        if (f.buff && (f.buff.usesLeft ?? 3) <= 0) f.buff = null;
+      }
+    }
+  }
+
   // ---------- ประตู (ทำเอง) ----------
   // ไขกุญแจ/ล็อกด้วยกุญแจที่ตรง ทำได้ทันที ไม่กินชั่วโมง ทำได้ทุกขั้น — ทั้งจากในห้องและตอนยืนรอหน้าประตู (ทำเงียบ ๆ คนอื่นสังเกตเห็นตอนต้นชั่วโมงถัดไป)
   doorActions(p) {
@@ -1995,7 +2038,7 @@ export class Game {
       else for (const it of p.inventory.filter((i) => tagsOf(i).has('rod'))) out.push({ type: 'barDoor', itemId: it.id, label: `🚧 ค้ำประตูห้องนี้ด้วย${it.name} (ทันที)`, desc: 'คนข้างนอกเข้าไม่ได้แม้มีกุญแจ ต้องพังประตู (เสียงดัง) · คนในห้องเห็นคุณทำ · คนข้างในเอาที่ค้ำออกได้ทันที' });
     }
     // พังเครื่องปั่นไฟ (ทันที): ไฟดับทั้งตึกจนกว่าจะมีคนซ่อม (แอ็กชัน 2–3 ชม. ช่างเทคนิค 1)
-    if (!this.blackout && z.items.some((i) => i.kind === 'power')) out.push({ type: 'breakPower', label: '⚡ พังเครื่องปั่นไฟ (ทันที) — ไฟดับทั้งตึก', desc: 'ทุกห้องมืด ใครไม่มีของส่องสว่างจะมองไม่เห็นคนและของ (หยิบได้แค่คลำสุ่ม 1 ชิ้นต่อชั่วโมง เทรดไม่ได้) จนกว่าจะมีคนมาซ่อมที่นี่ · คนในห้องนี้เห็นคุณทำ', danger: true });
+    if (!this.blackout && this.turn >= (this.powerCooldownUntil || 0) && z.items.some((i) => i.kind === 'power')) out.push({ type: 'breakPower', label: '⚡ พังเครื่องปั่นไฟ (ทันที) — ไฟดับทั้งตึก', desc: 'ทุกห้องมืด ใครไม่มีของส่องสว่างจะมองไม่เห็นคนและของ (หยิบได้แค่คลำสุ่ม 1 ชิ้นต่อชั่วโมง เทรดไม่ได้) จนกว่าจะมีคนมาซ่อมที่นี่ · คนในห้องนี้เห็นคุณทำ', danger: true });
     return out;
   }
 
@@ -2066,6 +2109,7 @@ export class Game {
     if (p.powerWork.progress < p.powerWork.need) return this.logTo(p, `🔧 คุณซ่อมเครื่องปั่นไฟไปได้บางส่วน (ทำไปแล้ว ${p.powerWork.progress} ชั่วโมง) — เลือกแอ็กชันนี้อีกครั้งชั่วโมงหน้า`, 'action');
     p.powerWork = null;
     this.blackout = null;
+    this.powerCooldownUntil = this.turn + randInt(POWER.BREAK_COOLDOWN[0], POWER.BREAK_COOLDOWN[1]); // เพิ่งซ่อม พังซ้ำไม่ได้ 2–5 ชั่วโมง
     this.logTo(p, '🔧 คุณซ่อมเครื่องปั่นไฟสำเร็จ ไฟทั้งอาคารกลับมาติด', 'action');
     for (const o of this.players.values()) if (o.alive && !o.ko && o.id !== p.id) this.logTo(o, '💡 ไฟทั้งอาคารกลับมาติดแล้ว — มีคนซ่อมเครื่องปั่นไฟ', 'witness');
     this.recordEvent(`${this.nick(p)}ซ่อมเครื่องปั่นไฟที่${this.zn(z)} ไฟกลับมาติด`);
@@ -2494,8 +2538,7 @@ export class Game {
     this.phase = PHASE.INVESTIGATION;
     this.step = null;
     this.clearTimers();
-    this.hour++;
-    this.turn++;
+    this.advanceHour();
     this.generating = 'มีคนพบศพ! กำลังประกาศ...';
     this.huntRound = 1;
     // พบศพร่างเดียวก็พอ — ศพทุกร่างในสถานที่ถูกเปิดเผยพร้อมกัน (รวมร่างที่ยังไม่มีใครเคยเห็น) แล้วไล่จับฆาตกรทีละคนจนคดีปิดหมดในวันเดียว จึงไม่มีศพค้างข้ามวัน
@@ -2905,7 +2948,7 @@ export class Game {
     if (this.phase === PHASE.ENDED) return;
     if (this.checkEarlyEnd()) return;
     if (CONFIG.MAX_HOURS && this.turn >= CONFIG.MAX_HOURS) return this.endGame('timeout');
-    this.day++;
+    if (!this.dayRolledByClock) this.day++; // ถ้านาฬิกาข้ามเที่ยงคืนไปแล้วระหว่างตัดสิน ไม่บวกซ้ำ
     this.resetAfterTrial();
     this.beginDay();
   }
@@ -2939,8 +2982,7 @@ export class Game {
     if (this.checkEarlyEnd()) return;
     if (CONFIG.MAX_HOURS && this.turn >= CONFIG.MAX_HOURS) return this.endGame('timeout');
     this.investigation.hour++;
-    this.hour++;
-    this.turn++;
+    this.advanceHour();
     this.moves = new Map();
     this.actions = new Map();
     this.presetKoMoves();
@@ -2961,8 +3003,7 @@ export class Game {
     this.phase = PHASE.INVESTIGATION;
     this.huntRound++;
     this.investigation = { hour: 1, total: 1 }; // รอบตามหาฆาตกรที่เหลือ = 1 ชั่วโมง
-    this.hour++;
-    this.turn++;
+    this.advanceHour();
     this.generating = null;
     this.moves = new Map();
     this.actions = new Map();
@@ -3612,7 +3653,7 @@ export class Game {
       const body = this.bodies.get(p.id);
       // คนที่คดีถูกตัดสินแล้วยังแสดงว่าตายเสมอ (ศพถูกเก็บไปแล้วแต่ทุกคนรู้ว่าเขาตาย)
       const deathKnown = !p.alive && (ended || isMe || spectator || body?.announced || p.caseJudged || ['executed', 'punished', 'escaped', 'left_behind'].includes(p.fate) || (!!me && me.knownBodies.has(p.id)));
-      const sameZone = !!me && me.alive && p.alive && inZoneStep && this.sameSpot(p, me);
+      const sameZone = !!me && me.alive && p.alive && inZoneStep && this.sameSpot(p, me) && this.canSee(me); // มืด = ไม่รู้ว่าใครอยู่ด้วย
       const showProgress = isMe || spectator || ended; // ใครเลือกแล้ว/ยังไม่เลือก เห็นเฉพาะของตัวเอง — ไม่งั้นคนตายที่ยังไม่ถูกพบจะถูกสังเกตว่าไม่ขยับ
       return {
         id: p.id,
