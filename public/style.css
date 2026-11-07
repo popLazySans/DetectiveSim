@@ -410,3 +410,9 @@ details.help summary { cursor: pointer; color: var(--cyan); }
 .chip.bloody { border-color: var(--red); }
 .bagcheck { margin-top: 0.6rem; }
 .bagcheck select { max-width: 11rem; }
+
+.rules ul.short { padding-left: 1.2em; margin: 0.3em 0; }
+.rules ul.short li { margin-bottom: 0.3em; }
+.rules details { margin-top: 0.5rem; }
+.rules details summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+.rules details ol { font-size: 0.82rem; opacity: 0.9; }
